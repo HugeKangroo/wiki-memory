@@ -184,6 +184,9 @@ class RepoAdapter:
                             "classes": module_info.classes,
                             "functions": module_info.functions,
                             "imports": module_info.imports,
+                            "module_doc": module_info.module_doc,
+                            "class_docs": module_info.class_docs,
+                            "interfaces": module_info.interfaces,
                             "parser_backend": module_info.parser_backend,
                         }
                     )

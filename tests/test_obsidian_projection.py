@@ -25,10 +25,17 @@ class ObsidianProjectionTest(unittest.TestCase):
             src = repo / "src"
             src.mkdir()
             (src / "api.py").write_text(
+                '"""Public memory API endpoints."""\n\n'
                 "class MemoryApi:\n"
-                "    pass\n\n"
-                "def ingest_repo(path):\n"
-                "    return path\n",
+                '    """Facade for memory operations."""\n'
+                "    def search(self, query: str, limit: int = 10) -> list[str]:\n"
+                "        return []\n\n"
+                "    def _private_helper(self) -> None:\n"
+                "        return None\n\n"
+                "\n"
+                "def ingest_repo(path: str, force: bool = False) -> dict:\n"
+                '    """Ingest a repository path into memory."""\n'
+                "    return {}\n\n",
                 encoding="utf-8",
             )
 
@@ -47,19 +54,28 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("## What This Is", maps)
             self.assertIn("## Repository Map", maps)
             self.assertIn("## API Reference", maps)
-            self.assertIn("### Module `src/api.py`", maps)
+            self.assertIn("### Application Module `src/api.py`", maps)
+            self.assertIn("Public memory API endpoints.", maps)
             self.assertIn("#### Classes", maps)
-            self.assertIn("- `MemoryApi`", maps)
-            self.assertIn("#### Functions and Methods", maps)
-            self.assertIn("- `ingest_repo`", maps)
+            self.assertIn("##### `MemoryApi`", maps)
+            self.assertIn("Facade for memory operations.", maps)
+            self.assertIn("#### Functions", maps)
+            self.assertIn("##### `ingest_repo(path: str, force: bool = False) -> dict`", maps)
+            self.assertIn("| `path` | `str` | required |", maps)
+            self.assertIn("| `force` | `bool` | `False` |", maps)
+            self.assertIn("Returns: `dict`", maps)
+            self.assertIn("#### Methods", maps)
+            self.assertIn("##### `MemoryApi.search(query: str, limit: int = 10) -> list[str]`", maps)
+            self.assertNotIn("| `self` |", maps)
+            self.assertNotIn("MemoryApi._private_helper", maps)
             self.assertIn("src/api.py", source)
             self.assertIn("## Machine Data", maps)
             self.assertIn("## Code Files", source)
             self.assertIn("src/api.py", source)
             self.assertIn("## API Reference", source)
-            self.assertIn("### Module `src/api.py`", source)
-            self.assertIn("- `MemoryApi`", source)
-            self.assertIn("- `ingest_repo`", source)
+            self.assertIn("### Application Module `src/api.py`", source)
+            self.assertIn("##### `MemoryApi`", source)
+            self.assertIn("##### `ingest_repo(path: str, force: bool = False) -> dict`", source)
             self.assertTrue(debug_pages)
             self.assertFalse((wiki_root / "index.md").exists())
             self.assertFalse((wiki_root / "overview.md").exists())

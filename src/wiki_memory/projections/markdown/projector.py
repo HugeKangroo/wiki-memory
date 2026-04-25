@@ -349,22 +349,78 @@ class MarkdownProjector:
             path = module.get("path")
             if not path:
                 continue
-            lines.append(f"### Module `{path}`")
+            lines.append(f"### {self._module_category(path)} Module `{path}`")
+            module_doc = module.get("module_doc")
+            if module_doc:
+                lines.extend(["", str(module_doc)])
             classes = module.get("classes") or []
-            functions = module.get("functions") or []
+            interfaces = [item for item in module.get("interfaces", []) if self._is_public_interface(item)]
+            functions = [item for item in interfaces if item.get("kind") == "function"]
+            methods = [item for item in interfaces if item.get("kind") == "method"]
             imports = module.get("imports") or []
             if classes:
                 lines.extend(["", "#### Classes", ""])
-                lines.extend([f"- `{name}`" for name in classes[:12]])
+                class_docs = module.get("class_docs") or {}
+                for name in classes[:12]:
+                    lines.append(f"##### `{name}`")
+                    if class_docs.get(name):
+                        lines.extend(["", str(class_docs[name])])
+                    lines.append("")
             if functions:
-                lines.extend(["", "#### Functions and Methods", ""])
-                lines.extend([f"- `{name}`" for name in functions[:20]])
+                lines.extend(["", "#### Functions", ""])
+                for interface in functions[:20]:
+                    lines.extend(self._render_interface(interface))
+            if methods:
+                lines.extend(["", "#### Methods", ""])
+                for interface in methods[:20]:
+                    lines.extend(self._render_interface(interface))
             if imports:
                 lines.extend(["", "#### Imports", ""])
                 lines.extend([f"- `{name}`" for name in imports[:10]])
-            if not classes and not functions and not imports:
+            if not classes and not functions and not methods and not imports:
                 lines.append("- No public interfaces detected.")
             lines.append("")
+        return lines
+
+    def _is_public_interface(self, interface: dict) -> bool:
+        name = str(interface.get("name") or "")
+        short_name = name.rsplit(".", 1)[-1]
+        return not short_name.startswith("_") or short_name == "__init__"
+
+    def _module_category(self, path: str) -> str:
+        if "/application/" in path:
+            return "Application"
+        if "/interfaces/" in path:
+            return "Interface"
+        if "/adapters/" in path:
+            return "Adapter"
+        if "/domain/" in path:
+            return "Domain"
+        if "/infrastructure/" in path:
+            return "Infrastructure"
+        if "/projections/" in path:
+            return "Projection"
+        if path.startswith("tests/"):
+            return "Test"
+        if path.startswith("src/"):
+            return "Application"
+        return "Code"
+
+    def _render_interface(self, interface: dict) -> list[str]:
+        lines = [f"##### `{interface.get('signature') or interface.get('name')}`"]
+        if interface.get("doc"):
+            lines.extend(["", str(interface["doc"])])
+        parameters = interface.get("parameters") or []
+        if parameters:
+            lines.extend(["", "| Parameter | Type | Default |", "| --- | --- | --- |"])
+            for parameter in parameters:
+                default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
+                annotation = parameter.get("annotation") or "unknown"
+                lines.append(f"| `{parameter.get('name')}` | `{annotation}` | {default} |")
+        returns = interface.get("returns")
+        if returns:
+            lines.extend(["", f"Returns: `{returns}`"])
+        lines.append("")
         return lines
 
     def _module_sort_key(self, module: dict) -> tuple[int, str]:
