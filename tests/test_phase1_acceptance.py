@@ -76,10 +76,10 @@ class Phase1AcceptanceTest(unittest.TestCase):
 
             self.assertTrue((paths.patch_path(result["patch_id"])).exists())
             self.assertEqual(result["applied_operations"], len(result["audit_event_ids"]))
-            self.assertTrue((paths.projections_root / "wiki" / "index.md").exists())
-            self.assertTrue((paths.projections_root / "wiki" / "overview.md").exists())
+            self.assertTrue((paths.projections_root / "debug" / "index.md").exists())
+            self.assertTrue((paths.projections_root / "debug" / "overview.md").exists())
             self.assertTrue(
-                (paths.projections_root / "wiki" / "sources" / f"{result['source_id']}.md").exists()
+                (paths.projections_root / "debug" / "sources" / f"{result['source_id']}.md").exists()
             )
 
     def test_repo_ingest_only_emits_lightweight_structural_candidate_knowledge(self) -> None:

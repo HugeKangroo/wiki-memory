@@ -27,14 +27,21 @@ class ObsidianProjectionTest(unittest.TestCase):
             MarkdownProjector(root).rebuild()
 
             wiki_root = root / "memory" / "projections" / "wiki"
+            debug_root = root / "memory" / "projections" / "debug"
             home = (wiki_root / "Home.md").read_text(encoding="utf-8")
-            maps = (wiki_root / "Maps" / "Projects.md").read_text(encoding="utf-8")
-            human_pages = list((wiki_root / "Readable" / "Nodes").glob("*.md"))
+            maps = (wiki_root / "Projects" / "wiki-memory.md").read_text(encoding="utf-8")
+            debug_pages = list((debug_root / "nodes").glob("*.md"))
 
             self.assertIn("# Wiki Memory Home", home)
-            self.assertIn("[[Maps/Projects|Projects]]", home)
-            self.assertIn("wiki-memory", maps)
-            self.assertTrue(any(path.name.startswith("wiki-memory") for path in human_pages))
+            self.assertIn("[[Projects/wiki-memory|wiki-memory]]", home)
+            self.assertIn("## What This Is", maps)
+            self.assertIn("## Repository Map", maps)
+            self.assertIn("## Machine Data", maps)
+            self.assertTrue(debug_pages)
+            self.assertFalse((wiki_root / "index.md").exists())
+            self.assertFalse((wiki_root / "overview.md").exists())
+            self.assertFalse((wiki_root / "_raw").exists())
+            self.assertFalse((wiki_root / "nodes").exists())
 
 
 if __name__ == "__main__":

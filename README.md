@@ -6,6 +6,51 @@ By default, the MCP tools use `~/wiki-memory` as the wiki root on Linux and macO
 
 The MCP server uses a strict argument model with `extra="forbid"`. Older argument layouts or unexpected fields fail fast instead of being accepted silently.
 
+## Storage and Editing Boundary
+
+The wiki root contains two different kinds of data:
+
+- `memory/objects/` is the canonical object store. MCP tools read and write this data.
+- `memory/projections/wiki/` is a generated Obsidian-friendly reading view. Open this directory as the Obsidian vault.
+- `memory/projections/debug/` is a generated object-level markdown mirror for debugging, linting, and traceability.
+
+Treat projections as derived output. They are safe to read, link, and browse, but changes made directly inside `memory/projections/wiki/` can be overwritten by a later projection rebuild and are not the reliable source of truth.
+
+All durable changes should go through the MCP server, whether the caller is a human, an agent, Codex, Claude Code, Gemini CLI, VS Code, or another host. This keeps object IDs, references, indexes, projections, lint checks, and repair behavior consistent.
+
+Direct file edits are possible for emergency recovery or local debugging, but they must preserve object schema and references. After direct edits, run `wiki_lint` with `structure` or `repair`, then `reindex`, before relying on query or dream results.
+
+Recommended Obsidian entrypoint:
+
+```text
+~/wiki-memory/memory/projections/wiki/Home.md
+```
+
+Recommended root layout:
+
+```text
+~/wiki-memory/
+  memory/
+    objects/              # canonical JSON objects
+    indexes/              # derived query state
+    patches/              # write records
+    audit/                # audit log
+    projections/
+      wiki/               # Obsidian vault for humans
+        Home.md
+        Projects/
+        Knowledge/
+        Sources/
+        Activities/
+        Work_Items/
+      debug/              # object-level markdown mirror for tooling/debug
+        sources/
+        nodes/
+        knowledge/
+        activities/
+        work_items/
+```
+
 ## MCP Server
 
 The MCP server exposes exactly five tools:

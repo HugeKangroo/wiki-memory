@@ -167,11 +167,11 @@ class StructureLintRunner:
     def _projection_issues(self) -> list[dict]:
         issues: list[dict] = []
         projection_dirs = {
-            "source": self.root / "memory" / "projections" / "wiki" / "sources",
-            "node": self.root / "memory" / "projections" / "wiki" / "nodes",
-            "knowledge": self.root / "memory" / "projections" / "wiki" / "knowledge",
-            "activity": self.root / "memory" / "projections" / "wiki" / "activities",
-            "work_item": self.root / "memory" / "projections" / "wiki" / "work_items",
+            "source": self.root / "memory" / "projections" / "debug" / "sources",
+            "node": self.root / "memory" / "projections" / "debug" / "nodes",
+            "knowledge": self.root / "memory" / "projections" / "debug" / "knowledge",
+            "activity": self.root / "memory" / "projections" / "debug" / "activities",
+            "work_item": self.root / "memory" / "projections" / "debug" / "work_items",
         }
         for object_type, directory in projection_dirs.items():
             expected = {f"{obj['id']}.md" for obj in self.repository.list(object_type)}

@@ -34,7 +34,7 @@ class CrystallizeProjectionTest(unittest.TestCase):
                 }
             )
 
-            projection_path = root / "memory" / "projections" / "wiki" / "work_items" / f"{result['work_item_id']}.md"
+            projection_path = root / "memory" / "projections" / "debug" / "work_items" / f"{result['work_item_id']}.md"
 
             self.assertTrue(projection_path.exists())
             contents = projection_path.read_text(encoding="utf-8")
@@ -54,7 +54,7 @@ class CrystallizeProjectionTest(unittest.TestCase):
                 }
             )
             work_item_id = result["work_item_id"]
-            projection_path = root / "memory" / "projections" / "wiki" / "work_items" / f"{work_item_id}.md"
+            projection_path = root / "memory" / "projections" / "debug" / "work_items" / f"{work_item_id}.md"
 
             repository = FsObjectRepository(root)
             patch_repository = FsPatchRepository(root)

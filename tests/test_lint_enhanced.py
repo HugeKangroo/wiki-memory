@@ -89,7 +89,7 @@ class EnhancedLintTest(unittest.TestCase):
                 },
             )
             MarkdownProjector(root).rebuild()
-            (root / "memory" / "projections" / "wiki" / "knowledge" / "know:no-evidence.md").unlink()
+            (root / "memory" / "projections" / "debug" / "knowledge" / "know:no-evidence.md").unlink()
 
             report = LintService(root).structure()["data"]
             kinds = {issue["kind"] for issue in report["issues"]}

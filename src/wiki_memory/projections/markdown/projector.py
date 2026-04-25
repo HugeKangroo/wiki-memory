@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+import shutil
 
 from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from wiki_memory.infrastructure.storage.fs_utils import ensure_directory
@@ -23,13 +24,15 @@ class MarkdownProjector:
         self.paths = StoragePaths(self.root)
         self.repository = FsObjectRepository(self.root)
         self.wiki_root = self.paths.projections_root / "wiki"
+        self.debug_root = self.paths.projections_root / "debug"
 
     def rebuild(self) -> dict:
         ensure_directory(self.wiki_root)
+        ensure_directory(self.debug_root)
         written: list[str] = []
 
         for object_type, directory in PROJECTION_DIRS.items():
-            target_dir = self.wiki_root / directory
+            target_dir = self.debug_root / directory
             ensure_directory(target_dir)
             for existing_path in target_dir.glob("*.md"):
                 existing_path.unlink()
@@ -40,8 +43,13 @@ class MarkdownProjector:
 
         written.extend(self._write_obsidian_views())
 
-        index_path = self.wiki_root / "index.md"
-        overview_path = self.wiki_root / "overview.md"
+        for stale_root_page in ("index.md", "overview.md"):
+            stale_path = self.wiki_root / stale_root_page
+            if stale_path.exists():
+                stale_path.unlink()
+
+        index_path = self.debug_root / "index.md"
+        overview_path = self.debug_root / "overview.md"
         index_path.write_text(self._render_index(), encoding="utf-8")
         overview_path.write_text(self._render_overview(), encoding="utf-8")
         written.extend([str(index_path), str(overview_path)])
@@ -54,27 +62,36 @@ class MarkdownProjector:
 
     def _write_obsidian_views(self) -> list[str]:
         written: list[str] = []
-        for directory in ("Readable", "Maps"):
+        for directory in ("Readable", "Maps", "_raw", *PROJECTION_DIRS.values()):
+            target = self.wiki_root / directory
+            if target.exists():
+                shutil.rmtree(target)
+
+        for directory in ("Projects", "Knowledge", "Sources", "Activities", "Work_Items"):
             target = self.wiki_root / directory
             ensure_directory(target)
-            for existing_path in target.rglob("*.md"):
+            for existing_path in target.glob("*.md"):
                 existing_path.unlink()
 
         home_path = self.wiki_root / "Home.md"
         home_path.write_text(self._render_home(), encoding="utf-8")
         written.append(str(home_path))
 
-        projects_path = self.wiki_root / "Maps" / "Projects.md"
-        projects_path.write_text(self._render_projects_map(), encoding="utf-8")
-        written.append(str(projects_path))
+        written.extend(self._write_project_pages())
 
-        for object_type, directory in PROJECTION_DIRS.items():
-            readable_dir = self.wiki_root / "Readable" / directory.title()
+        category_dirs = {
+            "source": "Sources",
+            "knowledge": "Knowledge",
+            "activity": "Activities",
+            "work_item": "Work_Items",
+        }
+        for object_type, directory in category_dirs.items():
+            readable_dir = self.wiki_root / directory
             ensure_directory(readable_dir)
             for obj in self.repository.list(object_type):
                 title = str(obj.get("title") or obj.get("name") or obj["id"])
                 path = readable_dir / f"{self._safe_filename(title)}.md"
-                path.write_text(self._render_readable_alias(object_type, directory, obj, title), encoding="utf-8")
+                path.write_text(self._render_readable_page(object_type, obj, title), encoding="utf-8")
                 written.append(str(path))
         return written
 
@@ -202,7 +219,7 @@ class MarkdownProjector:
             else:
                 for obj in objects:
                     title = obj.get("title") or obj.get("name") or obj["id"]
-                    lines.append(f"- [{title}]({directory}/{obj['id']}.md)")
+                    lines.append(f"- `{obj['id']}`: {title}")
             lines.append("")
         return "\n".join(lines)
 
@@ -226,17 +243,21 @@ class MarkdownProjector:
 
     def _render_home(self) -> str:
         counts = {object_type: len(self.repository.list(object_type)) for object_type in PROJECTION_DIRS}
+        project_links = []
+        for node in self._project_nodes():
+            title = str(node.get("name") or node.get("title") or node["id"])
+            project_links.append(f"- [[Projects/{self._safe_filename(title)}|{title}]]")
+        if not project_links:
+            project_links.append("- (none)")
         return "\n".join(
             [
                 "# Wiki Memory Home",
                 "",
                 "Start here when opening this vault in Obsidian.",
                 "",
-                "## Maps",
+                "## Projects",
                 "",
-                "- [[Maps/Projects|Projects]]",
-                "- [[index|Raw Object Index]]",
-                "- [[overview|Raw Overview]]",
+                *project_links,
                 "",
                 "## Counts",
                 "",
@@ -248,35 +269,70 @@ class MarkdownProjector:
                 "",
                 "## Readable Views",
                 "",
-                "- [[Readable/Nodes]]",
-                "- [[Readable/Knowledge]]",
-                "- [[Readable/Sources]]",
-                "- [[Readable/Activities]]",
-                "- [[Readable/Work_Items]]",
+                "- [[Knowledge]]",
+                "- [[Sources]]",
+                "- [[Activities]]",
+                "- [[Work_Items]]",
+                "",
+                "## Editing Boundary",
+                "",
+                "Use MCP tools for durable edits. This vault is a generated reading view.",
             ]
         ) + "\n"
 
-    def _render_projects_map(self) -> str:
-        lines = ["# Projects", ""]
-        nodes = [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
-        if not nodes:
-            lines.append("- (none)")
-        for node in nodes:
+    def _write_project_pages(self) -> list[str]:
+        written: list[str] = []
+        project_dir = self.wiki_root / "Projects"
+        for node in self._project_nodes():
             title = str(node.get("name") or node.get("title") or node["id"])
-            lines.append(f"- [[Readable/Nodes/{self._safe_filename(title)}|{title}]]")
-        return "\n".join(lines) + "\n"
+            path = project_dir / f"{self._safe_filename(title)}.md"
+            path.write_text(self._render_project_page(node, title), encoding="utf-8")
+            written.append(str(path))
+        return written
 
-    def _render_readable_alias(self, object_type: str, directory: str, obj: dict, title: str) -> str:
-        raw_link = f"../../{directory}/{obj['id']}.md"
+    def _project_nodes(self) -> list[dict]:
+        return [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
+
+    def _render_project_page(self, node: dict, title: str) -> str:
         lines = [
             f"# {title}",
             "",
-            f"> Human-readable alias for `{obj['id']}`.",
+            "## What This Is",
+            "",
+            str(node.get("summary") or "Project memory page generated from wiki-memory objects."),
+            "",
+            "## Repository Map",
+            "",
+        ]
+        aliases = node.get("aliases") or []
+        if aliases:
+            lines.extend([f"- Alias: {alias}" for alias in aliases])
+        else:
+            lines.append("- No aliases recorded.")
+        lines.extend(
+            [
+                "",
+                "## Machine Data",
+                "",
+                f"- Object ID: `{node['id']}`",
+                f"- Kind: `{node.get('kind', 'node')}`",
+                f"- Status: `{node.get('status', 'unknown')}`",
+                "",
+                "> Durable edits should go through MCP. Debug object mirrors live outside this vault.",
+                "",
+            ]
+        )
+        return "\n".join(lines)
+
+    def _render_readable_page(self, object_type: str, obj: dict, title: str) -> str:
+        lines = [
+            f"# {title}",
+            "",
+            f"> Human-readable page generated from `{obj['id']}`.",
             "",
             f"- Type: `{object_type}`",
             f"- Kind: `{obj.get('kind', object_type)}`",
             f"- Status: `{obj.get('status') or obj.get('lifecycle_state') or 'unknown'}`",
-            f"- Raw page: [{obj['id']}]({raw_link})",
             "",
         ]
         summary = obj.get("summary")

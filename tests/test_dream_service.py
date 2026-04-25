@@ -479,8 +479,8 @@ class DreamServiceTest(unittest.TestCase):
             self.assertGreaterEqual(result["promoted"], 1)
             self.assertGreaterEqual(result["decayed"], 1)
             self.assertGreater(result["projection_count"], 0)
-            self.assertTrue((paths.projections_root / "wiki" / "knowledge" / f"{promotable['knowledge_id']}.md").exists())
-            self.assertTrue((paths.projections_root / "wiki" / "knowledge" / f"{stale['knowledge_id']}.md").exists())
+            self.assertTrue((paths.projections_root / "debug" / "knowledge" / f"{promotable['knowledge_id']}.md").exists())
+            self.assertTrue((paths.projections_root / "debug" / "knowledge" / f"{stale['knowledge_id']}.md").exists())
             self.assertEqual(lint.structure()["data"]["counts"]["warning"], 0)
             self.assertEqual(lint.structure()["data"]["counts"]["error"], 0)
 
