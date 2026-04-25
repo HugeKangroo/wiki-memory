@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 
 from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from wiki_memory.infrastructure.storage.fs_utils import ensure_directory
@@ -37,6 +38,8 @@ class MarkdownProjector:
                 path.write_text(self._render(object_type, obj), encoding="utf-8")
                 written.append(str(path))
 
+        written.extend(self._write_obsidian_views())
+
         index_path = self.wiki_root / "index.md"
         overview_path = self.wiki_root / "overview.md"
         index_path.write_text(self._render_index(), encoding="utf-8")
@@ -48,6 +51,32 @@ class MarkdownProjector:
             "written": written,
             "count": len(written),
         }
+
+    def _write_obsidian_views(self) -> list[str]:
+        written: list[str] = []
+        for directory in ("Readable", "Maps"):
+            target = self.wiki_root / directory
+            ensure_directory(target)
+            for existing_path in target.rglob("*.md"):
+                existing_path.unlink()
+
+        home_path = self.wiki_root / "Home.md"
+        home_path.write_text(self._render_home(), encoding="utf-8")
+        written.append(str(home_path))
+
+        projects_path = self.wiki_root / "Maps" / "Projects.md"
+        projects_path.write_text(self._render_projects_map(), encoding="utf-8")
+        written.append(str(projects_path))
+
+        for object_type, directory in PROJECTION_DIRS.items():
+            readable_dir = self.wiki_root / "Readable" / directory.title()
+            ensure_directory(readable_dir)
+            for obj in self.repository.list(object_type):
+                title = str(obj.get("title") or obj.get("name") or obj["id"])
+                path = readable_dir / f"{self._safe_filename(title)}.md"
+                path.write_text(self._render_readable_alias(object_type, directory, obj, title), encoding="utf-8")
+                written.append(str(path))
+        return written
 
     def _render(self, object_type: str, obj: dict) -> str:
         frontmatter = self._frontmatter(obj)
@@ -194,3 +223,72 @@ class MarkdownProjector:
             f"- work items: {counts['work_item']}",
         ]
         return "\n".join(lines) + "\n"
+
+    def _render_home(self) -> str:
+        counts = {object_type: len(self.repository.list(object_type)) for object_type in PROJECTION_DIRS}
+        return "\n".join(
+            [
+                "# Wiki Memory Home",
+                "",
+                "Start here when opening this vault in Obsidian.",
+                "",
+                "## Maps",
+                "",
+                "- [[Maps/Projects|Projects]]",
+                "- [[index|Raw Object Index]]",
+                "- [[overview|Raw Overview]]",
+                "",
+                "## Counts",
+                "",
+                f"- Sources: {counts['source']}",
+                f"- Nodes: {counts['node']}",
+                f"- Knowledge: {counts['knowledge']}",
+                f"- Activities: {counts['activity']}",
+                f"- Work items: {counts['work_item']}",
+                "",
+                "## Readable Views",
+                "",
+                "- [[Readable/Nodes]]",
+                "- [[Readable/Knowledge]]",
+                "- [[Readable/Sources]]",
+                "- [[Readable/Activities]]",
+                "- [[Readable/Work_Items]]",
+            ]
+        ) + "\n"
+
+    def _render_projects_map(self) -> str:
+        lines = ["# Projects", ""]
+        nodes = [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
+        if not nodes:
+            lines.append("- (none)")
+        for node in nodes:
+            title = str(node.get("name") or node.get("title") or node["id"])
+            lines.append(f"- [[Readable/Nodes/{self._safe_filename(title)}|{title}]]")
+        return "\n".join(lines) + "\n"
+
+    def _render_readable_alias(self, object_type: str, directory: str, obj: dict, title: str) -> str:
+        raw_link = f"../../{directory}/{obj['id']}.md"
+        lines = [
+            f"# {title}",
+            "",
+            f"> Human-readable alias for `{obj['id']}`.",
+            "",
+            f"- Type: `{object_type}`",
+            f"- Kind: `{obj.get('kind', object_type)}`",
+            f"- Status: `{obj.get('status') or obj.get('lifecycle_state') or 'unknown'}`",
+            f"- Raw page: [{obj['id']}]({raw_link})",
+            "",
+        ]
+        summary = obj.get("summary")
+        if summary:
+            lines.extend(["## Summary", "", str(summary), ""])
+        if object_type == "source":
+            payload = obj.get("payload", {})
+            if isinstance(payload, dict) and payload.get("text"):
+                lines.extend(["## Text Preview", "", str(payload["text"])[:1200], ""])
+        return "\n".join(lines)
+
+    def _safe_filename(self, value: str) -> str:
+        value = re.sub(r'[\\/:*?"<>|#^\[\]]+', "-", value).strip()
+        value = re.sub(r"\s+", " ", value)
+        return value[:120] or "untitled"
