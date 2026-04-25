@@ -32,7 +32,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(args_schema["discriminator"]["mapping"].keys()),
-            {"context", "expand", "page", "recent", "search"},
+            {"context", "expand", "page", "recent", "search", "graph"},
         )
 
         crystallize_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_crystallize")
@@ -40,7 +40,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(crystallize_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(crystallize_args_schema["discriminator"]["mapping"].keys()),
-            {"activity", "knowledge", "work_item", "promote", "supersede"},
+            {"activity", "knowledge", "work_item", "promote", "supersede", "contest", "batch"},
         )
 
         dream_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_dream")
@@ -64,7 +64,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(ingest_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(ingest_args_schema["discriminator"]["mapping"].keys()),
-            {"repo", "file", "markdown"},
+            {"repo", "file", "markdown", "web", "pdf", "conversation"},
         )
 
     def test_main_runs_server(self) -> None:

@@ -172,6 +172,33 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertTrue(any("Guide" in excerpt for excerpt in excerpts))
             self.assertTrue(any("Install" in excerpt for excerpt in excerpts))
 
+    def test_web_pdf_and_conversation_ingest_modes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            html = root / "page.html"
+            html.write_text("<html><body><h1>Web Title</h1><p>Reusable web context.</p></body></html>", encoding="utf-8")
+            pdf = root / "doc.pdf"
+            pdf.write_bytes(b"%PDF-1.4\n% synthetic pdf placeholder\n")
+            ingest = IngestService(root)
+            objects = FsObjectRepository(root)
+
+            web_result = ingest.ingest_web(html.as_uri())
+            pdf_result = ingest.ingest_pdf(pdf)
+            conversation_result = ingest.ingest_conversation(
+                title="Planning chat",
+                messages=[
+                    {"role": "user", "content": "What should we build?"},
+                    {"role": "assistant", "content": "Build the MCP memory server."},
+                ],
+            )
+
+            self.assertEqual(objects.get("source", web_result["source_id"])["kind"], "web")
+            self.assertIn("Web Title", objects.get("source", web_result["source_id"])["payload"]["text"])
+            self.assertEqual(objects.get("source", pdf_result["source_id"])["kind"], "pdf")
+            self.assertEqual(objects.get("source", pdf_result["source_id"])["content_type"], "binary_stub")
+            self.assertEqual(objects.get("source", conversation_result["source_id"])["kind"], "conversation")
+            self.assertEqual(conversation_result["segment_count"], 2)
+
     def test_query_filters_recent_search_and_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -214,6 +241,32 @@ class Phase1AcceptanceTest(unittest.TestCase):
             )
             self.assertEqual({item["object_type"] for item in context["data"]["items"]}, {"knowledge"})
             self.assertTrue(context["data"]["citations"])
+
+    def test_query_graph_returns_neighbor_edges(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "guide.md"
+            document.write_text("# Guide\n\nInstall wiki memory.\n", encoding="utf-8")
+            ingest_result = IngestService(root).ingest_markdown(document)
+            knowledge = CrystallizeService(root).create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Guide graph fact",
+                    "summary": "Graph relation.",
+                    "subject_refs": [ingest_result["node_id"]],
+                    "evidence_refs": [{"source_id": ingest_result["source_id"], "segment_id": "1-guide"}],
+                    "payload": {"subject": ingest_result["node_id"], "predicate": "documents", "value": "graph", "object": None},
+                    "confidence": 0.8,
+                }
+            )
+
+            graph = QueryService(root).graph(ingest_result["node_id"], max_items=10)
+            node_ids = {node["id"] for node in graph["data"]["nodes"]}
+            edge_targets = {edge["target_id"] for edge in graph["data"]["edges"]}
+
+            self.assertEqual(graph["result_type"], "graph")
+            self.assertIn(ingest_result["node_id"], node_ids)
+            self.assertIn(knowledge["knowledge_id"], edge_targets)
 
     def test_phase1_crystallize_mutations_emit_audit_and_keep_lint_clean(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -296,6 +349,47 @@ class Phase1AcceptanceTest(unittest.TestCase):
             audit_snapshot = lint.audit(max_items=50)
             self.assertEqual(audit_snapshot["result_type"], "audit_log")
             self.assertGreater(len(audit_snapshot["data"]["events"]), 0)
+
+    def test_crystallize_batch_and_contest_knowledge(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = self._make_repo(root)
+            ingest_result = IngestService(root).ingest_repo(repo)
+            crystallize = CrystallizeService(root)
+            objects = FsObjectRepository(root)
+
+            batch = crystallize.batch(
+                [
+                    {
+                        "mode": "knowledge",
+                        "input_data": {
+                            "kind": "fact",
+                            "title": "Batch fact",
+                            "summary": "Created from batch.",
+                            "subject_refs": ingest_result["node_ids"][:1],
+                            "evidence_refs": [{"source_id": ingest_result["source_id"], "segment_id": "src"}],
+                            "payload": {"subject": ingest_result["node_ids"][0], "predicate": "batched", "value": True, "object": None},
+                            "confidence": 0.8,
+                        },
+                    },
+                    {
+                        "mode": "work_item",
+                        "input_data": {
+                            "kind": "task",
+                            "title": "Batch task",
+                            "summary": "Created from batch.",
+                            "related_node_refs": ingest_result["node_ids"][:1],
+                        },
+                    },
+                ]
+            )
+            knowledge_id = batch["results"][0]["knowledge_id"]
+            contest = crystallize.contest_knowledge(knowledge_id, reason="Conflicting source found.")
+
+            self.assertEqual(batch["created"], 2)
+            self.assertEqual(contest["knowledge_id"], knowledge_id)
+            self.assertEqual(objects.get("knowledge", knowledge_id)["status"], "contested")
+            self.assertEqual(objects.get("knowledge", knowledge_id)["reason"], "Conflicting source found.")
 
 
 if __name__ == "__main__":

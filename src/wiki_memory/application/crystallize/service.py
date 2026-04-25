@@ -190,6 +190,57 @@ class CrystallizeService:
             "projection_count": result["projection_count"],
         }
 
+    def contest_knowledge(self, knowledge_id: str, actor: dict | None = None, reason: str = "") -> dict:
+        existing = self.object_repository.get("knowledge", knowledge_id)
+        if existing is None:
+            raise ValueError(f"Knowledge not found: {knowledge_id}")
+
+        timestamp = utc_now_iso()
+        patch = WikiPatch(
+            id=new_id("patch"),
+            source=actor or {"type": "system", "id": "wiki.crystallize.contest"},
+            operations=[
+                PatchOperation(
+                    op="update_object",
+                    object_type="knowledge",
+                    object_id=knowledge_id,
+                    changes={
+                        "status": "contested",
+                        "reason": reason or "contested",
+                        "last_verified_at": existing.get("last_verified_at"),
+                    },
+                )
+            ],
+            created_at=timestamp,
+        )
+        result = self._apply_and_project(patch)
+        return {
+            "patch_id": result["patch_id"],
+            "knowledge_id": knowledge_id,
+            "applied_operations": result["applied_operations"],
+            "audit_event_ids": result["audit_event_ids"],
+            "projection_count": result["projection_count"],
+        }
+
+    def batch(self, entries: list[dict], actor: dict | None = None) -> dict:
+        results: list[dict] = []
+        for entry in entries:
+            mode = entry["mode"]
+            data = entry.get("input_data", {})
+            if mode == "activity":
+                results.append(self.create_activity(data, actor=actor))
+            elif mode == "knowledge":
+                results.append(self.create_knowledge(data, actor=actor))
+            elif mode == "work_item":
+                results.append(self.create_work_item(data, actor=actor))
+            else:
+                raise ValueError(f"Unsupported batch crystallize mode: {mode}")
+        return {
+            "status": "completed",
+            "created": len(results),
+            "results": results,
+        }
+
     def supersede_knowledge(
         self,
         old_knowledge_id: str,

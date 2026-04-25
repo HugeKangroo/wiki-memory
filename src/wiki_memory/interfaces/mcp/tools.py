@@ -24,6 +24,16 @@ def wiki_ingest(root: str | Path | None, mode: str, input_data: dict, options: d
         return service.ingest_file(input_data["path"])
     if mode == "markdown":
         return service.ingest_markdown(input_data["path"])
+    if mode == "web":
+        return service.ingest_web(input_data["url"])
+    if mode == "pdf":
+        return service.ingest_pdf(input_data["path"])
+    if mode == "conversation":
+        return service.ingest_conversation(
+            title=input_data["title"],
+            messages=input_data["messages"],
+            origin=input_data.get("origin"),
+        )
     raise ValueError(f"Unsupported ingest mode: {mode}")
 
 
@@ -47,6 +57,8 @@ def wiki_query(root: str | Path | None, mode: str, input_data: dict, options: di
         return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
     if mode == "search":
         return service.search(query=input_data["query"], max_items=options.get("max_items", 20), filters=options.get("filters"))
+    if mode == "graph":
+        return service.graph(object_id=input_data["id"], max_items=options.get("max_items", 20))
     raise ValueError(f"Unsupported query mode: {mode}")
 
 
@@ -72,6 +84,17 @@ def wiki_crystallize(root: str | Path | None, mode: str, input_data: dict, optio
             new_knowledge_id=input_data["new_knowledge_id"],
             actor=actor,
             reason=input_data.get("reason", ""),
+        )
+    if mode == "contest":
+        return service.contest_knowledge(
+            knowledge_id=input_data["knowledge_id"],
+            actor=actor,
+            reason=input_data.get("reason", ""),
+        )
+    if mode == "batch":
+        return service.batch(
+            entries=input_data["entries"],
+            actor=actor,
         )
     raise ValueError(f"Unsupported crystallize mode: {mode}")
 

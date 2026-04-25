@@ -14,12 +14,17 @@ REFERENCE_FIELDS = {
 
 class StructureLintRunner:
     def __init__(self, root: str | Path) -> None:
+        self.root = Path(root)
         self.repository = FsObjectRepository(root)
 
     def run(self) -> dict:
         issues: list[dict] = []
         issues.extend(self._missing_reference_issues())
         issues.extend(self._invalid_status_issues())
+        issues.extend(self._duplicate_identity_issues())
+        issues.extend(self._active_knowledge_without_evidence_issues())
+        issues.extend(self._orphan_source_issues())
+        issues.extend(self._projection_issues())
         return {
             "issues": issues,
             "counts": {
@@ -84,6 +89,119 @@ class StructureLintRunner:
                                     "repairable": True,
                                 }
                             )
+        return issues
+
+    def _duplicate_identity_issues(self) -> list[dict]:
+        issues: list[dict] = []
+        for object_type in ("source", "node", "knowledge", "activity", "work_item"):
+            by_identity: dict[str, list[str]] = {}
+            for obj in self.repository.list(object_type):
+                identity_key = obj.get("identity_key")
+                if not identity_key:
+                    continue
+                by_identity.setdefault(str(identity_key), []).append(obj["id"])
+            for identity_key, object_ids in by_identity.items():
+                if len(object_ids) < 2:
+                    continue
+                issues.append(
+                    {
+                        "issue_id": f"lint:{object_type}:duplicate_identity:{identity_key}",
+                        "kind": "duplicate_identity",
+                        "severity": "warning",
+                        "target_id": object_ids[0],
+                        "summary": f"Duplicate identity_key for {object_type}: {identity_key}",
+                        "details": {"identity_key": identity_key, "object_ids": sorted(object_ids)},
+                        "repairable": False,
+                    }
+                )
+        return issues
+
+    def _active_knowledge_without_evidence_issues(self) -> list[dict]:
+        issues: list[dict] = []
+        for obj in self.repository.list("knowledge"):
+            if obj.get("status") != "active":
+                continue
+            if obj.get("evidence_refs"):
+                continue
+            issues.append(
+                {
+                    "issue_id": f"lint:knowledge:{obj['id']}:active_without_evidence",
+                    "kind": "active_knowledge_without_evidence",
+                    "severity": "warning",
+                    "target_id": obj["id"],
+                    "summary": "Active knowledge has no evidence_refs.",
+                    "details": {"field": "evidence_refs"},
+                    "repairable": False,
+                }
+            )
+        return issues
+
+    def _orphan_source_issues(self) -> list[dict]:
+        issues: list[dict] = []
+        referenced_sources: set[str] = set()
+        for object_type in ("knowledge", "activity", "work_item"):
+            for obj in self.repository.list(object_type):
+                for source_id in obj.get("source_refs", []):
+                    referenced_sources.add(str(source_id))
+                for evidence in obj.get("evidence_refs", []):
+                    if isinstance(evidence, dict) and evidence.get("source_id"):
+                        referenced_sources.add(str(evidence["source_id"]))
+        for source in self.repository.list("source"):
+            if source.get("status") == "archived":
+                continue
+            if source["id"] in referenced_sources:
+                continue
+            issues.append(
+                {
+                    "issue_id": f"lint:source:{source['id']}:orphan",
+                    "kind": "orphan_source",
+                    "severity": "info",
+                    "target_id": source["id"],
+                    "summary": "Source is not referenced by knowledge, activity, or work items.",
+                    "details": {},
+                    "repairable": False,
+                }
+            )
+        return issues
+
+    def _projection_issues(self) -> list[dict]:
+        issues: list[dict] = []
+        projection_dirs = {
+            "source": self.root / "memory" / "projections" / "wiki" / "sources",
+            "node": self.root / "memory" / "projections" / "wiki" / "nodes",
+            "knowledge": self.root / "memory" / "projections" / "wiki" / "knowledge",
+            "activity": self.root / "memory" / "projections" / "wiki" / "activities",
+            "work_item": self.root / "memory" / "projections" / "wiki" / "work_items",
+        }
+        for object_type, directory in projection_dirs.items():
+            expected = {f"{obj['id']}.md" for obj in self.repository.list(object_type)}
+            actual = {path.name for path in directory.glob("*.md")} if directory.exists() else set()
+            for missing in sorted(expected - actual):
+                object_id = missing.removesuffix(".md")
+                issues.append(
+                    {
+                        "issue_id": f"lint:{object_type}:{object_id}:missing_projection",
+                        "kind": "missing_projection",
+                        "severity": "warning",
+                        "target_id": object_id,
+                        "summary": f"Missing markdown projection for {object_type}: {object_id}",
+                        "details": {"path": str(directory / missing)},
+                        "repairable": True,
+                    }
+                )
+            for stale in sorted(actual - expected):
+                object_id = stale.removesuffix(".md")
+                issues.append(
+                    {
+                        "issue_id": f"lint:{object_type}:{object_id}:stale_projection",
+                        "kind": "stale_projection",
+                        "severity": "warning",
+                        "target_id": object_id,
+                        "summary": f"Stale markdown projection for {object_type}: {object_id}",
+                        "details": {"path": str(directory / stale)},
+                        "repairable": True,
+                    }
+                )
         return issues
 
     def _invalid_status_issues(self) -> list[dict]:

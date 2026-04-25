@@ -2,6 +2,7 @@
 .pytest_cache/
 __pycache__/
 *.py[cod]
+dist/
 
 # Local runtime wiki data. Keep docs and tests committed; keep generated memory private.
 memory/

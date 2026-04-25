@@ -63,6 +63,29 @@ class QueryService:
             "warnings": [f"Object not found: {object_id}"],
         }
 
+    def graph(self, object_id: str, max_items: int = 20) -> dict:
+        nodes: list[dict] = []
+        edges: list[dict] = []
+        seen_nodes: set[str] = set()
+
+        root_type, root = self._find_object(object_id)
+        if root is None or root_type is None:
+            return {"result_type": "graph", "data": {"root_id": object_id, "nodes": [], "edges": []}, "warnings": [f"Object not found: {object_id}"]}
+
+        self._append_graph_node(nodes, seen_nodes, root_type, root)
+        for object_type in ("source", "node", "knowledge", "activity", "work_item"):
+            for obj in self.repository.list(object_type):
+                if obj["id"] == object_id:
+                    continue
+                relation = self._relation_to(obj, object_id)
+                if relation is None:
+                    continue
+                self._append_graph_node(nodes, seen_nodes, object_type, obj)
+                edges.append({"source_id": object_id, "target_id": obj["id"], "relation": relation})
+                if len(nodes) >= max_items:
+                    return {"result_type": "graph", "data": {"root_id": object_id, "nodes": nodes, "edges": edges}, "warnings": []}
+        return {"result_type": "graph", "data": {"root_id": object_id, "nodes": nodes, "edges": edges}, "warnings": []}
+
     def recent(self, max_items: int = 20, filters: dict | None = None) -> dict:
         filters = filters or {}
         entries: list[dict] = []
@@ -155,6 +178,53 @@ class QueryService:
         if query in payload:
             score += 5
         return score
+
+    def _find_object(self, object_id: str) -> tuple[str | None, dict | None]:
+        for object_type in ("source", "node", "knowledge", "activity", "work_item"):
+            obj = self.repository.get(object_type, object_id)
+            if obj is not None:
+                return object_type, obj
+        return None, None
+
+    def _append_graph_node(self, nodes: list[dict], seen_nodes: set[str], object_type: str, obj: dict) -> None:
+        if obj["id"] in seen_nodes:
+            return
+        seen_nodes.add(obj["id"])
+        nodes.append(
+            {
+                "object_type": object_type,
+                "id": obj["id"],
+                "kind": obj.get("kind", object_type),
+                "title": obj.get("title") or obj.get("name") or obj["id"],
+                "status": obj.get("status") or obj.get("lifecycle_state"),
+            }
+        )
+
+    def _relation_to(self, obj: dict, object_id: str) -> str | None:
+        relation_fields = {
+            "subject_refs": "subject",
+            "related_node_refs": "related_node",
+            "related_work_item_refs": "related_work_item",
+            "produced_object_refs": "produced_object",
+            "source_refs": "source",
+            "related_knowledge_refs": "related_knowledge",
+            "depends_on": "depends_on",
+            "blocked_by": "blocked_by",
+            "child_refs": "child",
+        }
+        for field, relation in relation_fields.items():
+            values = obj.get(field, [])
+            if isinstance(values, list) and object_id in values:
+                return relation
+        if obj.get("parent_ref") == object_id:
+            return "parent"
+        for evidence in obj.get("evidence_refs", []):
+            if isinstance(evidence, dict) and evidence.get("source_id") == object_id:
+                return "evidence"
+        payload = obj.get("payload", {})
+        if isinstance(payload, dict) and object_id in payload.values():
+            return "payload"
+        return None
 
     def _matches_filters(self, object_type: str, obj: dict, filters: dict) -> bool:
         object_types = self._filter_values(filters, "object_type", "object_types")

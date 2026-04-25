@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import re
 from pathlib import Path
+from urllib.request import urlopen
 
 from wiki_memory.adapters.repo.adapter import RepoAdapter
 from wiki_memory.domain.objects.activity import Activity
@@ -151,6 +153,60 @@ class IngestService:
     def ingest_markdown(self, file_path: str | Path) -> dict:
         return self._ingest_document(file_path, kind="markdown", content_type="markdown")
 
+    def ingest_web(self, url: str) -> dict:
+        with urlopen(url, timeout=20) as response:
+            raw = response.read()
+            content_type_header = response.headers.get("content-type", "")
+        text = raw.decode("utf-8", errors="replace")
+        text = self._html_to_text(text) if "html" in content_type_header or "<html" in text.lower() else text
+        return self._ingest_text_source(
+            identity=f"source|web|{url}",
+            kind="web",
+            title=url,
+            origin={"url": url},
+            text=text,
+            content_type="text",
+            activity_kind="reading",
+            artifact_ref=url,
+        )
+
+    def ingest_pdf(self, file_path: str | Path) -> dict:
+        path = Path(file_path).resolve()
+        if not path.exists() or not path.is_file():
+            raise ValueError(f"PDF path is not a file: {path}")
+        raw = path.read_bytes()
+        text = raw.decode("utf-8", errors="ignore").strip()
+        if text and not text.startswith("%PDF"):
+            return self._ingest_text_source(
+                identity=f"source|pdf|{path}",
+                kind="pdf",
+                title=path.name,
+                origin={"path": str(path)},
+                text=text,
+                content_type="text",
+                activity_kind="reading",
+                artifact_ref=str(path),
+            )
+        return self._ingest_binary_stub(path, kind="pdf", raw=raw)
+
+    def ingest_conversation(self, title: str, messages: list[dict], origin: dict | None = None) -> dict:
+        lines = []
+        for message in messages:
+            role = message.get("role", "unknown")
+            content = message.get("content", "")
+            lines.append(f"{role}: {content}")
+        text = "\n\n".join(lines)
+        return self._ingest_text_source(
+            identity=f"source|conversation|{title}|{hashlib.sha256(text.encode('utf-8')).hexdigest()}",
+            kind="conversation",
+            title=title,
+            origin=origin or {"title": title},
+            text=text,
+            content_type="structured",
+            activity_kind="meeting",
+            artifact_ref=title,
+        )
+
     def _upsert_operation(self, object_type: str, object_id: str, changes: dict) -> PatchOperation:
         exists = self.object_repository.exists(object_type, object_id)
         payload = dict(changes)
@@ -202,23 +258,44 @@ class IngestService:
         if not path.exists() or not path.is_file():
             raise ValueError(f"File path is not a file: {path}")
         text = path.read_text(encoding="utf-8")
+        return self._ingest_text_source(
+            identity=f"source|{kind}|{path}",
+            kind=kind,
+            title=path.name,
+            origin={"path": str(path)},
+            text=text,
+            content_type=content_type,
+            activity_kind="reading",
+            artifact_ref=str(path),
+        )
+
+    def _ingest_text_source(
+        self,
+        identity: str,
+        kind: str,
+        title: str,
+        origin: dict,
+        text: str,
+        content_type: str,
+        activity_kind: str,
+        artifact_ref: str,
+    ) -> dict:
         timestamp = utc_now_iso()
         fingerprint = hashlib.sha256(text.encode("utf-8")).hexdigest()
-        source_id = stable_id("src", f"source|{kind}|{path}")
-        node_id = stable_id("node", f"node|document|{path}")
-        segments = self._document_segments(path, text, content_type)
+        source_id = stable_id("src", identity)
+        node_id = stable_id("node", f"node|document|{identity}")
+        segments = self._document_segments(artifact_ref, text, content_type)
 
         source = Source(
             id=source_id,
             kind=kind,
-            origin={"path": str(path)},
-            title=path.name,
-            identity_key=f"source|{kind}|{path}",
+            origin=origin,
+            title=title,
+            identity_key=identity,
             fingerprint=fingerprint,
             content_type=content_type,
             payload={
                 "text": text,
-                "path": str(path),
                 "byte_count": len(text.encode("utf-8")),
                 "segment_count": len(segments),
             },
@@ -231,21 +308,21 @@ class IngestService:
         node = Node(
             id=node_id,
             kind="document",
-            name=path.name,
-            slug=slugify(path.name),
-            identity_key=f"node|document|{path}",
-            aliases=[str(path)],
+            name=title,
+            slug=slugify(title),
+            identity_key=f"node|document|{identity}",
+            aliases=[artifact_ref],
             summary=f"{content_type.title()} document with {len(segments)} source segments.",
             status="active",
             created_at=timestamp,
             updated_at=timestamp,
         )
         activity = Activity(
-            id=stable_id("act", f"activity|{kind}_ingest|{path}|{fingerprint}"),
-            kind="reading",
-            title=f"Ingest document: {path.name}",
-            summary=f"Captured {path.name} as a {content_type} source.",
-            identity_key=f"activity|{kind}_ingest|{path}|{fingerprint}",
+            id=stable_id("act", f"activity|{kind}_ingest|{identity}|{fingerprint}"),
+            kind=activity_kind,
+            title=f"Ingest source: {title}",
+            summary=f"Captured {title} as a {content_type} source.",
+            identity_key=f"activity|{kind}_ingest|{identity}|{fingerprint}",
             status="finalized",
             started_at=timestamp,
             ended_at=timestamp,
@@ -253,7 +330,7 @@ class IngestService:
             related_work_item_refs=[],
             source_refs=[source.id],
             produced_object_refs=[node.id],
-            artifact_refs=[str(path)],
+            artifact_refs=[artifact_ref],
             created_at=timestamp,
             updated_at=timestamp,
         )
@@ -314,7 +391,7 @@ class IngestService:
         ]
         patch = WikiPatch(
             id=new_id("patch"),
-            source={"type": "system", "id": f"wiki.ingest.{kind}", "path": str(path)},
+            source={"type": "system", "id": f"wiki.ingest.{kind}", **origin},
             operations=operations,
             created_at=timestamp,
         )
@@ -331,7 +408,64 @@ class IngestService:
             "projection_count": projection_result["count"],
         }
 
-    def _document_segments(self, path: Path, text: str, content_type: str) -> list[SourceSegment]:
+    def _ingest_binary_stub(self, path: Path, kind: str, raw: bytes) -> dict:
+        timestamp = utc_now_iso()
+        fingerprint = hashlib.sha256(raw).hexdigest()
+        identity = f"source|{kind}|{path}"
+        source_id = stable_id("src", identity)
+        source = Source(
+            id=source_id,
+            kind=kind,
+            origin={"path": str(path)},
+            title=path.name,
+            identity_key=identity,
+            fingerprint=fingerprint,
+            content_type="binary_stub",
+            payload={"path": str(path), "byte_count": len(raw), "sha256": fingerprint},
+            segments=[],
+            metadata={"scanned_at": timestamp},
+            status="active",
+            created_at=timestamp,
+            updated_at=timestamp,
+        )
+        operation = self._upsert_operation(
+            object_type="source",
+            object_id=source.id,
+            changes={
+                "kind": source.kind,
+                "origin": source.origin,
+                "title": source.title,
+                "identity_key": source.identity_key,
+                "fingerprint": source.fingerprint,
+                "content_type": source.content_type,
+                "payload": source.payload,
+                "segments": source.segments,
+                "metadata": source.metadata,
+                "status": source.status,
+                "created_at": source.created_at,
+                "updated_at": source.updated_at,
+            },
+        )
+        patch = WikiPatch(
+            id=new_id("patch"),
+            source={"type": "system", "id": f"wiki.ingest.{kind}", "path": str(path)},
+            operations=[operation],
+            created_at=timestamp,
+        )
+        apply_result = self.patch_applier.apply(patch)
+        projection_result = self.projector.rebuild()
+        return {
+            "patch_id": apply_result.patch_id,
+            "source_id": source.id,
+            "node_id": None,
+            "activity_id": None,
+            "segment_count": 0,
+            "applied_operations": apply_result.applied_operations,
+            "audit_event_ids": apply_result.audit_event_ids,
+            "projection_count": projection_result["count"],
+        }
+
+    def _document_segments(self, locator: str, text: str, content_type: str) -> list[SourceSegment]:
         if content_type == "markdown":
             chunks = self._markdown_chunks(text)
         else:
@@ -346,12 +480,17 @@ class IngestService:
             segments.append(
                 SourceSegment(
                     segment_id=segment_id,
-                    locator={"kind": "path", "path": str(path), "segment_index": index},
+                    locator={"kind": "source", "ref": locator, "segment_index": index},
                     excerpt=chunk[:800],
                     hash=hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
                 )
             )
         return segments
+
+    def _html_to_text(self, html: str) -> str:
+        html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
+        html = re.sub(r"(?s)<[^>]+>", "\n", html)
+        return re.sub(r"\n{3,}", "\n\n", html).strip()
 
     def _markdown_chunks(self, text: str) -> list[str]:
         chunks: list[str] = []

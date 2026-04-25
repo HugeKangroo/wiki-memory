@@ -40,6 +40,10 @@ class QuerySearchInput(StrictModel):
     query: str
 
 
+class QueryGraphInput(StrictModel):
+    id: str
+
+
 class QueryContextArgs(BaseToolArgs):
     mode: Literal["context"]
     input_data: QueryContextInput
@@ -65,8 +69,13 @@ class QuerySearchArgs(BaseToolArgs):
     input_data: QuerySearchInput
 
 
+class QueryGraphArgs(BaseToolArgs):
+    mode: Literal["graph"]
+    input_data: QueryGraphInput
+
+
 QueryToolArgs = Annotated[
-    QueryContextArgs | QueryExpandArgs | QueryPageArgs | QueryRecentArgs | QuerySearchArgs,
+    QueryContextArgs | QueryExpandArgs | QueryPageArgs | QueryRecentArgs | QuerySearchArgs | QueryGraphArgs,
     Field(discriminator="mode"),
 ]
 
@@ -135,6 +144,22 @@ class CrystallizeSupersedeInput(StrictModel):
     reason: str | None = None
 
 
+class CrystallizeContestInput(StrictModel):
+    knowledge_id: str
+    actor: dict | None = None
+    reason: str | None = None
+
+
+class CrystallizeBatchEntryInput(StrictModel):
+    mode: Literal["activity", "knowledge", "work_item"]
+    input_data: dict
+
+
+class CrystallizeBatchInput(StrictModel):
+    entries: list[CrystallizeBatchEntryInput]
+    actor: dict | None = None
+
+
 class CrystallizeActivityArgs(BaseToolArgs):
     mode: Literal["activity"]
     input_data: CrystallizeActivityInput
@@ -160,12 +185,24 @@ class CrystallizeSupersedeArgs(BaseToolArgs):
     input_data: CrystallizeSupersedeInput
 
 
+class CrystallizeContestArgs(BaseToolArgs):
+    mode: Literal["contest"]
+    input_data: CrystallizeContestInput
+
+
+class CrystallizeBatchArgs(BaseToolArgs):
+    mode: Literal["batch"]
+    input_data: CrystallizeBatchInput
+
+
 CrystallizeToolArgs = Annotated[
     CrystallizeActivityArgs
     | CrystallizeKnowledgeArgs
     | CrystallizeWorkItemArgs
     | CrystallizePromoteArgs
-    | CrystallizeSupersedeArgs,
+    | CrystallizeSupersedeArgs
+    | CrystallizeContestArgs
+    | CrystallizeBatchArgs,
     Field(discriminator="mode"),
 ]
 
@@ -283,6 +320,20 @@ class IngestMarkdownInput(StrictModel):
     path: str
 
 
+class IngestWebInput(StrictModel):
+    url: str
+
+
+class IngestPdfInput(StrictModel):
+    path: str
+
+
+class IngestConversationInput(StrictModel):
+    title: str
+    messages: list[dict]
+    origin: dict | None = None
+
+
 class IngestRepoArgs(BaseToolArgs):
     mode: Literal["repo"]
     input_data: IngestRepoInput
@@ -298,7 +349,22 @@ class IngestMarkdownArgs(BaseToolArgs):
     input_data: IngestMarkdownInput
 
 
+class IngestWebArgs(BaseToolArgs):
+    mode: Literal["web"]
+    input_data: IngestWebInput
+
+
+class IngestPdfArgs(BaseToolArgs):
+    mode: Literal["pdf"]
+    input_data: IngestPdfInput
+
+
+class IngestConversationArgs(BaseToolArgs):
+    mode: Literal["conversation"]
+    input_data: IngestConversationInput
+
+
 IngestToolArgs = Annotated[
-    IngestRepoArgs | IngestFileArgs | IngestMarkdownArgs,
+    IngestRepoArgs | IngestFileArgs | IngestMarkdownArgs | IngestWebArgs | IngestPdfArgs | IngestConversationArgs,
     Field(discriminator="mode"),
 ]

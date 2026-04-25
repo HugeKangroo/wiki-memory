@@ -43,6 +43,9 @@ Supported modes:
 - `repo`
 - `file`
 - `markdown`
+- `web`
+- `pdf`
+- `conversation`
 
 ### `wiki_query`
 
@@ -55,6 +58,7 @@ Supported modes:
 - `page`
 - `recent`
 - `search`
+- `graph`
 
 ### `wiki_crystallize`
 
@@ -67,6 +71,8 @@ Supported modes:
 - `work_item`
 - `promote`
 - `supersede`
+- `contest`
+- `batch`
 
 ### `wiki_lint`
 

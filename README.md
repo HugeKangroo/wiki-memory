@@ -18,9 +18,9 @@ The MCP server exposes exactly five tools:
 
 ### Supported Modes
 
-- `wiki_ingest`: `repo`, `file`, `markdown`
-- `wiki_query`: `context`, `expand`, `page`, `recent`, `search`
-- `wiki_crystallize`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`
+- `wiki_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`
+- `wiki_query`: `context`, `expand`, `page`, `recent`, `search`, `graph`
+- `wiki_crystallize`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`, `contest`, `batch`
 - `wiki_lint`: `structure`, `audit`, `reindex`, `repair`
 - `wiki_dream`: `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
 
@@ -71,6 +71,9 @@ Allowed modes:
 - `repo`
 - `file`
 - `markdown`
+- `web`
+- `pdf`
+- `conversation`
 
 `repo` requires:
 
@@ -99,6 +102,7 @@ Allowed modes:
 ```
 
 `file` stores plain text sources. `markdown` stores markdown sources and uses headings as segment boundaries where possible.
+`web` stores fetched text from a URL, `pdf` stores extracted text when readable or a binary stub otherwise, and `conversation` stores role/content message lists.
 
 #### `wiki_query`
 
@@ -109,6 +113,7 @@ Allowed modes:
 - `page`
 - `recent`
 - `search`
+- `graph`
 
 Examples:
 
@@ -207,6 +212,22 @@ Supported query filters:
 - `node_id` or `node_ids`
 - `source_id` or `source_ids`
 
+`graph` returns a local relationship neighborhood:
+
+```json
+{
+  "args": {
+    "mode": "graph",
+    "input_data": {
+      "id": "node:..."
+    },
+    "options": {
+      "max_items": 20
+    }
+  }
+}
+```
+
 #### `wiki_crystallize`
 
 Allowed modes:
@@ -216,6 +237,8 @@ Allowed modes:
 - `work_item`
 - `promote`
 - `supersede`
+- `contest`
+- `batch`
 
 Examples:
 
@@ -231,6 +254,51 @@ Examples:
       "summary": "Captured reusable findings.",
       "source_refs": ["src:..."],
       "related_node_refs": ["node:..."]
+    }
+  }
+}
+```
+
+`contest`
+
+```json
+{
+  "args": {
+    "mode": "contest",
+    "input_data": {
+      "knowledge_id": "know:...",
+      "reason": "conflicting source found"
+    }
+  }
+}
+```
+
+`batch` writes multiple `activity`, `knowledge`, and `work_item` entries:
+
+```json
+{
+  "args": {
+    "mode": "batch",
+    "input_data": {
+      "entries": [
+        {
+          "mode": "knowledge",
+          "input_data": {
+            "kind": "fact",
+            "title": "Reusable fact",
+            "summary": "Captured by the agent.",
+            "subject_refs": ["node:..."],
+            "evidence_refs": [],
+            "payload": {
+              "subject": "node:...",
+              "predicate": "observed",
+              "value": true,
+              "object": null
+            },
+            "confidence": 0.7
+          }
+        }
+      ]
     }
   }
 }
@@ -587,3 +655,20 @@ Add this to `.vscode/mcp.json` in the workspace or your user `mcp.json`:
 - all four host examples above use stdio transport
 - `uv run --directory ... wiki-memory-mcp` avoids relying on the caller's current working directory
 - if a tool call omits `root`, the server resolves it to `~/wiki-memory`
+
+## Release
+
+Build locally:
+
+```bash
+uv build
+```
+
+Create a GitHub release by pushing a semver tag:
+
+```bash
+git tag v0.3.0
+git push origin v0.3.0
+```
+
+The release workflow builds the package and attaches `dist/*` artifacts to the GitHub release.
