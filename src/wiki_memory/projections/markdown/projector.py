@@ -344,25 +344,40 @@ class MarkdownProjector:
         modules = payload.get("python_modules", [])
         if not modules:
             return []
-        lines = ["", "## Code Interfaces", ""]
-        for module in modules[:30]:
+        lines = ["", "## API Reference", ""]
+        for module in sorted(modules, key=self._module_sort_key)[:30]:
             path = module.get("path")
             if not path:
                 continue
-            lines.append(f"### `{path}`")
+            lines.append(f"### Module `{path}`")
             classes = module.get("classes") or []
             functions = module.get("functions") or []
             imports = module.get("imports") or []
             if classes:
-                lines.append(f"- Classes: {', '.join(f'`{name}`' for name in classes[:12])}")
+                lines.extend(["", "#### Classes", ""])
+                lines.extend([f"- `{name}`" for name in classes[:12]])
             if functions:
-                lines.append(f"- Functions: {', '.join(f'`{name}`' for name in functions[:20])}")
+                lines.extend(["", "#### Functions and Methods", ""])
+                lines.extend([f"- `{name}`" for name in functions[:20]])
             if imports:
-                lines.append(f"- Imports: {', '.join(f'`{name}`' for name in imports[:10])}")
+                lines.extend(["", "#### Imports", ""])
+                lines.extend([f"- `{name}`" for name in imports[:10]])
             if not classes and not functions and not imports:
                 lines.append("- No public interfaces detected.")
             lines.append("")
         return lines
+
+    def _module_sort_key(self, module: dict) -> tuple[int, str]:
+        path = str(module.get("path") or "")
+        if path.startswith("src/"):
+            priority = 0
+        elif path.startswith("app/") or path.startswith("lib/") or path.startswith("packages/"):
+            priority = 1
+        elif path.startswith("tests/"):
+            priority = 3
+        else:
+            priority = 2
+        return priority, path
 
     def _render_readable_page(self, object_type: str, obj: dict, title: str) -> str:
         lines = [
