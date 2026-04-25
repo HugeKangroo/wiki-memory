@@ -56,26 +56,9 @@ class DreamService:
         }
 
     def merge_duplicates(self) -> dict:
-        items = self.object_repository.list("knowledge")
-        buckets: dict[tuple[str, str, str], list[dict]] = {}
-        for item in items:
-            if item.get("kind") != "fact":
-                continue
-            subject_refs = item.get("subject_refs", [])
-            payload = item.get("payload", {})
-            if not subject_refs or not isinstance(payload, dict) or "predicate" not in payload:
-                continue
-            key = (
-                str(subject_refs[0]),
-                str(payload.get("predicate")),
-                self._normalize_value(payload.get("value")),
-                self._normalize_value(payload.get("object")),
-            )
-            buckets.setdefault(key, []).append(item)
-
         operations: list[PatchOperation] = []
         merged = 0
-        for duplicates in buckets.values():
+        for duplicates in self._duplicate_groups():
             if len(duplicates) < 2:
                 continue
             winner = self._pick_winner(duplicates)
@@ -145,6 +128,56 @@ class DreamService:
             "decayed": len(operations),
         }
 
+    def report(
+        self,
+        min_confidence: float = 0.75,
+        min_evidence: int = 1,
+        reference_time: str | None = None,
+        stale_after_days: int = 30,
+    ) -> dict:
+        now = self._parse_time(reference_time) if reference_time else self._parse_time(utc_now_iso())
+        threshold = now - timedelta(days=stale_after_days)
+        promote_candidate_ids: list[str] = []
+        low_evidence_candidate_ids: list[str] = []
+        stale_candidate_ids: list[str] = []
+
+        for item in self.object_repository.list("knowledge"):
+            status = item.get("status")
+            evidence_count = len(item.get("evidence_refs", []))
+            confidence = float(item.get("confidence", 0.0))
+            if status == "candidate" and confidence >= min_confidence and item.get("subject_refs"):
+                if evidence_count >= min_evidence:
+                    promote_candidate_ids.append(item["id"])
+                else:
+                    low_evidence_candidate_ids.append(item["id"])
+            if status in {"active", "candidate"} and item.get("last_verified_at"):
+                if self._parse_time(item["last_verified_at"]) < threshold:
+                    stale_candidate_ids.append(item["id"])
+
+        duplicate_groups = [
+            [item["id"] for item in sorted(group, key=lambda candidate: str(candidate.get("title") or candidate["id"]))]
+            for group in self._duplicate_groups()
+            if len(group) > 1
+        ]
+        duplicate_groups.sort(key=lambda group: group[0])
+
+        return {
+            "result_type": "dream_report",
+            "data": {
+                "promote_candidate_ids": sorted(promote_candidate_ids),
+                "low_evidence_candidate_ids": sorted(low_evidence_candidate_ids),
+                "stale_candidate_ids": sorted(stale_candidate_ids),
+                "duplicate_groups": duplicate_groups,
+                "counts": {
+                    "promote_candidates": len(promote_candidate_ids),
+                    "low_evidence_candidates": len(low_evidence_candidate_ids),
+                    "stale_candidates": len(stale_candidate_ids),
+                    "duplicate_groups": len(duplicate_groups),
+                },
+            },
+            "warnings": [],
+        }
+
     def cycle(
         self,
         min_confidence: float = 0.75,
@@ -198,6 +231,26 @@ class DreamService:
 
     def _normalize_value(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+    def _duplicate_groups(self) -> list[list[dict]]:
+        buckets: dict[tuple[str, str, str], list[dict]] = {}
+        for item in self.object_repository.list("knowledge"):
+            if item.get("status") in {"superseded", "archived"}:
+                continue
+            if item.get("kind") != "fact":
+                continue
+            subject_refs = item.get("subject_refs", [])
+            payload = item.get("payload", {})
+            if not subject_refs or not isinstance(payload, dict) or "predicate" not in payload:
+                continue
+            key = (
+                str(subject_refs[0]),
+                str(payload.get("predicate")),
+                self._normalize_value(payload.get("value")),
+                self._normalize_value(payload.get("object")),
+            )
+            buckets.setdefault(key, []).append(item)
+        return list(buckets.values())
 
     def _merge_evidence_refs(self, items: list[dict]) -> list[dict]:
         seen: set[tuple[str, str]] = set()

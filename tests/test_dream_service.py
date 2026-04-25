@@ -152,6 +152,40 @@ class DreamServiceTest(unittest.TestCase):
                 {(source_one, "seg-1"), (source_two, "seg-1")},
             )
 
+    def test_merge_duplicates_is_noop_after_losers_are_superseded(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            subject_id = self._seed_node(root)
+            source_one = self._seed_source(root, "src:one")
+            source_two = self._seed_source(root, "src:two")
+            crystallize = CrystallizeService(root)
+            dream = DreamService(root)
+
+            for title, source_id, confidence in (("Duplicate one", source_one, 0.7), ("Duplicate two", source_two, 0.9)):
+                crystallize.create_knowledge(
+                    {
+                        "kind": "fact",
+                        "title": title,
+                        "summary": "Duplicate fact.",
+                        "subject_refs": [subject_id],
+                        "evidence_refs": [{"source_id": source_id, "segment_id": "seg-1"}],
+                        "payload": {
+                            "subject": subject_id,
+                            "predicate": "primary_language",
+                            "value": "python",
+                            "object": None,
+                        },
+                        "confidence": confidence,
+                    }
+                )
+
+            first = dream.merge_duplicates()
+            second = dream.merge_duplicates()
+
+            self.assertEqual(first["merged"], 1)
+            self.assertEqual(second["status"], "noop")
+            self.assertEqual(second["merged"], 0)
+
     def test_merge_duplicates_does_not_merge_facts_with_different_object_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -289,6 +323,109 @@ class DreamServiceTest(unittest.TestCase):
             self.assertEqual(result["decayed"], 1)
             self.assertEqual(stored["status"], "stale")
             self.assertEqual(stored["reason"], "dream_decay_stale")
+
+    def test_report_summarizes_candidates_duplicates_stale_and_low_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            subject_id = self._seed_node(root)
+            source_one = self._seed_source(root, "src:one")
+            source_two = self._seed_source(root, "src:two")
+            crystallize = CrystallizeService(root)
+            dream = DreamService(root)
+
+            promotable = crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Promotable report item",
+                    "summary": "Enough confidence and evidence.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [{"source_id": source_one, "segment_id": "seg-1"}],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "report_promote",
+                        "value": True,
+                        "object": None,
+                    },
+                    "confidence": 0.9,
+                }
+            )
+            low_evidence = crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Low evidence report item",
+                    "summary": "No evidence.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "report_low_evidence",
+                        "value": True,
+                        "object": None,
+                    },
+                    "confidence": 0.9,
+                }
+            )
+            duplicate_one = crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Duplicate one",
+                    "summary": "Duplicate report fact.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [{"source_id": source_one, "segment_id": "seg-1"}],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "duplicate",
+                        "value": "same",
+                        "object": None,
+                    },
+                    "confidence": 0.7,
+                }
+            )
+            duplicate_two = crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Duplicate two",
+                    "summary": "Duplicate report fact.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [{"source_id": source_two, "segment_id": "seg-1"}],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "duplicate",
+                        "value": "same",
+                        "object": None,
+                    },
+                    "confidence": 0.8,
+                }
+            )
+            stale = crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Stale report item",
+                    "summary": "Old verification.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [{"source_id": source_one, "segment_id": "seg-1"}],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "report_stale",
+                        "value": True,
+                        "object": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.8,
+                    "last_verified_at": "2026-01-01T00:00:00+00:00",
+                }
+            )
+
+            report = dream.report(reference_time="2026-04-24T00:00:00+00:00", min_confidence=0.75, min_evidence=1)
+
+            self.assertEqual(report["result_type"], "dream_report")
+            self.assertIn(promotable["knowledge_id"], report["data"]["promote_candidate_ids"])
+            self.assertIn(low_evidence["knowledge_id"], report["data"]["low_evidence_candidate_ids"])
+            self.assertIn(stale["knowledge_id"], report["data"]["stale_candidate_ids"])
+            self.assertEqual(
+                {tuple(group) for group in report["data"]["duplicate_groups"]},
+                {(duplicate_one["knowledge_id"], duplicate_two["knowledge_id"])},
+            )
 
     def test_cycle_runs_all_dream_steps_and_rebuilds_projection(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

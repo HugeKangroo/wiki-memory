@@ -191,6 +191,13 @@ class DreamCycleInput(StrictModel):
     stale_after_days: int | None = None
 
 
+class DreamReportInput(StrictModel):
+    min_confidence: float | None = None
+    min_evidence: int | None = None
+    reference_time: str | None = None
+    stale_after_days: int | None = None
+
+
 class DreamPromoteCandidatesArgs(BaseToolArgs):
     mode: Literal["promote_candidates"]
     input_data: DreamPromoteCandidatesInput
@@ -211,8 +218,13 @@ class DreamCycleArgs(BaseToolArgs):
     input_data: DreamCycleInput
 
 
+class DreamReportArgs(BaseToolArgs):
+    mode: Literal["report"]
+    input_data: DreamReportInput
+
+
 DreamToolArgs = Annotated[
-    DreamPromoteCandidatesArgs | DreamMergeDuplicatesArgs | DreamDecayStaleArgs | DreamCycleArgs,
+    DreamPromoteCandidatesArgs | DreamMergeDuplicatesArgs | DreamDecayStaleArgs | DreamCycleArgs | DreamReportArgs,
     Field(discriminator="mode"),
 ]
 
@@ -263,12 +275,30 @@ class IngestRepoInput(StrictModel):
     path: str
 
 
+class IngestFileInput(StrictModel):
+    path: str
+
+
+class IngestMarkdownInput(StrictModel):
+    path: str
+
+
 class IngestRepoArgs(BaseToolArgs):
     mode: Literal["repo"]
     input_data: IngestRepoInput
 
 
+class IngestFileArgs(BaseToolArgs):
+    mode: Literal["file"]
+    input_data: IngestFileInput
+
+
+class IngestMarkdownArgs(BaseToolArgs):
+    mode: Literal["markdown"]
+    input_data: IngestMarkdownInput
+
+
 IngestToolArgs = Annotated[
-    IngestRepoArgs,
+    IngestRepoArgs | IngestFileArgs | IngestMarkdownArgs,
     Field(discriminator="mode"),
 ]

@@ -18,11 +18,11 @@ The MCP server exposes exactly five tools:
 
 ### Supported Modes
 
-- `wiki_ingest`: `repo`
+- `wiki_ingest`: `repo`, `file`, `markdown`
 - `wiki_query`: `context`, `expand`, `page`, `recent`, `search`
 - `wiki_crystallize`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`
 - `wiki_lint`: `structure`, `audit`, `reindex`, `repair`
-- `wiki_dream`: `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`
+- `wiki_dream`: `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
 
 ### Required MCP Call Shape
 
@@ -69,6 +69,8 @@ What changes per tool is the allowed `mode` set and the required shape of `input
 Allowed modes:
 
 - `repo`
+- `file`
+- `markdown`
 
 `repo` requires:
 
@@ -82,6 +84,21 @@ Allowed modes:
   }
 }
 ```
+
+`file` and `markdown` both require a local path:
+
+```json
+{
+  "args": {
+    "mode": "markdown",
+    "input_data": {
+      "path": "/absolute/path/to/guide.md"
+    }
+  }
+}
+```
+
+`file` stores plain text sources. `markdown` stores markdown sources and uses headings as segment boundaries where possible.
 
 #### `wiki_query`
 
@@ -113,6 +130,8 @@ Examples:
   }
 }
 ```
+
+`context` also accepts scope filters such as `object_types`, `kind`, `status`, and `node_ids`.
 
 `expand`
 
@@ -151,7 +170,11 @@ Examples:
     "mode": "recent",
     "input_data": {},
     "options": {
-      "max_items": 20
+      "max_items": 20,
+      "filters": {
+        "object_type": "knowledge",
+        "status": "active"
+      }
     }
   }
 }
@@ -167,11 +190,22 @@ Examples:
       "query": "memory"
     },
     "options": {
-      "max_items": 20
+      "max_items": 20,
+      "filters": {
+        "object_types": ["source", "knowledge"]
+      }
     }
   }
 }
 ```
+
+Supported query filters:
+
+- `object_type` or `object_types`
+- `kind` or `kinds`
+- `status` or `statuses`
+- `node_id` or `node_ids`
+- `source_id` or `source_ids`
 
 #### `wiki_crystallize`
 
@@ -342,6 +376,7 @@ Allowed modes:
 - `merge_duplicates`
 - `decay_stale`
 - `cycle`
+- `report`
 
 Examples:
 
@@ -399,6 +434,24 @@ Examples:
   }
 }
 ```
+
+`report`
+
+```json
+{
+  "args": {
+    "mode": "report",
+    "input_data": {
+      "min_confidence": 0.75,
+      "min_evidence": 1,
+      "reference_time": "2026-04-24T00:00:00+00:00",
+      "stale_after_days": 30
+    }
+  }
+}
+```
+
+`report` is read-only. It returns promotable candidate ids, low-evidence candidate ids, stale candidate ids, duplicate groups, and counts.
 
 ### Run
 

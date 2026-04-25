@@ -41,6 +41,8 @@ Purpose:
 
 Supported modes:
 - `repo`
+- `file`
+- `markdown`
 
 ### `wiki_query`
 
@@ -87,6 +89,7 @@ Supported modes:
 - `merge_duplicates`
 - `decay_stale`
 - `cycle`
+- `report`
 
 `cycle` runs the full dream sequence in deterministic order:
 
@@ -94,6 +97,9 @@ Supported modes:
 2. merge duplicate active/candidate knowledge
 3. decay stale knowledge that has aged past threshold
 4. rebuild markdown projection
+
+`report` is read-only and summarizes promotable candidates, duplicate groups,
+stale items, and low-evidence candidates without applying patches.
 
 ## Dream Semantics
 

@@ -20,6 +20,10 @@ def wiki_ingest(root: str | Path | None, mode: str, input_data: dict, options: d
     service = IngestService(resolve_root(root))
     if mode == "repo":
         return service.ingest_repo(input_data["path"])
+    if mode == "file":
+        return service.ingest_file(input_data["path"])
+    if mode == "markdown":
+        return service.ingest_markdown(input_data["path"])
     raise ValueError(f"Unsupported ingest mode: {mode}")
 
 
@@ -40,9 +44,9 @@ def wiki_query(root: str | Path | None, mode: str, input_data: dict, options: di
     if mode == "page":
         return service.page(object_id=input_data["id"])
     if mode == "recent":
-        return service.recent(max_items=options.get("max_items", 20))
+        return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
     if mode == "search":
-        return service.search(query=input_data["query"], max_items=options.get("max_items", 20))
+        return service.search(query=input_data["query"], max_items=options.get("max_items", 20), filters=options.get("filters"))
     raise ValueError(f"Unsupported query mode: {mode}")
 
 
@@ -105,6 +109,13 @@ def wiki_dream(root: str | Path | None, mode: str, input_data: dict | None = Non
         )
     if mode == "cycle":
         return service.cycle(
+            min_confidence=input_data.get("min_confidence", 0.75),
+            min_evidence=input_data.get("min_evidence", 1),
+            reference_time=input_data.get("reference_time"),
+            stale_after_days=input_data.get("stale_after_days", 30),
+        )
+    if mode == "report":
+        return service.report(
             min_confidence=input_data.get("min_confidence", 0.75),
             min_evidence=input_data.get("min_evidence", 1),
             reference_time=input_data.get("reference_time"),

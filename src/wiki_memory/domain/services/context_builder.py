@@ -34,7 +34,7 @@ class ContextBuilder:
             conflicts=[],
             missing_context=[] if selected else ["No relevant context found yet."],
             recommended_next_reads=[item.id for item in selected[:5]],
-            citations=[],
+            citations=self._citations(selected),
             generated_at=generated_at,
             expires_at=None,
         )
@@ -58,6 +58,24 @@ class ContextBuilder:
         return [self._to_item(object_type, obj) for obj in self.repository.list(object_type)]
 
     def _filter(self, items: list[ContextItem], scope: dict) -> list[ContextItem]:
+        object_types = set(scope.get("object_types", []))
+        if scope.get("object_type"):
+            object_types.add(str(scope["object_type"]))
+        if object_types:
+            items = [item for item in items if item.object_type in object_types]
+
+        statuses = set(scope.get("statuses", []))
+        if scope.get("status"):
+            statuses.add(str(scope["status"]))
+        if statuses:
+            items = [item for item in items if item.status in statuses]
+
+        kinds = set(scope.get("kinds", []))
+        if scope.get("kind"):
+            kinds.add(str(scope["kind"]))
+        if kinds:
+            items = [item for item in items if item.kind in kinds]
+
         node_ids = set(scope.get("node_ids", []))
         if not node_ids:
             return self._rank(items)
@@ -100,6 +118,27 @@ class ContextBuilder:
             status=status,
             summary=summary,
         )
+
+    def _citations(self, items: list[ContextItem]) -> list[dict]:
+        citations: list[dict] = []
+        seen: set[tuple[str, str]] = set()
+        for item in items:
+            obj = self.repository.get(item.object_type, item.id)
+            if obj is None:
+                continue
+            for evidence in obj.get("evidence_refs", []):
+                if not isinstance(evidence, dict):
+                    continue
+                source_id = str(evidence.get("source_id", ""))
+                segment_id = str(evidence.get("segment_id", ""))
+                if not source_id or not segment_id:
+                    continue
+                key = (source_id, segment_id)
+                if key in seen:
+                    continue
+                seen.add(key)
+                citations.append({"source_id": source_id, "segment_id": segment_id, "object_id": item.id})
+        return citations
 
     def _related_items(self, root_id: str, obj: dict, max_items: int) -> list[ContextItem]:
         refs: list[str] = []

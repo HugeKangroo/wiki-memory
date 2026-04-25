@@ -48,7 +48,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(dream_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(dream_args_schema["discriminator"]["mapping"].keys()),
-            {"promote_candidates", "merge_duplicates", "decay_stale", "cycle"},
+            {"promote_candidates", "merge_duplicates", "decay_stale", "cycle", "report"},
         )
 
         lint_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_lint")
@@ -64,7 +64,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(ingest_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(ingest_args_schema["discriminator"]["mapping"].keys()),
-            {"repo"},
+            {"repo", "file", "markdown"},
         )
 
     def test_main_runs_server(self) -> None:
@@ -123,6 +123,15 @@ class McpServerTest(unittest.TestCase):
         async def run_smoke() -> None:
             server = create_server()
             with tempfile.TemporaryDirectory() as tmpdir:
+                note = Path(tmpdir) / "note.md"
+                note.write_text("# Note\n\nUseful context.\n", encoding="utf-8")
+                ingest_result = await server.call_tool(
+                    "wiki_ingest",
+                    {"args": {"root": tmpdir, "mode": "markdown", "input_data": {"path": str(note)}}},
+                )
+                ingest_payload = json.loads(ingest_result[0].text)
+                self.assertEqual(ingest_payload["segment_count"], 1)
+
                 query_result = await server.call_tool(
                     "wiki_query",
                     {"args": {"root": tmpdir, "mode": "search", "input_data": {"query": "missing"}}},

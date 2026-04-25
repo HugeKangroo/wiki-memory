@@ -116,6 +116,105 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(module["name"], "src.index")
             self.assertIn("TypeScript module", module["summary"])
 
+    def test_file_ingest_creates_document_source_node_activity_and_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "notes.txt"
+            document.write_text(
+                "Alpha decision\n\n"
+                "This note captures the first reusable finding.\n\n"
+                "Beta follow up\n",
+                encoding="utf-8",
+            )
+
+            ingest = IngestService(root)
+            result = ingest.ingest_file(document)
+            objects = FsObjectRepository(root)
+            query = QueryService(root)
+
+            source = objects.get("source", result["source_id"])
+            node = objects.get("node", result["node_id"])
+            activity = objects.get("activity", result["activity_id"])
+
+            self.assertEqual(source["kind"], "file")
+            self.assertEqual(source["content_type"], "text")
+            self.assertGreaterEqual(len(source["segments"]), 2)
+            self.assertEqual(node["kind"], "document")
+            self.assertEqual(node["name"], "notes.txt")
+            self.assertEqual(activity["source_refs"], [source["id"]])
+
+            expanded = query.expand(result["source_id"])
+            self.assertGreaterEqual(len(expanded["data"]["source_segments"]), 2)
+
+    def test_markdown_ingest_uses_headings_as_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "guide.md"
+            document.write_text(
+                "# Guide\n\n"
+                "Opening context.\n\n"
+                "## Install\n\n"
+                "Run the installer.\n\n"
+                "## Use\n\n"
+                "Call the MCP tools.\n",
+                encoding="utf-8",
+            )
+
+            ingest = IngestService(root)
+            result = ingest.ingest_markdown(document)
+            objects = FsObjectRepository(root)
+
+            source = objects.get("source", result["source_id"])
+            excerpts = [segment["excerpt"] for segment in source["segments"]]
+
+            self.assertEqual(source["kind"], "markdown")
+            self.assertEqual(source["content_type"], "markdown")
+            self.assertTrue(any("Guide" in excerpt for excerpt in excerpts))
+            self.assertTrue(any("Install" in excerpt for excerpt in excerpts))
+
+    def test_query_filters_recent_search_and_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "guide.md"
+            document.write_text("# Guide\n\nInstall wiki memory.\n", encoding="utf-8")
+
+            ingest = IngestService(root)
+            ingest_result = ingest.ingest_markdown(document)
+            crystallize = CrystallizeService(root)
+            crystallize.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Guide install command",
+                    "summary": "The guide explains installation.",
+                    "subject_refs": [ingest_result["node_id"]],
+                    "evidence_refs": [{"source_id": ingest_result["source_id"], "segment_id": "1-guide"}],
+                    "payload": {
+                        "subject": ingest_result["node_id"],
+                        "predicate": "describes",
+                        "value": "installation",
+                        "object": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+
+            query = QueryService(root)
+            recent = query.recent(max_items=20, filters={"object_type": "knowledge", "status": "active"})
+            self.assertEqual({item["object_type"] for item in recent["data"]["items"]}, {"knowledge"})
+            self.assertEqual({item["status"] for item in recent["data"]["items"]}, {"active"})
+
+            search = query.search("guide", max_items=20, filters={"object_type": "source"})
+            self.assertEqual([item["object_type"] for item in search["data"]["items"]], ["source"])
+
+            context = query.context(
+                task="install",
+                scope={"node_ids": [ingest_result["node_id"]], "object_types": ["knowledge"]},
+                max_items=10,
+            )
+            self.assertEqual({item["object_type"] for item in context["data"]["items"]}, {"knowledge"})
+            self.assertTrue(context["data"]["citations"])
+
     def test_phase1_crystallize_mutations_emit_audit_and_keep_lint_clean(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
