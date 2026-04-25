@@ -1,0 +1,73 @@
+from __future__ import annotations
+
+import sys
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_ROOT = PROJECT_ROOT / "src"
+if str(SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(SRC_ROOT))
+
+from wiki_memory.interfaces.mcp.tools import resolve_root, wiki_dream
+
+
+class McpToolsTest(unittest.TestCase):
+    def test_resolve_root_defaults_to_home_wiki_memory(self) -> None:
+        with patch("wiki_memory.interfaces.mcp.tools.Path.home", return_value=Path("/tmp/fake-home")):
+            self.assertEqual(resolve_root(None), Path("/tmp/fake-home/wiki-memory"))
+
+    def test_wiki_dream_dispatches_to_supported_modes(self) -> None:
+        with patch("wiki_memory.interfaces.mcp.tools.DreamService") as dream_service:
+            service = dream_service.return_value
+            service.promote_candidates.return_value = {"status": "completed", "promoted": 1}
+            service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
+            service.decay_stale.return_value = {"status": "completed", "decayed": 1}
+            service.cycle.return_value = {"status": "completed", "promoted": 1, "merged": 1, "decayed": 1}
+
+            self.assertEqual(
+                wiki_dream(".", "promote_candidates", {"min_confidence": 0.8, "min_evidence": 2})["promoted"],
+                1,
+            )
+            self.assertEqual(wiki_dream(".", "merge_duplicates", {})["merged"], 1)
+            self.assertEqual(
+                wiki_dream(".", "decay_stale", {"reference_time": "2026-04-24T00:00:00+00:00", "stale_after_days": 10})["decayed"],
+                1,
+            )
+            self.assertEqual(wiki_dream(".", "cycle", {"reference_time": "2026-04-24T00:00:00+00:00"})["merged"], 1)
+
+            service.promote_candidates.assert_called_once_with(min_confidence=0.8, min_evidence=2)
+            service.merge_duplicates.assert_called_once_with()
+            service.decay_stale.assert_called_once_with(
+                reference_time="2026-04-24T00:00:00+00:00",
+                stale_after_days=10,
+            )
+            service.cycle.assert_called_once_with(
+                min_confidence=0.75,
+                min_evidence=1,
+                reference_time="2026-04-24T00:00:00+00:00",
+                stale_after_days=30,
+            )
+
+    def test_wiki_dream_rejects_unsupported_modes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Unsupported dream mode"):
+            wiki_dream(".", "unknown", {})
+
+    def test_wiki_dream_uses_default_root_when_omitted(self) -> None:
+        with (
+            patch("wiki_memory.interfaces.mcp.tools.Path.home", return_value=Path("/tmp/fake-home")),
+            patch("wiki_memory.interfaces.mcp.tools.DreamService") as dream_service,
+        ):
+            service = dream_service.return_value
+            service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
+
+            result = wiki_dream(None, "merge_duplicates", {})
+
+            self.assertEqual(result["merged"], 1)
+            dream_service.assert_called_once_with(Path("/tmp/fake-home/wiki-memory"))
+
+
+if __name__ == "__main__":
+    unittest.main()

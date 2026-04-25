@@ -1,0 +1,14 @@
+{
+  "servers": {
+    "wikiMemory": {
+      "type": "stdio",
+      "command": "uv",
+      "args": [
+        "run",
+        "--directory",
+        "/home/y9000/Projects/wiki-memory",
+        "wiki-memory-mcp"
+      ]
+    }
+  }
+}

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "wiki-memory"
+version = "0.1.0"
+description = "Wiki-based context substrate for agents."
+requires-python = ">=3.10"
+dependencies = [
+    "mcp>=1.27.0",
+]
+
+[project.scripts]
+wiki-memory-mcp = "wiki_memory.interfaces.mcp.server:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wiki_memory"]
