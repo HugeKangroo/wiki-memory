@@ -125,6 +125,9 @@ class TreeSitterParser:
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 classes.append(node.name)
+                for child in node.body:
+                    if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                        functions.append(f"{node.name}.{child.name}")
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.append(node.name)
             elif isinstance(node, ast.Import):

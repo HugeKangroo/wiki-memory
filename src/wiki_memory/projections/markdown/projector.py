@@ -294,6 +294,7 @@ class MarkdownProjector:
         return [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
 
     def _render_project_page(self, node: dict, title: str) -> str:
+        repo_source = self._source_for_repo_title(title)
         lines = [
             f"# {title}",
             "",
@@ -309,6 +310,8 @@ class MarkdownProjector:
             lines.extend([f"- Alias: {alias}" for alias in aliases])
         else:
             lines.append("- No aliases recorded.")
+        if repo_source is not None:
+            lines.extend(self._render_code_interfaces(repo_source))
         lines.extend(
             [
                 "",
@@ -323,6 +326,43 @@ class MarkdownProjector:
             ]
         )
         return "\n".join(lines)
+
+    def _source_for_repo_title(self, title: str) -> dict | None:
+        for source in self.repository.list("source"):
+            if source.get("kind") != "repo":
+                continue
+            payload = source.get("payload", {})
+            repo_name = payload.get("repo_name") if isinstance(payload, dict) else None
+            if repo_name == title or source.get("title") == title:
+                return source
+        return None
+
+    def _render_code_interfaces(self, source: dict) -> list[str]:
+        payload = source.get("payload", {})
+        if not isinstance(payload, dict):
+            return []
+        modules = payload.get("python_modules", [])
+        if not modules:
+            return []
+        lines = ["", "## Code Interfaces", ""]
+        for module in modules[:30]:
+            path = module.get("path")
+            if not path:
+                continue
+            lines.append(f"### `{path}`")
+            classes = module.get("classes") or []
+            functions = module.get("functions") or []
+            imports = module.get("imports") or []
+            if classes:
+                lines.append(f"- Classes: {', '.join(f'`{name}`' for name in classes[:12])}")
+            if functions:
+                lines.append(f"- Functions: {', '.join(f'`{name}`' for name in functions[:20])}")
+            if imports:
+                lines.append(f"- Imports: {', '.join(f'`{name}`' for name in imports[:10])}")
+            if not classes and not functions and not imports:
+                lines.append("- No public interfaces detected.")
+            lines.append("")
+        return lines
 
     def _render_readable_page(self, object_type: str, obj: dict, title: str) -> str:
         lines = [
@@ -340,6 +380,13 @@ class MarkdownProjector:
             lines.extend(["## Summary", "", str(summary), ""])
         if object_type == "source":
             payload = obj.get("payload", {})
+            if obj.get("kind") == "repo" and isinstance(payload, dict):
+                code_files = payload.get("code_files", [])
+                if code_files:
+                    lines.extend(["## Code Files", ""])
+                    lines.extend([f"- `{path}`" for path in code_files[:80]])
+                    lines.append("")
+                lines.extend(self._render_code_interfaces(obj))
             if isinstance(payload, dict) and payload.get("text"):
                 lines.extend(["## Text Preview", "", str(payload["text"])[:1200], ""])
         return "\n".join(lines)

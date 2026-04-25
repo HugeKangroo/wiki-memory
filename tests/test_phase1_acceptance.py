@@ -116,6 +116,29 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(module["name"], "src.index")
             self.assertIn("TypeScript module", module["summary"])
 
+    def test_repo_ingest_captures_python_class_methods_as_code_interfaces(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "method-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            (src / "service.py").write_text(
+                "class Service:\n"
+                "    def run(self):\n"
+                "        return True\n",
+                encoding="utf-8",
+            )
+
+            ingest = IngestService(root)
+            result = ingest.ingest_repo(repo)
+            objects = FsObjectRepository(root)
+
+            source = objects.get("source", result["source_id"])
+            module = next(item for item in source["payload"]["python_modules"] if item["path"] == "src/service.py")
+            self.assertIn("Service", module["classes"])
+            self.assertIn("Service.run", module["functions"])
+
     def test_repo_ingest_captures_code_file_segments_for_query_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
