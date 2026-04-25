@@ -54,6 +54,7 @@ class RepoScanSummary:
     language_counts: dict[str, int]
     readme_present: bool
     source_roots: list[str]
+    code_files: list[str]
     python_modules: list[dict]
 
 
@@ -86,6 +87,7 @@ class RepoAdapter:
                 "language_counts": summary.language_counts,
                 "readme_present": summary.readme_present,
                 "source_roots": summary.source_roots,
+                "code_files": summary.code_files,
                 "python_modules": summary.python_modules,
                 "parser_backend": parser.backend,
             },
@@ -146,6 +148,7 @@ class RepoAdapter:
         readme_present = False
         top_level_entries: list[str] = []
         source_roots: list[str] = []
+        code_files: list[str] = []
         parsed_modules: list[dict] = []
 
         for child in sorted(root.iterdir()):
@@ -164,7 +167,10 @@ class RepoAdapter:
             file_count += 1
             suffix = path.suffix.lower()
             if suffix in LANGUAGE_BY_SUFFIX:
-                language_counter[LANGUAGE_BY_SUFFIX[suffix]] += 1
+                language = LANGUAGE_BY_SUFFIX[suffix]
+                language_counter[language] += 1
+                if language != "markdown" and len(code_files) < 80:
+                    code_files.append(str(path.relative_to(root)))
             if path.name.lower() in {"readme.md", "readme"}:
                 readme_present = True
             language = LANGUAGE_BY_SUFFIX.get(suffix)
@@ -189,6 +195,7 @@ class RepoAdapter:
             language_counts=dict(language_counter.most_common()),
             readme_present=readme_present,
             source_roots=source_roots,
+            code_files=code_files,
             python_modules=parsed_modules,
         )
 
@@ -200,6 +207,7 @@ class RepoAdapter:
             ",".join(f"{key}:{value}" for key, value in sorted(summary.language_counts.items())),
             str(summary.readme_present),
             ",".join(summary.source_roots),
+            ",".join(summary.code_files[:40]),
             ",".join(module["path"] for module in summary.python_modules[:10]),
         ]
         return "|".join(parts)
@@ -224,7 +232,28 @@ class RepoAdapter:
                     hash=module["path"],
                 )
             )
+        for code_file in summary.code_files[:40]:
+            path = root / code_file
+            excerpt = self._code_excerpt(path)
+            if not excerpt:
+                continue
+            segments.append(
+                SourceSegment(
+                    segment_id=f"code-{slugify(code_file)}",
+                    locator={"kind": "code_file", "path": code_file},
+                    excerpt=excerpt,
+                    hash=code_file,
+                )
+            )
         return segments
+
+    def _code_excerpt(self, path: Path) -> str:
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return ""
+        lines = text.splitlines()
+        return "\n".join(lines[:80])[:4000]
 
     def _module_nodes(self, root: Path, summary: RepoScanSummary, timestamp: str) -> list[Node]:
         nodes: list[Node] = []

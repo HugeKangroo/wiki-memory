@@ -131,10 +131,11 @@ class QueryService:
                 title = str(obj.get("title") or obj.get("name") or obj["id"])
                 summary = str(obj.get("summary", ""))
                 payload = str(obj.get("payload", ""))
-                haystack = f"{title}\n{summary}\n{payload}".lower()
+                segments = self._segment_text(obj)
+                haystack = f"{title}\n{summary}\n{payload}\n{segments}".lower()
                 if q not in haystack:
                     continue
-                score = self._score(q, title.lower(), summary.lower(), payload.lower())
+                score = self._score(q, title.lower(), summary.lower(), payload.lower(), segments.lower())
                 items.append(
                     {
                         "object_type": object_type,
@@ -167,7 +168,7 @@ class QueryService:
         except ValueError:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    def _score(self, query: str, title: str, summary: str, payload: str) -> int:
+    def _score(self, query: str, title: str, summary: str, payload: str, segments: str = "") -> int:
         score = 0
         if query == title:
             score += 100
@@ -177,7 +178,23 @@ class QueryService:
             score += 10
         if query in payload:
             score += 5
+        if query in segments:
+            score += 3
         return score
+
+    def _segment_text(self, obj: dict) -> str:
+        segments = obj.get("segments", [])
+        if not isinstance(segments, list):
+            return ""
+        parts = []
+        for segment in segments:
+            if not isinstance(segment, dict):
+                continue
+            parts.append(str(segment.get("excerpt", "")))
+            locator = segment.get("locator", {})
+            if isinstance(locator, dict):
+                parts.append(str(locator.get("path", "")))
+        return "\n".join(parts)
 
     def _find_object(self, object_id: str) -> tuple[str | None, dict | None]:
         for object_type in ("source", "node", "knowledge", "activity", "work_item"):

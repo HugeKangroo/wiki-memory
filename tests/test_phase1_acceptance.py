@@ -116,6 +116,29 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(module["name"], "src.index")
             self.assertIn("TypeScript module", module["summary"])
 
+    def test_repo_ingest_captures_code_file_segments_for_query_context(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = self._make_repo(root)
+
+            ingest = IngestService(root)
+            result = ingest.ingest_repo(repo)
+            objects = FsObjectRepository(root)
+
+            source = objects.get("source", result["source_id"])
+            segment_by_path = {
+                segment["locator"].get("path"): segment
+                for segment in source["segments"]
+                if isinstance(segment.get("locator"), dict)
+            }
+
+            self.assertIn("src/demo.py", source["payload"]["code_files"])
+            self.assertIn("src/demo.py", segment_by_path)
+            self.assertIn("def hello", segment_by_path["src/demo.py"]["excerpt"])
+
+            search = QueryService(root).search("def hello", max_items=5)
+            self.assertTrue(any(item["id"] == result["source_id"] for item in search["data"]["items"]))
+
     def test_file_ingest_creates_document_source_node_activity_and_segments(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
