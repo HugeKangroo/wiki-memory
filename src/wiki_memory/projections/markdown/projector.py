@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from html import escape
 from pathlib import Path
 import re
 import shutil
@@ -428,18 +429,65 @@ class MarkdownProjector:
         return written
 
     def _render_api_home(self, module_links: list[tuple[str, str, str]], class_names: list[str]) -> str:
-        lines = ["# API Reference", "", "Obsidian-native API documentation generated from repository ingest.", "", "## Modules", ""]
-        lines.extend([f"- [[API/Modules/{slug}|{path}]] - {category}" for path, category, slug in module_links])
-        lines.extend(["", "## Classes", ""])
+        categories = sorted({category for _, category, _ in module_links})
+        lines = [
+            "# API Reference",
+            "",
+            '<div class="wm-api-hero">',
+            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:18px 20px; background:linear-gradient(135deg, var(--background-secondary), var(--background-primary));">',
+            '<p style="margin:0; text-transform:uppercase; letter-spacing:.12em; font-size:.75em; color:var(--text-muted);">wiki-memory generated reference</p>',
+            '<h2 style="margin:.25em 0 .35em 0;">Obsidian-native API documentation</h2>',
+            f'<p style="margin:0; color:var(--text-muted);">{len(module_links)} modules &middot; {len(class_names)} classes &middot; {len(categories)} categories</p>',
+            "</div>",
+            "</div>",
+            "",
+            "## Modules",
+            "",
+            '<div class="wm-api-grid">',
+        ]
+        for path, category, slug in module_links:
+            lines.extend(
+                [
+                    '<section class="wm-api-card">',
+                    '<div style="border:1px solid var(--background-modifier-border); border-radius:14px; padding:14px 16px; margin:10px 0; background:var(--background-secondary);">',
+                    f'<span style="font-size:.75em; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em;">{escape(category)}</span>',
+                    f'<h3 style="margin:.25em 0;">[[API/Modules/{slug}|{path}]]</h3>',
+                    "</div>",
+                    "</section>",
+                ]
+            )
+        lines.extend(["</div>", "", "## Classes", ""])
         if class_names:
-            lines.extend([f"- [[API/Classes/{self._safe_filename(name)}|{name}]]" for name in class_names])
+            lines.append('<div class="wm-api-grid">')
+            for name in class_names:
+                lines.extend(
+                    [
+                        '<section class="wm-api-card">',
+                        '<div style="border:1px solid var(--background-modifier-border); border-radius:12px; padding:10px 12px; margin:8px 0;">',
+                        f"[[API/Classes/{self._safe_filename(name)}|{name}]]",
+                        "</div>",
+                        "</section>",
+                    ]
+                )
+            lines.append("</div>")
         else:
             lines.append("- (none)")
         return "\n".join(lines) + "\n"
 
     def _render_api_module_page(self, module: dict, category: str) -> str:
         path = str(module.get("path") or "")
-        lines = [f"# {category} Module", "", f"**Defined in:** `{path}`"]
+        lines = [
+            f"# {category} Module",
+            "",
+            '<div class="wm-api-module">',
+            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:16px 18px; background:var(--background-secondary);">',
+            f'<span class="wm-api-badge">{category}</span>',
+            f'<div class="wm-api-signature"><code>{escape(path)}</code></div>',
+            "</div>",
+            "</div>",
+            "",
+            f"**Defined in:** `{path}`",
+        ]
         module_doc = module.get("module_doc")
         if module_doc:
             lines.extend(["", f"**Brief:** {module_doc}"])
@@ -462,7 +510,16 @@ class MarkdownProjector:
         return "\n".join(lines) + "\n"
 
     def _render_api_class_page(self, class_name: str, modules: list[dict]) -> str:
-        lines = [f"# Class `{class_name}`", ""]
+        lines = [
+            f"# Class `{class_name}`",
+            "",
+            '<div class="wm-api-class">',
+            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:16px 18px; background:var(--background-secondary);">',
+            f"<h2 style=\"margin:0;\"><code>{escape(class_name)}</code></h2>",
+            "</div>",
+            "</div>",
+            "",
+        ]
         interfaces: list[dict] = []
         for module in modules:
             path = str(module.get("path") or "")
@@ -477,8 +534,27 @@ class MarkdownProjector:
                 for item in module.get("interfaces", [])
                 if item.get("kind") == "method" and str(item.get("name", "")).startswith(f"{class_name}.") and self._is_public_interface(item)
             )
+        if interfaces:
+            lines.extend(["", "## Methods", ""])
+            for interface in interfaces[:30]:
+                lines.extend(self._render_api_method_card(interface))
         lines.extend(self._render_api_summary_and_details(interfaces[:30]))
         return "\n".join(lines) + "\n"
+
+    def _render_api_method_card(self, interface: dict) -> list[str]:
+        name = str(interface.get("name") or "")
+        signature = str(interface.get("signature") or name)
+        doc = str(interface.get("doc") or "No description.")
+        return [
+            '<article class="wm-api-method">',
+            '<div style="border:1px solid var(--background-modifier-border); border-radius:14px; padding:14px 16px; margin:10px 0; background:var(--background-primary);">',
+            f"<h3 style=\"margin-top:0;\"><code>{escape(name)}</code></h3>",
+            f'<pre style="white-space:pre-wrap;"><code>{escape(signature)}</code></pre>',
+            f'<p style="color:var(--text-muted);">{escape(doc)}</p>',
+            "</div>",
+            "</article>",
+            "",
+        ]
 
     def _render_api_summary_and_details(self, interfaces: list[dict]) -> list[str]:
         if not interfaces:
@@ -617,9 +693,41 @@ class MarkdownProjector:
         if interface.get("doc"):
             lines.extend(["", f"**Purpose**: {interface['doc']}"])
         if interface.get("signature"):
-            lines.extend(["", "**Declaration**", "", f"`{interface['signature']}`"])
+            lines.extend(
+                [
+                    "",
+                    '<div class="wm-api-signature">',
+                    f"<pre><code>{escape(str(interface['signature']))}</code></pre>",
+                    "</div>",
+                    "",
+                    "**Declaration**",
+                    "",
+                    f"`{interface['signature']}`",
+                ]
+            )
         parameters = interface.get("parameters") or []
         if parameters:
+            lines.extend(
+                [
+                    "",
+                    '<table class="wm-api-params">',
+                    "<thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>",
+                    "<tbody>",
+                ]
+            )
+            for parameter in parameters:
+                default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
+                annotation = parameter.get("annotation") or "unknown"
+                description = parameter.get("description") or "-"
+                lines.append(
+                    "<tr>"
+                    f"<td><code>{escape(str(parameter.get('name') or ''))}</code></td>"
+                    f"<td><code>{escape(str(annotation))}</code></td>"
+                    f"<td>{escape(str(default))}</td>"
+                    f"<td>{escape(str(description))}</td>"
+                    "</tr>"
+                )
+            lines.extend(["</tbody>", "</table>"])
             lines.extend(["", "**Parameters**", "", "| Parameter | Type | Default | Description |", "| --- | --- | --- | --- |"])
             for parameter in parameters:
                 default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
