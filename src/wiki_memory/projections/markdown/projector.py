@@ -351,6 +351,8 @@ class MarkdownProjector:
         ) + "\n"
 
     def _render_doxygen_entry(self, repo_name: str, repo_path: Path, status: str) -> str:
+        html_path = self.doxygen_root / "html" / "index.html"
+        doxyfile_path = self.doxygen_root / "Doxyfile"
         return "\n".join(
             [
                 "# Doxygen API Docs",
@@ -360,11 +362,14 @@ class MarkdownProjector:
                 f"- Status: `{status}`",
                 f"- Doxyfile: `../doxygen/Doxyfile`",
                 f"- HTML entry: `../doxygen/html/index.html`",
+                f"- HTML absolute path: `{html_path}`",
                 "",
                 "## Open",
                 "",
                 "- [Open Doxygen HTML](../doxygen/html/index.html)",
+                f"- [Open Doxygen HTML (file URI)]({html_path.as_uri()})",
                 "- [Doxyfile](../doxygen/Doxyfile)",
+                f"- [Doxyfile (file URI)]({doxyfile_path.as_uri()})",
                 "",
                 "<iframe src=\"../doxygen/html/index.html\" width=\"100%\" height=\"900\"></iframe>",
                 "",
