@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from html import escape
 from pathlib import Path
 import re
 import shutil
@@ -433,43 +432,24 @@ class MarkdownProjector:
         lines = [
             "# API Reference",
             "",
-            '<div class="wm-api-hero">',
-            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:18px 20px; background:linear-gradient(135deg, var(--background-secondary), var(--background-primary));">',
-            '<p style="margin:0; text-transform:uppercase; letter-spacing:.12em; font-size:.75em; color:var(--text-muted);">wiki-memory generated reference</p>',
-            '<h2 style="margin:.25em 0 .35em 0;">Obsidian-native API documentation</h2>',
-            f'<p style="margin:0; color:var(--text-muted);">{len(module_links)} modules &middot; {len(class_names)} classes &middot; {len(categories)} categories</p>',
-            "</div>",
-            "</div>",
+            "> [!abstract] API Reference",
+            "> Obsidian-native API documentation generated from repository ingest.",
+            f"> Modules: `{len(module_links)}` | Classes: `{len(class_names)}` | Categories: `{len(categories)}`",
             "",
             "## Modules",
             "",
-            '<div class="wm-api-grid">',
+            "> [!info] Modules",
+            "> Public repository modules grouped by coarse architecture category.",
+            "",
         ]
-        for path, category, slug in module_links:
-            lines.extend(
-                [
-                    '<section class="wm-api-card">',
-                    '<div style="border:1px solid var(--background-modifier-border); border-radius:14px; padding:14px 16px; margin:10px 0; background:var(--background-secondary);">',
-                    f'<span style="font-size:.75em; color:var(--text-muted); text-transform:uppercase; letter-spacing:.08em;">{escape(category)}</span>',
-                    f'<h3 style="margin:.25em 0;">[[API/Modules/{slug}|{path}]]</h3>',
-                    "</div>",
-                    "</section>",
-                ]
-            )
-        lines.extend(["</div>", "", "## Classes", ""])
+        for category in categories:
+            lines.extend(["", f"### {category}", ""])
+            for path, module_category, slug in module_links:
+                if module_category == category:
+                    lines.append(f"- [[API/Modules/{slug}|{path}]]")
+        lines.extend(["", "## Classes", "", "> [!example] Classes", "> Public classes detected during repository ingest.", ""])
         if class_names:
-            lines.append('<div class="wm-api-grid">')
-            for name in class_names:
-                lines.extend(
-                    [
-                        '<section class="wm-api-card">',
-                        '<div style="border:1px solid var(--background-modifier-border); border-radius:12px; padding:10px 12px; margin:8px 0;">',
-                        f"[[API/Classes/{self._safe_filename(name)}|{name}]]",
-                        "</div>",
-                        "</section>",
-                    ]
-                )
-            lines.append("</div>")
+            lines.extend([f"- [[API/Classes/{self._safe_filename(name)}|{name}]]" for name in class_names])
         else:
             lines.append("- (none)")
         return "\n".join(lines) + "\n"
@@ -479,12 +459,9 @@ class MarkdownProjector:
         lines = [
             f"# {category} Module",
             "",
-            '<div class="wm-api-module">',
-            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:16px 18px; background:var(--background-secondary);">',
-            f'<span class="wm-api-badge">{category}</span>',
-            f'<div class="wm-api-signature"><code>{escape(path)}</code></div>',
-            "</div>",
-            "</div>",
+            "> [!abstract] Module Summary",
+            f"> Category: `{category}`",
+            f"> Defined in: `{path}`",
             "",
             f"**Defined in:** `{path}`",
         ]
@@ -502,6 +479,14 @@ class MarkdownProjector:
         interfaces = [item for item in module.get("interfaces", []) if self._is_public_interface(item)]
         functions = [item for item in interfaces if item.get("kind") == "function"]
         methods = [item for item in interfaces if item.get("kind") == "method"]
+        if functions or methods:
+            lines.extend(
+                [
+                    "",
+                    "> [!info] Public Interfaces",
+                    f"> Functions: `{len(functions)}` | Methods: `{len(methods)}`",
+                ]
+            )
         lines.extend(self._render_api_summary_and_details([*functions[:20], *methods[:20]]))
         imports = module.get("imports") or []
         if imports:
@@ -513,11 +498,8 @@ class MarkdownProjector:
         lines = [
             f"# Class `{class_name}`",
             "",
-            '<div class="wm-api-class">',
-            '<div style="border:1px solid var(--background-modifier-border); border-radius:18px; padding:16px 18px; background:var(--background-secondary);">',
-            f"<h2 style=\"margin:0;\"><code>{escape(class_name)}</code></h2>",
-            "</div>",
-            "</div>",
+            "> [!abstract] Class Summary",
+            f"> Class: `{class_name}`",
             "",
         ]
         interfaces: list[dict] = []
@@ -534,25 +516,18 @@ class MarkdownProjector:
                 for item in module.get("interfaces", [])
                 if item.get("kind") == "method" and str(item.get("name", "")).startswith(f"{class_name}.") and self._is_public_interface(item)
             )
-        if interfaces:
-            lines.extend(["", "## Methods", ""])
-            for interface in interfaces[:30]:
-                lines.extend(self._render_api_method_card(interface))
         lines.extend(self._render_api_summary_and_details(interfaces[:30]))
         return "\n".join(lines) + "\n"
 
     def _render_api_method_card(self, interface: dict) -> list[str]:
         name = str(interface.get("name") or "")
         signature = str(interface.get("signature") or name)
-        doc = str(interface.get("doc") or "No description.")
+        doc = self._interface_description(interface)
         return [
-            '<article class="wm-api-method">',
-            '<div style="border:1px solid var(--background-modifier-border); border-radius:14px; padding:14px 16px; margin:10px 0; background:var(--background-primary);">',
-            f"<h3 style=\"margin-top:0;\"><code>{escape(name)}</code></h3>",
-            f'<pre style="white-space:pre-wrap;"><code>{escape(signature)}</code></pre>',
-            f'<p style="color:var(--text-muted);">{escape(doc)}</p>',
-            "</div>",
-            "</article>",
+            f"> [!example]- `{name}`",
+            f"> Purpose: {doc}",
+            ">",
+            f"> `{signature}`",
             "",
         ]
 
@@ -565,6 +540,7 @@ class MarkdownProjector:
             lines.append(f"| `{interface.get('name')}` | {interface.get('kind')} | {brief} |")
         lines.append("")
         for interface in interfaces:
+            lines.extend(self._render_api_method_card(interface))
             lines.extend(self._render_interface(interface))
         return lines
 
@@ -690,15 +666,10 @@ class MarkdownProjector:
 
     def _render_interface(self, interface: dict) -> list[str]:
         lines = ["<details>", f"<summary><code>{interface.get('name')}</code></summary>", ""]
-        if interface.get("doc"):
-            lines.extend(["", f"**Purpose**: {interface['doc']}"])
+        lines.extend(["", f"**Purpose**: {self._interface_description(interface)}"])
         if interface.get("signature"):
             lines.extend(
                 [
-                    "",
-                    '<div class="wm-api-signature">',
-                    f"<pre><code>{escape(str(interface['signature']))}</code></pre>",
-                    "</div>",
                     "",
                     "**Declaration**",
                     "",
@@ -707,27 +678,6 @@ class MarkdownProjector:
             )
         parameters = interface.get("parameters") or []
         if parameters:
-            lines.extend(
-                [
-                    "",
-                    '<table class="wm-api-params">',
-                    "<thead><tr><th>Parameter</th><th>Type</th><th>Default</th><th>Description</th></tr></thead>",
-                    "<tbody>",
-                ]
-            )
-            for parameter in parameters:
-                default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
-                annotation = parameter.get("annotation") or "unknown"
-                description = parameter.get("description") or "-"
-                lines.append(
-                    "<tr>"
-                    f"<td><code>{escape(str(parameter.get('name') or ''))}</code></td>"
-                    f"<td><code>{escape(str(annotation))}</code></td>"
-                    f"<td>{escape(str(default))}</td>"
-                    f"<td>{escape(str(description))}</td>"
-                    "</tr>"
-                )
-            lines.extend(["</tbody>", "</table>"])
             lines.extend(["", "**Parameters**", "", "| Parameter | Type | Default | Description |", "| --- | --- | --- | --- |"])
             for parameter in parameters:
                 default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
@@ -743,6 +693,16 @@ class MarkdownProjector:
             lines.extend(["", "**Returns**", "", rendered_return])
         lines.extend(["", "</details>", ""])
         return lines
+
+    def _interface_description(self, interface: dict) -> str:
+        doc = interface.get("doc")
+        if doc:
+            return str(doc)
+        name = str(interface.get("name") or "interface").rsplit(".", 1)[-1]
+        words = name.strip("_").replace("_", " ")
+        if not words:
+            words = "interface"
+        return f"{words[:1].upper()}{words[1:]} operation."
 
     def _module_sort_key(self, module: dict) -> tuple[int, str]:
         path = str(module.get("path") or "")
