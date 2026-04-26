@@ -86,6 +86,25 @@ Generated files:
 
 Open `API_Docs.md` from Obsidian to view the embedded Doxygen HTML page. If `doxygen` is not installed, `API_Docs.md` still gets generated but reports that HTML output was not produced.
 
+`API_Docs.md` is an Obsidian entry page, not the full API document itself. It links to and embeds:
+
+```text
+~/wiki-memory/memory/projections/doxygen/html/index.html
+```
+
+If Obsidian does not render the embedded frame or relative HTML link in your setup, open the generated `index.html` directly in a browser.
+
+Other documentation generators can be added later:
+
+- `pdoc`: good Python-first API docs, simple setup, understands type annotations and Google-style docstrings, outputs HTML.
+- `mkdocs` + `mkdocstrings`: good documentation site workflow from Markdown source pages, supports Python and other handlers, outputs a static HTML site.
+- `Sphinx` + `MyST`: strong for large docs and cross references, Markdown-capable through MyST, heavier setup.
+
+The current built-in projections are:
+
+- Obsidian-native Markdown pages for memory browsing.
+- Optional Doxygen HTML pages for source API documentation.
+
 ## MCP Server
 
 The MCP server exposes exactly five tools:

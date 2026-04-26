@@ -61,6 +61,8 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("[[Projects/wiki-memory|wiki-memory]]", home)
             self.assertIn("[[API_Docs|Doxygen API Docs]]", home)
             self.assertIn("# Doxygen API Docs", api_docs)
+            self.assertIn("[Open Doxygen HTML](../doxygen/html/index.html)", api_docs)
+            self.assertIn("[Doxyfile](../doxygen/Doxyfile)", api_docs)
             self.assertIn("<iframe", api_docs)
             self.assertIn("../doxygen/html/index.html", api_docs)
             self.assertIn("PROJECT_NAME = \"wiki-memory\"", doxyfile)
