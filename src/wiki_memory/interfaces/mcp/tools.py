@@ -10,12 +10,31 @@ from wiki_memory.application.query.service import QueryService
 
 
 def resolve_root(root: str | Path | None) -> Path:
+    """Resolve an optional MCP root argument to a concrete wiki-memory root.
+
+    Args:
+        root: Optional root path supplied by the host agent.
+
+    Returns:
+        Expanded wiki-memory root path, defaulting to ~/wiki-memory.
+    """
     if root is None:
         return Path.home() / "wiki-memory"
     return Path(root).expanduser()
 
 
 def wiki_ingest(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
+    """Dispatch wiki_ingest MCP calls to repository, file, web, PDF, or conversation ingest.
+
+    Args:
+        root: Optional wiki-memory root directory; defaults to ~/wiki-memory when omitted.
+        mode: Ingest mode such as repo, file, markdown, web, pdf, or conversation.
+        input_data: Mode-specific payload validated by the MCP argument model.
+        options: Optional execution flags reserved for future ingest behavior.
+
+    Returns:
+        Ingest result produced by the selected application service method.
+    """
     options = options or {}
     service = IngestService(resolve_root(root))
     if mode == "repo":
@@ -38,6 +57,17 @@ def wiki_ingest(root: str | Path | None, mode: str, input_data: dict, options: d
 
 
 def wiki_query(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
+    """Dispatch wiki_query MCP calls to context, expansion, page, graph, recent, or search queries.
+
+    Args:
+        root: Optional wiki-memory root directory; defaults to ~/wiki-memory when omitted.
+        mode: Query mode such as context, expand, page, recent, search, or graph.
+        input_data: Mode-specific query payload validated by the MCP argument model.
+        options: Optional query controls such as max_items and filters.
+
+    Returns:
+        Query result produced by the selected application service method.
+    """
     options = options or {}
     service = QueryService(resolve_root(root))
     if mode == "context":
@@ -63,6 +93,17 @@ def wiki_query(root: str | Path | None, mode: str, input_data: dict, options: di
 
 
 def wiki_crystallize(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
+    """Dispatch wiki_crystallize MCP calls that write durable memory objects.
+
+    Args:
+        root: Optional wiki-memory root directory; defaults to ~/wiki-memory when omitted.
+        mode: Crystallize mode such as activity, knowledge, work_item, promote, supersede, contest, or batch.
+        input_data: Mode-specific mutation payload validated by the MCP argument model.
+        options: Optional execution flags reserved for future crystallize behavior.
+
+    Returns:
+        Mutation result with patch, audit, object, and projection metadata.
+    """
     options = options or {}
     service = CrystallizeService(resolve_root(root))
     actor = input_data.get("actor")
@@ -100,6 +141,17 @@ def wiki_crystallize(root: str | Path | None, mode: str, input_data: dict, optio
 
 
 def wiki_lint(root: str | Path | None, mode: str, input_data: dict | None = None, options: dict | None = None) -> dict:
+    """Dispatch wiki_lint MCP calls for structure checks, audit reads, reindexing, and repair.
+
+    Args:
+        root: Optional wiki-memory root directory; defaults to ~/wiki-memory when omitted.
+        mode: Lint mode such as structure, audit, reindex, or repair.
+        input_data: Optional mode-specific payload; currently empty for supported lint modes.
+        options: Optional controls such as max_items for audit reads.
+
+    Returns:
+        Lint, audit, reindex, or repair result for the selected mode.
+    """
     input_data = input_data or {}
     options = options or {}
     service = LintService(resolve_root(root))
@@ -115,6 +167,17 @@ def wiki_lint(root: str | Path | None, mode: str, input_data: dict | None = None
 
 
 def wiki_dream(root: str | Path | None, mode: str, input_data: dict | None = None, options: dict | None = None) -> dict:
+    """Dispatch wiki_dream MCP calls for memory consolidation workflows.
+
+    Args:
+        root: Optional wiki-memory root directory; defaults to ~/wiki-memory when omitted.
+        mode: Dream mode such as promote_candidates, merge_duplicates, decay_stale, cycle, or report.
+        input_data: Optional mode-specific thresholds or reference timestamps.
+        options: Optional execution flags reserved for future dream behavior.
+
+    Returns:
+        Dream report or mutation result for the selected consolidation mode.
+    """
     input_data = input_data or {}
     options = options or {}
     service = DreamService(resolve_root(root))

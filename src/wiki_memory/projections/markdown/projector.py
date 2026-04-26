@@ -425,10 +425,11 @@ class MarkdownProjector:
         home_path = api_root / "Home.md"
         home_path.write_text(self._render_api_home(module_links, sorted(class_pages)), encoding="utf-8")
         written.append(str(home_path))
+        written.extend(self._write_obsidian_css_snippet())
         return written
 
     def _render_api_home(self, module_links: list[tuple[str, str, str]], class_names: list[str]) -> str:
-        categories = sorted({category for _, category, _ in module_links})
+        categories = self._ordered_api_categories({category for _, category, _ in module_links})
         lines = [
             "# API Reference",
             "",
@@ -453,6 +454,55 @@ class MarkdownProjector:
         else:
             lines.append("- (none)")
         return "\n".join(lines) + "\n"
+
+    def _ordered_api_categories(self, categories: set[str]) -> list[str]:
+        priority = {
+            "Application": 0,
+            "Interface": 1,
+            "Adapter": 2,
+            "Domain": 3,
+            "Infrastructure": 4,
+            "Projection": 5,
+            "Code": 6,
+            "Test": 9,
+        }
+        return sorted(categories, key=lambda category: (priority.get(category, 8), category))
+
+    def _write_obsidian_css_snippet(self) -> list[str]:
+        snippets_root = self.wiki_root / ".obsidian" / "snippets"
+        ensure_directory(snippets_root)
+        path = snippets_root / "wiki-memory-api.css"
+        path.write_text(self._render_obsidian_css_snippet(), encoding="utf-8")
+        return [str(path)]
+
+    def _render_obsidian_css_snippet(self) -> str:
+        return "\n".join(
+            [
+                "/* Optional wiki-memory API doc polish for Obsidian. */",
+                ".markdown-preview-view .callout[data-callout=\"abstract\"] {",
+                "  --callout-color: 72, 96, 120;",
+                "}",
+                "",
+                ".markdown-preview-view .callout[data-callout=\"info\"] {",
+                "  --callout-color: 42, 110, 160;",
+                "}",
+                "",
+                ".markdown-preview-view .callout[data-callout=\"example\"] {",
+                "  --callout-color: 96, 120, 96;",
+                "  margin-block: 0.85rem;",
+                "}",
+                "",
+                ".markdown-preview-view table {",
+                "  --table-border-color: var(--background-modifier-border);",
+                "  font-size: 0.92em;",
+                "}",
+                "",
+                ".markdown-preview-view code {",
+                "  font-size: 0.92em;",
+                "}",
+                "",
+            ]
+        )
 
     def _render_api_module_page(self, module: dict, category: str) -> str:
         path = str(module.get("path") or "")

@@ -57,6 +57,7 @@ class ObsidianProjectionTest(unittest.TestCase):
             api_home = (wiki_root / "API" / "Home.md").read_text(encoding="utf-8")
             api_module = (wiki_root / "API" / "Modules" / "Application-src-api-py.md").read_text(encoding="utf-8")
             api_class = (wiki_root / "API" / "Classes" / "MemoryApi.md").read_text(encoding="utf-8")
+            css = (wiki_root / ".obsidian" / "snippets" / "wiki-memory-api.css").read_text(encoding="utf-8")
             doxyfile = (root / "memory" / "projections" / "doxygen" / "Doxyfile").read_text(encoding="utf-8")
             debug_pages = list((debug_root / "nodes").glob("*.md"))
 
@@ -70,6 +71,7 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("> [!info] Modules", api_home)
             self.assertIn("> [!example] Classes", api_home)
             self.assertIn("### Application", api_home)
+            self.assertLess(api_home.index("### Application"), api_home.index("### Test") if "### Test" in api_home else len(api_home))
             self.assertNotIn('<h3 style="margin:.25em 0;">[[', api_home)
             self.assertIn("[[API/Modules/Application-src-api-py|src/api.py]]", api_home)
             self.assertIn("[[API/Classes/MemoryApi|MemoryApi]]", api_home)
@@ -137,6 +139,8 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertFalse((wiki_root / "overview.md").exists())
             self.assertFalse((wiki_root / "_raw").exists())
             self.assertFalse((wiki_root / "nodes").exists())
+            self.assertIn(".markdown-preview-view .callout[data-callout=\"example\"]", css)
+            self.assertIn("--table-border-color", css)
 
 
 if __name__ == "__main__":

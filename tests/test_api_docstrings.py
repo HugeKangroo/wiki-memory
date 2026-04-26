@@ -37,6 +37,37 @@ class ApiDocstringsTest(unittest.TestCase):
 
         self.assertEqual([], missing)
 
+    def test_mcp_tools_document_public_dispatch_functions(self) -> None:
+        path = PROJECT_ROOT / "src/wiki_memory/interfaces/mcp/tools.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        missing: list[str] = []
+        for node in tree.body:
+            if not isinstance(node, ast.FunctionDef):
+                continue
+            if not node.name.startswith("wiki_"):
+                continue
+            doc = ast.get_docstring(node) or ""
+            if "Args:" not in doc or "Returns:" not in doc:
+                missing.append(node.name)
+
+        self.assertEqual([], missing)
+
+    def test_mcp_models_document_schema_classes(self) -> None:
+        path = PROJECT_ROOT / "src/wiki_memory/interfaces/mcp/models.py"
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+
+        missing: list[str] = []
+        for node in tree.body:
+            if not isinstance(node, ast.ClassDef):
+                continue
+            if not any(isinstance(base, ast.Name) and base.id in {"StrictModel", "BaseToolArgs"} for base in node.bases):
+                continue
+            if not ast.get_docstring(node):
+                missing.append(node.name)
+
+        self.assertEqual([], missing)
+
 
 if __name__ == "__main__":
     unittest.main()

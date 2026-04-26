@@ -174,7 +174,7 @@ class RepoAdapter:
             if path.name.lower() in {"readme.md", "readme"}:
                 readme_present = True
             language = LANGUAGE_BY_SUFFIX.get(suffix)
-            if language in {"python", "typescript", "javascript"} and len(parsed_modules) < 20:
+            if language in {"python", "typescript", "javascript"}:
                 module_info = parser.parse(root, path, language)
                 if module_info is not None:
                     parsed_modules.append(
@@ -190,6 +190,7 @@ class RepoAdapter:
                             "parser_backend": module_info.parser_backend,
                         }
                     )
+        parsed_modules.sort(key=lambda module: self._module_priority(str(module["path"])))
 
         return RepoScanSummary(
             file_count=file_count,
@@ -199,7 +200,7 @@ class RepoAdapter:
             readme_present=readme_present,
             source_roots=source_roots,
             code_files=code_files,
-            python_modules=parsed_modules,
+            python_modules=parsed_modules[:60],
         )
 
     def _fingerprint(self, summary: RepoScanSummary) -> str:
@@ -306,6 +307,25 @@ class RepoAdapter:
 
     def _module_name(self, module_path: str) -> str:
         return str(Path(module_path).with_suffix("")).replace("/", ".")
+
+    def _module_priority(self, module_path: str) -> tuple[int, str]:
+        if "/application/" in module_path:
+            return 0, module_path
+        if "/interfaces/" in module_path:
+            return 1, module_path
+        if "/adapters/" in module_path:
+            return 2, module_path
+        if "/domain/" in module_path:
+            return 3, module_path
+        if "/infrastructure/" in module_path:
+            return 4, module_path
+        if "/projections/" in module_path:
+            return 5, module_path
+        if module_path.startswith("src/"):
+            return 6, module_path
+        if module_path.startswith("tests/"):
+            return 9, module_path
+        return 8, module_path
 
     def _language_label(self, language: str) -> str:
         labels = {

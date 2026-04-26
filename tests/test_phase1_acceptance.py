@@ -139,6 +139,35 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertIn("Service", module["classes"])
             self.assertIn("Service.run", module["functions"])
 
+    def test_repo_ingest_prioritizes_interface_modules_before_tests(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "priority-repo"
+            repo.mkdir()
+            app = repo / "src" / "pkg" / "application"
+            interface = repo / "src" / "pkg" / "interfaces" / "mcp"
+            tests = repo / "tests"
+            app.mkdir(parents=True)
+            interface.mkdir(parents=True)
+            tests.mkdir()
+            for index in range(25):
+                (tests / f"test_{index}.py").write_text(f"def test_{index}():\n    return None\n", encoding="utf-8")
+            (app / "service.py").write_text("def run():\n    return True\n", encoding="utf-8")
+            (interface / "tools.py").write_text("def wiki_query():\n    return {}\n", encoding="utf-8")
+
+            ingest = IngestService(root)
+            result = ingest.ingest_repo(repo)
+            objects = FsObjectRepository(root)
+
+            source = objects.get("source", result["source_id"])
+            module_paths = [module["path"] for module in source["payload"]["python_modules"]]
+            self.assertIn("src/pkg/application/service.py", module_paths)
+            self.assertIn("src/pkg/interfaces/mcp/tools.py", module_paths)
+            self.assertLess(
+                module_paths.index("src/pkg/interfaces/mcp/tools.py"),
+                next((idx for idx, path in enumerate(module_paths) if path.startswith("tests/")), len(module_paths)),
+            )
+
     def test_repo_ingest_captures_code_file_segments_for_query_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
