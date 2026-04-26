@@ -10,10 +10,28 @@ from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjec
 
 class QueryService:
     def __init__(self, root: str | Path) -> None:
+        """Create a query service bound to one wiki-memory root.
+
+        Args:
+            root: Wiki-memory root directory to query.
+
+        Returns:
+            None.
+        """
         self.builder = ContextBuilder(root)
         self.repository = FsObjectRepository(root)
 
     def context(self, task: str, scope: dict | None = None, max_items: int = 12) -> dict:
+        """Build a task-focused context pack from relevant memory objects.
+
+        Args:
+            task: Natural-language task or question to gather context for.
+            scope: Optional filters or hints that constrain retrieval.
+            max_items: Maximum number of context items to return.
+
+        Returns:
+            Context pack with ranked items, conflicts, missing context, citations, and expiry metadata.
+        """
         pack = self.builder.build(task=task, scope=scope, max_items=max_items)
         return {
             "result_type": "context_pack",
@@ -34,6 +52,15 @@ class QueryService:
         }
 
     def expand(self, object_id: str, max_items: int = 10) -> dict:
+        """Expand one memory object into nearby context and source evidence.
+
+        Args:
+            object_id: Source, node, knowledge, activity, or work item identifier to expand from.
+            max_items: Maximum number of related context items to return.
+
+        Returns:
+            Expanded context items and source segments for the requested object.
+        """
         items, source_segments = self.builder.expand(object_id=object_id, max_items=max_items)
         return {
             "result_type": "expanded_context",
@@ -46,6 +73,14 @@ class QueryService:
         }
 
     def page(self, object_id: str) -> dict:
+        """Fetch the full stored object for a single memory identifier.
+
+        Args:
+            object_id: Source, node, knowledge, activity, or work item identifier to fetch.
+
+        Returns:
+            Page result containing the object type and object payload, or a warning if missing.
+        """
         for object_type in ("source", "node", "knowledge", "activity", "work_item"):
             obj = self.repository.get(object_type, object_id)
             if obj is not None:
@@ -64,6 +99,15 @@ class QueryService:
         }
 
     def graph(self, object_id: str, max_items: int = 20) -> dict:
+        """Build a lightweight one-hop relationship graph around an object.
+
+        Args:
+            object_id: Memory object identifier to use as the graph root.
+            max_items: Maximum number of graph nodes to include.
+
+        Returns:
+            Graph result with root id, nodes, edges, and warnings for missing roots.
+        """
         nodes: list[dict] = []
         edges: list[dict] = []
         seen_nodes: set[str] = set()
@@ -87,6 +131,15 @@ class QueryService:
         return {"result_type": "graph", "data": {"root_id": object_id, "nodes": nodes, "edges": edges}, "warnings": []}
 
     def recent(self, max_items: int = 20, filters: dict | None = None) -> dict:
+        """List recently updated memory objects across all object types.
+
+        Args:
+            max_items: Maximum number of recent entries to return.
+            filters: Optional object type, kind, status, or lifecycle filters.
+
+        Returns:
+            Recent result containing sorted object summaries.
+        """
         filters = filters or {}
         entries: list[dict] = []
         for object_type in ("activity", "work_item", "knowledge", "source", "node"):
@@ -114,6 +167,16 @@ class QueryService:
         }
 
     def search(self, query: str, max_items: int = 20, filters: dict | None = None) -> dict:
+        """Search memory objects by title, summary, payload, and source segments.
+
+        Args:
+            query: Case-insensitive substring query.
+            max_items: Maximum number of search results to return.
+            filters: Optional object type, kind, status, or lifecycle filters.
+
+        Returns:
+            Search result containing scored object summaries.
+        """
         q = query.strip().lower()
         filters = filters or {}
         items: list[dict] = []

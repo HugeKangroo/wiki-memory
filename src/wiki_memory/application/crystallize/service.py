@@ -13,6 +13,14 @@ from wiki_memory.projections.markdown.projector import MarkdownProjector
 
 class CrystallizeService:
     def __init__(self, root: str | Path) -> None:
+        """Create a crystallize service bound to one wiki-memory root.
+
+        Args:
+            root: Wiki-memory root directory to mutate through patches.
+
+        Returns:
+            None.
+        """
         self.root = Path(root)
         self.object_repository = FsObjectRepository(self.root)
         self.patch_repository = FsPatchRepository(self.root)
@@ -36,6 +44,15 @@ class CrystallizeService:
         }
 
     def create_activity(self, data: dict, actor: dict | None = None) -> dict:
+        """Create a finalized activity object from explicit structured input.
+
+        Args:
+            data: Activity fields including kind, title, summary, refs, timestamps, and artifacts.
+            actor: Optional actor metadata recorded as the patch source.
+
+        Returns:
+            Creation result with activity id, patch, audit, and projection metadata.
+        """
         activity_id = new_id("act")
         timestamp = utc_now_iso()
         patch = WikiPatch(
@@ -75,6 +92,15 @@ class CrystallizeService:
         }
 
     def create_knowledge(self, data: dict, actor: dict | None = None) -> dict:
+        """Create a candidate knowledge object from structured input.
+
+        Args:
+            data: Knowledge fields including kind, title, summary, subjects, evidence, payload, and status.
+            actor: Optional actor metadata recorded as the patch source.
+
+        Returns:
+            Creation result with knowledge id, patch, audit, and projection metadata.
+        """
         knowledge_id = new_id("know")
         timestamp = utc_now_iso()
         patch = WikiPatch(
@@ -114,6 +140,15 @@ class CrystallizeService:
         }
 
     def create_work_item(self, data: dict, actor: dict | None = None) -> dict:
+        """Create an actionable work item from structured input.
+
+        Args:
+            data: Work item fields including kind, title, summary, status, priority, owners, and links.
+            actor: Optional actor metadata recorded as the patch source.
+
+        Returns:
+            Creation result with work item id, patch, audit, and projection metadata.
+        """
         work_item_id = new_id("work")
         timestamp = utc_now_iso()
         patch = WikiPatch(
@@ -159,6 +194,16 @@ class CrystallizeService:
         }
 
     def promote_knowledge(self, knowledge_id: str, actor: dict | None = None, reason: str = "") -> dict:
+        """Promote one knowledge object to active status.
+
+        Args:
+            knowledge_id: Knowledge object identifier to promote.
+            actor: Optional actor metadata recorded as the patch source.
+            reason: Optional human-readable promotion reason.
+
+        Returns:
+            Promotion result with knowledge id, patch, audit, and projection metadata.
+        """
         existing = self.object_repository.get("knowledge", knowledge_id)
         if existing is None:
             raise ValueError(f"Knowledge not found: {knowledge_id}")
@@ -191,6 +236,16 @@ class CrystallizeService:
         }
 
     def contest_knowledge(self, knowledge_id: str, actor: dict | None = None, reason: str = "") -> dict:
+        """Mark one knowledge object as contested.
+
+        Args:
+            knowledge_id: Knowledge object identifier to contest.
+            actor: Optional actor metadata recorded as the patch source.
+            reason: Optional human-readable contest reason.
+
+        Returns:
+            Contest result with knowledge id, patch, audit, and projection metadata.
+        """
         existing = self.object_repository.get("knowledge", knowledge_id)
         if existing is None:
             raise ValueError(f"Knowledge not found: {knowledge_id}")
@@ -223,6 +278,15 @@ class CrystallizeService:
         }
 
     def batch(self, entries: list[dict], actor: dict | None = None) -> dict:
+        """Run multiple crystallize create operations in sequence.
+
+        Args:
+            entries: Ordered crystallize entries with mode and input_data fields.
+            actor: Optional actor metadata reused for each created patch.
+
+        Returns:
+            Batch result containing per-entry creation results.
+        """
         results: list[dict] = []
         for entry in entries:
             mode = entry["mode"]
@@ -248,6 +312,17 @@ class CrystallizeService:
         actor: dict | None = None,
         reason: str = "",
     ) -> dict:
+        """Supersede one knowledge object with a replacement knowledge object.
+
+        Args:
+            old_knowledge_id: Knowledge object identifier to mark superseded.
+            new_knowledge_id: Replacement knowledge object identifier to activate.
+            actor: Optional actor metadata recorded as the patch source.
+            reason: Optional human-readable supersession reason.
+
+        Returns:
+            Supersession result with old and new knowledge ids, patch, audit, and projection metadata.
+        """
         old_item = self.object_repository.get("knowledge", old_knowledge_id)
         new_item = self.object_repository.get("knowledge", new_knowledge_id)
         if old_item is None:

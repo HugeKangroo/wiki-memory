@@ -15,6 +15,14 @@ from wiki_memory.projections.markdown.projector import MarkdownProjector
 
 class DreamService:
     def __init__(self, root: str | Path) -> None:
+        """Create a dream maintenance service bound to one wiki-memory root.
+
+        Args:
+            root: Wiki-memory root directory to inspect and mutate.
+
+        Returns:
+            None.
+        """
         self.root = Path(root)
         self.object_repository = FsObjectRepository(self.root)
         self.patch_repository = FsPatchRepository(self.root)
@@ -27,6 +35,15 @@ class DreamService:
         self.projector = MarkdownProjector(self.root)
 
     def promote_candidates(self, min_confidence: float = 0.75, min_evidence: int = 1) -> dict:
+        """Promote eligible candidate knowledge items to active status.
+
+        Args:
+            min_confidence: Minimum confidence required before promotion.
+            min_evidence: Minimum number of evidence references required before promotion.
+
+        Returns:
+            Dream mutation result with patch metadata and promoted item count.
+        """
         operations: list[PatchOperation] = []
         for item in self.object_repository.list("knowledge"):
             if item.get("status") != "candidate":
@@ -56,6 +73,11 @@ class DreamService:
         }
 
     def merge_duplicates(self) -> dict:
+        """Merge duplicate fact knowledge items and supersede losing records.
+
+        Returns:
+            Dream mutation result with patch metadata and merged item count.
+        """
         operations: list[PatchOperation] = []
         merged = 0
         for duplicates in self._duplicate_groups():
@@ -100,6 +122,15 @@ class DreamService:
         }
 
     def decay_stale(self, reference_time: str | None = None, stale_after_days: int = 30) -> dict:
+        """Mark old active or candidate knowledge as stale.
+
+        Args:
+            reference_time: Optional ISO timestamp used as the freshness reference.
+            stale_after_days: Age threshold in days after last verification.
+
+        Returns:
+            Dream mutation result with patch metadata and decayed item count.
+        """
         now = self._parse_time(reference_time) if reference_time else self._parse_time(utc_now_iso())
         threshold = now - timedelta(days=stale_after_days)
         operations: list[PatchOperation] = []
@@ -135,6 +166,17 @@ class DreamService:
         reference_time: str | None = None,
         stale_after_days: int = 30,
     ) -> dict:
+        """Summarize dream maintenance opportunities without mutating memory.
+
+        Args:
+            min_confidence: Minimum confidence used to identify promotable candidates.
+            min_evidence: Minimum evidence count used to identify promotable candidates.
+            reference_time: Optional ISO timestamp used as the stale reference.
+            stale_after_days: Age threshold in days after last verification.
+
+        Returns:
+            Report containing promotable, low-evidence, stale, and duplicate knowledge identifiers.
+        """
         now = self._parse_time(reference_time) if reference_time else self._parse_time(utc_now_iso())
         threshold = now - timedelta(days=stale_after_days)
         promote_candidate_ids: list[str] = []
@@ -185,6 +227,17 @@ class DreamService:
         reference_time: str | None = None,
         stale_after_days: int = 30,
     ) -> dict:
+        """Run the full dream maintenance cycle.
+
+        Args:
+            min_confidence: Minimum confidence required for candidate promotion.
+            min_evidence: Minimum evidence count required for candidate promotion.
+            reference_time: Optional ISO timestamp used as the stale reference.
+            stale_after_days: Age threshold in days after last verification.
+
+        Returns:
+            Combined dream result with promoted, merged, decayed, patch, audit, and projection metadata.
+        """
         promoted = self.promote_candidates(min_confidence=min_confidence, min_evidence=min_evidence)
         merged = self.merge_duplicates()
         decayed = self.decay_stale(reference_time=reference_time, stale_after_days=stale_after_days)

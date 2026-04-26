@@ -20,6 +20,14 @@ from wiki_memory.projections.markdown.projector import MarkdownProjector
 
 class IngestService:
     def __init__(self, root: str | Path) -> None:
+        """Create an ingest service bound to one wiki-memory root.
+
+        Args:
+            root: Wiki-memory root directory that stores canonical objects and projections.
+
+        Returns:
+            None.
+        """
         self.root = Path(root)
         self.object_repository = FsObjectRepository(self.root)
         self.patch_repository = FsPatchRepository(self.root)
@@ -33,6 +41,14 @@ class IngestService:
         self.projector = MarkdownProjector(self.root)
 
     def ingest_repo(self, repo_path: str | Path) -> dict:
+        """Scan a repository and write its source, node, knowledge, and activity objects.
+
+        Args:
+            repo_path: Local repository path to scan.
+
+        Returns:
+            Ingest result with patch, source, node, knowledge, activity, audit, and projection metadata.
+        """
         output = self.repo_adapter.ingest(repo_path)
         repo_root = str(Path(repo_path).resolve())
         operations = [
@@ -148,12 +164,36 @@ class IngestService:
         }
 
     def ingest_file(self, file_path: str | Path) -> dict:
+        """Ingest a plain text file as a document source.
+
+        Args:
+            file_path: Local file path to read.
+
+        Returns:
+            Ingest result for the created or updated document source and projection.
+        """
         return self._ingest_document(file_path, kind="file", content_type="text")
 
     def ingest_markdown(self, file_path: str | Path) -> dict:
+        """Ingest a Markdown file as a structured document source.
+
+        Args:
+            file_path: Local Markdown file path to read.
+
+        Returns:
+            Ingest result for the created or updated Markdown source and projection.
+        """
         return self._ingest_document(file_path, kind="markdown", content_type="markdown")
 
     def ingest_web(self, url: str) -> dict:
+        """Fetch a web page and ingest its readable text as a source.
+
+        Args:
+            url: HTTP or HTTPS URL to fetch.
+
+        Returns:
+            Ingest result for the created or updated web source and projection.
+        """
         with urlopen(url, timeout=20) as response:
             raw = response.read()
             content_type_header = response.headers.get("content-type", "")
@@ -171,6 +211,14 @@ class IngestService:
         )
 
     def ingest_pdf(self, file_path: str | Path) -> dict:
+        """Ingest a PDF path as text when possible or as a binary stub otherwise.
+
+        Args:
+            file_path: Local PDF file path to read.
+
+        Returns:
+            Ingest result for the created or updated PDF source and projection.
+        """
         path = Path(file_path).resolve()
         if not path.exists() or not path.is_file():
             raise ValueError(f"PDF path is not a file: {path}")
@@ -190,6 +238,16 @@ class IngestService:
         return self._ingest_binary_stub(path, kind="pdf", raw=raw)
 
     def ingest_conversation(self, title: str, messages: list[dict], origin: dict | None = None) -> dict:
+        """Ingest chat or meeting messages as a conversation source.
+
+        Args:
+            title: Human-readable conversation title.
+            messages: Message dictionaries containing role and content fields.
+            origin: Optional metadata describing where the conversation came from.
+
+        Returns:
+            Ingest result for the created or updated conversation source and projection.
+        """
         lines = []
         for message in messages:
             role = message.get("role", "unknown")
