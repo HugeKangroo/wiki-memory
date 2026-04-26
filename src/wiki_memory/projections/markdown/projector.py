@@ -70,10 +70,10 @@ class MarkdownProjector:
             if target.exists():
                 shutil.rmtree(target)
 
-        for directory in ("Projects", "Knowledge", "Sources", "Activities", "Work_Items"):
+        for directory in ("Projects", "Knowledge", "Sources", "Activities", "Work_Items", "API"):
             target = self.wiki_root / directory
             ensure_directory(target)
-            for existing_path in target.glob("*.md"):
+            for existing_path in target.rglob("*.md"):
                 existing_path.unlink()
 
         home_path = self.wiki_root / "Home.md"
@@ -276,7 +276,7 @@ class MarkdownProjector:
                 "- [[Sources]]",
                 "- [[Activities]]",
                 "- [[Work_Items]]",
-                "- [[API_Docs|Doxygen API Docs]]",
+                "- [[API_Docs|API Docs]]",
                 "",
                 "## Editing Boundary",
                 "",
@@ -324,7 +324,9 @@ class MarkdownProjector:
 
         api_docs = self.wiki_root / "API_Docs.md"
         api_docs.write_text(self._render_doxygen_entry(repo_name, repo_path, status, repo_source), encoding="utf-8")
-        return [str(doxyfile), str(api_docs)]
+        written = [str(doxyfile), str(api_docs)]
+        written.extend(self._write_obsidian_api_pages(repo_source))
+        return written
 
     def _primary_repo_source(self) -> dict | None:
         for source in self.repository.list("source"):
@@ -354,7 +356,7 @@ class MarkdownProjector:
         html_path = self.doxygen_root / "html" / "index.html"
         doxyfile_path = self.doxygen_root / "Doxyfile"
         lines = [
-            "# Doxygen API Docs",
+            "# API Docs",
             "",
             f"- Project: `{repo_name}`",
             f"- Source: `{repo_path}`",
@@ -363,31 +365,135 @@ class MarkdownProjector:
             f"- HTML entry: `../doxygen/html/index.html`",
             f"- HTML absolute path: `{html_path}`",
             "",
-            "## Obsidian Native API Reference",
+            "## Obsidian API Reference",
             "",
-            "This section is generated as Markdown so it is readable inside Obsidian without opening local HTML.",
-            "",
+            "- [[API/Home|Obsidian API Reference]]",
         ]
-        api_lines = self._render_code_interfaces(repo_source)
-        if api_lines:
-            lines.extend(api_lines)
         lines.extend(
             [
                 "",
-                "## Open",
+                "## Optional Doxygen HTML",
                 "",
                 "- [Open Doxygen HTML](../doxygen/html/index.html)",
                 f"- [Open Doxygen HTML (file URI)]({html_path.as_uri()})",
                 "- [Doxyfile](../doxygen/Doxyfile)",
                 f"- [Doxyfile (file URI)]({doxyfile_path.as_uri()})",
                 "",
-                "<iframe src=\"../doxygen/html/index.html\" width=\"100%\" height=\"900\"></iframe>",
-                "",
-                "> If the frame is empty, install `doxygen` and rebuild the wiki projection through MCP.",
+                "> Obsidian reads the API pages above directly. Doxygen HTML is an optional browser artifact.",
                 "",
             ]
         )
         return "\n".join(lines)
+
+    def _write_obsidian_api_pages(self, repo_source: dict) -> list[str]:
+        payload = repo_source.get("payload", {})
+        if not isinstance(payload, dict):
+            return []
+        modules = payload.get("python_modules", [])
+        if not modules:
+            return []
+
+        api_root = self.wiki_root / "API"
+        modules_root = api_root / "Modules"
+        classes_root = api_root / "Classes"
+        ensure_directory(modules_root)
+        ensure_directory(classes_root)
+
+        written: list[str] = []
+        module_links: list[tuple[str, str, str]] = []
+        class_pages: dict[str, list[dict]] = {}
+
+        for module in sorted(modules, key=self._module_sort_key)[:30]:
+            path = str(module.get("path") or "")
+            if not path:
+                continue
+            category = self._module_category(path)
+            slug = self._api_module_slug(category, path)
+            module_path = modules_root / f"{slug}.md"
+            module_path.write_text(self._render_api_module_page(module, category), encoding="utf-8")
+            written.append(str(module_path))
+            module_links.append((path, category, slug))
+
+            for class_name in module.get("classes", [])[:12]:
+                class_pages.setdefault(str(class_name), []).append(module)
+
+        for class_name, class_modules in sorted(class_pages.items()):
+            class_path = classes_root / f"{self._safe_filename(class_name)}.md"
+            class_path.write_text(self._render_api_class_page(class_name, class_modules), encoding="utf-8")
+            written.append(str(class_path))
+
+        home_path = api_root / "Home.md"
+        home_path.write_text(self._render_api_home(module_links, sorted(class_pages)), encoding="utf-8")
+        written.append(str(home_path))
+        return written
+
+    def _render_api_home(self, module_links: list[tuple[str, str, str]], class_names: list[str]) -> str:
+        lines = ["# API Reference", "", "Obsidian-native API documentation generated from repository ingest.", "", "## Modules", ""]
+        lines.extend([f"- [[API/Modules/{slug}|{path}]] - {category}" for path, category, slug in module_links])
+        lines.extend(["", "## Classes", ""])
+        if class_names:
+            lines.extend([f"- [[API/Classes/{self._safe_filename(name)}|{name}]]" for name in class_names])
+        else:
+            lines.append("- (none)")
+        return "\n".join(lines) + "\n"
+
+    def _render_api_module_page(self, module: dict, category: str) -> str:
+        path = str(module.get("path") or "")
+        lines = [f"# {category} Module", "", f"**Defined in:** `{path}`"]
+        module_doc = module.get("module_doc")
+        if module_doc:
+            lines.extend(["", f"**Brief:** {module_doc}"])
+        classes = module.get("classes") or []
+        if classes:
+            lines.append("")
+            lines.append("**Classes:** " + ", ".join(f"[[API/Classes/{self._safe_filename(str(name))}|{name}]]" for name in classes[:12]))
+            class_docs = module.get("class_docs") or {}
+            for name in classes[:12]:
+                if class_docs.get(name):
+                    lines.append(f"> `{name}`: {class_docs[name]}")
+        interfaces = [item for item in module.get("interfaces", []) if self._is_public_interface(item)]
+        functions = [item for item in interfaces if item.get("kind") == "function"]
+        methods = [item for item in interfaces if item.get("kind") == "method"]
+        lines.extend(self._render_api_summary_and_details([*functions[:20], *methods[:20]]))
+        imports = module.get("imports") or []
+        if imports:
+            lines.extend(["", "## Imports"])
+            lines.extend([f"- `{name}`" for name in imports[:10]])
+        return "\n".join(lines) + "\n"
+
+    def _render_api_class_page(self, class_name: str, modules: list[dict]) -> str:
+        lines = [f"# Class `{class_name}`", ""]
+        interfaces: list[dict] = []
+        for module in modules:
+            path = str(module.get("path") or "")
+            category = self._module_category(path)
+            slug = self._api_module_slug(category, path)
+            lines.append(f"- Module: [[API/Modules/{slug}|{path}]]")
+            class_doc = (module.get("class_docs") or {}).get(class_name)
+            if class_doc:
+                lines.extend(["", class_doc, ""])
+            interfaces.extend(
+                item
+                for item in module.get("interfaces", [])
+                if item.get("kind") == "method" and str(item.get("name", "")).startswith(f"{class_name}.") and self._is_public_interface(item)
+            )
+        lines.extend(self._render_api_summary_and_details(interfaces[:30]))
+        return "\n".join(lines) + "\n"
+
+    def _render_api_summary_and_details(self, interfaces: list[dict]) -> list[str]:
+        if not interfaces:
+            return []
+        lines = ["", "| API | Kind | Brief |", "| --- | --- | --- |"]
+        for interface in interfaces:
+            brief = interface.get("doc") or "-"
+            lines.append(f"| `{interface.get('name')}` | {interface.get('kind')} | {brief} |")
+        lines.append("")
+        for interface in interfaces:
+            lines.extend(self._render_interface(interface))
+        return lines
+
+    def _api_module_slug(self, category: str, path: str) -> str:
+        return self._safe_filename(f"{category}-{path.replace('/', '-').replace('.', '-')}")
 
     def _project_nodes(self) -> list[dict]:
         return [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
