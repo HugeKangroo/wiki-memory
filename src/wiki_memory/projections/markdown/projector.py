@@ -349,33 +349,34 @@ class MarkdownProjector:
             path = module.get("path")
             if not path:
                 continue
-            lines.append(f"### {self._module_category(path)} Module `{path}`")
+            lines.append(f"### {self._module_category(path)} Module")
+            lines.extend(["", f"**Defined in:** `{path}`"])
             module_doc = module.get("module_doc")
             if module_doc:
-                lines.extend(["", str(module_doc)])
+                lines.extend(["", f"**Brief:** {module_doc}"])
             classes = module.get("classes") or []
             interfaces = [item for item in module.get("interfaces", []) if self._is_public_interface(item)]
             functions = [item for item in interfaces if item.get("kind") == "function"]
             methods = [item for item in interfaces if item.get("kind") == "method"]
             imports = module.get("imports") or []
             if classes:
-                lines.extend(["", "#### Classes", ""])
+                class_docs = module.get("class_docs") or {}
+                lines.append("")
+                lines.append(f"**Classes:** {', '.join(f'`{name}`' for name in classes[:12])}")
                 class_docs = module.get("class_docs") or {}
                 for name in classes[:12]:
-                    lines.append(f"##### `{name}`")
                     if class_docs.get(name):
-                        lines.extend(["", str(class_docs[name])])
-                    lines.append("")
-            if functions:
-                lines.extend(["", "#### Functions", ""])
-                for interface in functions[:20]:
-                    lines.extend(self._render_interface(interface))
-            if methods:
-                lines.extend(["", "#### Methods", ""])
-                for interface in methods[:20]:
+                        lines.append(f"> `{name}`: {class_docs[name]}")
+            if functions or methods:
+                lines.extend(["", "| API | Kind | Brief |", "| --- | --- | --- |"])
+                for interface in [*functions[:20], *methods[:20]]:
+                    brief = interface.get("doc") or "-"
+                    lines.append(f"| `{interface.get('name')}` | {interface.get('kind')} | {brief} |")
+                lines.append("")
+                for interface in [*functions[:20], *methods[:20]]:
                     lines.extend(self._render_interface(interface))
             if imports:
-                lines.extend(["", "#### Imports", ""])
+                lines.extend(["", "**Imports:**"])
                 lines.extend([f"- `{name}`" for name in imports[:10]])
             if not classes and not functions and not methods and not imports:
                 lines.append("- No public interfaces detected.")
@@ -407,11 +408,11 @@ class MarkdownProjector:
         return "Code"
 
     def _render_interface(self, interface: dict) -> list[str]:
-        lines = [f"##### `{interface.get('name')}`"]
+        lines = ["<details>", f"<summary><code>{interface.get('name')}</code></summary>", ""]
         if interface.get("doc"):
             lines.extend(["", f"**Purpose**: {interface['doc']}"])
         if interface.get("signature"):
-            lines.extend(["", "**Signature**", "", f"`{interface['signature']}`"])
+            lines.extend(["", "**Declaration**", "", f"`{interface['signature']}`"])
         parameters = interface.get("parameters") or []
         if parameters:
             lines.extend(["", "**Parameters**", "", "| Parameter | Type | Default | Description |", "| --- | --- | --- | --- |"])
@@ -427,7 +428,7 @@ class MarkdownProjector:
             if return_description:
                 rendered_return += f" - {return_description}"
             lines.extend(["", "**Returns**", "", rendered_return])
-        lines.append("")
+        lines.extend(["", "</details>", ""])
         return lines
 
     def _module_sort_key(self, module: dict) -> tuple[int, str]:
