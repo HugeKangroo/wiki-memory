@@ -523,13 +523,38 @@ class MarkdownProjector:
         name = str(interface.get("name") or "")
         signature = str(interface.get("signature") or name)
         doc = self._interface_description(interface)
-        return [
+        lines = [
             f"> [!example]- `{name}`",
             f"> Purpose: {doc}",
             ">",
+            "> **Declaration**",
+            ">",
             f"> `{signature}`",
-            "",
         ]
+        parameters = interface.get("parameters") or []
+        if parameters:
+            lines.extend(
+                [
+                    ">",
+                    "> **Parameters**",
+                    ">",
+                    "> | Parameter | Type | Default | Description |",
+                    "> | --- | --- | --- | --- |",
+                ]
+            )
+            for parameter in parameters:
+                default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
+                annotation = parameter.get("annotation") or "unknown"
+                description = parameter.get("description") or "-"
+                lines.append(f"> | `{parameter.get('name')}` | `{annotation}` | {default} | {description} |")
+        returns = interface.get("returns")
+        if returns:
+            rendered_return = f"`{returns}`"
+            if interface.get("return_description"):
+                rendered_return += f" - {interface['return_description']}"
+            lines.extend([">", "> **Returns**", ">", f"> {rendered_return}"])
+        lines.append("")
+        return lines
 
     def _render_api_summary_and_details(self, interfaces: list[dict]) -> list[str]:
         if not interfaces:
@@ -541,7 +566,6 @@ class MarkdownProjector:
         lines.append("")
         for interface in interfaces:
             lines.extend(self._render_api_method_card(interface))
-            lines.extend(self._render_interface(interface))
         return lines
 
     def _api_module_slug(self, category: str, path: str) -> str:
