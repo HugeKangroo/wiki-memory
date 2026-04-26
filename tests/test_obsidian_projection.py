@@ -34,7 +34,13 @@ class ObsidianProjectionTest(unittest.TestCase):
                 "        return None\n\n"
                 "\n"
                 "def ingest_repo(path: str, force: bool = False) -> dict:\n"
-                '    """Ingest a repository path into memory."""\n'
+                '    """Ingest a repository path into memory.\n\n'
+                "    Args:\n"
+                "        path: Repository path to scan.\n"
+                "        force: Rebuild even if the repository fingerprint is unchanged.\n\n"
+                "    Returns:\n"
+                "        Ingest result with source and node identifiers.\n"
+                '    """\n'
                 "    return {}\n\n",
                 encoding="utf-8",
             )
@@ -60,12 +66,16 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("##### `MemoryApi`", maps)
             self.assertIn("Facade for memory operations.", maps)
             self.assertIn("#### Functions", maps)
-            self.assertIn("##### `ingest_repo(path: str, force: bool = False) -> dict`", maps)
-            self.assertIn("| `path` | `str` | required |", maps)
-            self.assertIn("| `force` | `bool` | `False` |", maps)
-            self.assertIn("Returns: `dict`", maps)
+            self.assertIn("##### `ingest_repo`", maps)
+            self.assertIn("**Signature**", maps)
+            self.assertIn("`ingest_repo(path: str, force: bool = False) -> dict`", maps)
+            self.assertIn("| `path` | `str` | required | Repository path to scan. |", maps)
+            self.assertIn("| `force` | `bool` | `False` | Rebuild even if the repository fingerprint is unchanged. |", maps)
+            self.assertIn("**Returns**", maps)
+            self.assertIn("`dict` - Ingest result with source and node identifiers.", maps)
             self.assertIn("#### Methods", maps)
-            self.assertIn("##### `MemoryApi.search(query: str, limit: int = 10) -> list[str]`", maps)
+            self.assertIn("##### `MemoryApi.search`", maps)
+            self.assertIn("`MemoryApi.search(query: str, limit: int = 10) -> list[str]`", maps)
             self.assertNotIn("| `self` |", maps)
             self.assertNotIn("MemoryApi._private_helper", maps)
             self.assertIn("src/api.py", source)
@@ -75,7 +85,7 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("## API Reference", source)
             self.assertIn("### Application Module `src/api.py`", source)
             self.assertIn("##### `MemoryApi`", source)
-            self.assertIn("##### `ingest_repo(path: str, force: bool = False) -> dict`", source)
+            self.assertIn("##### `ingest_repo`", source)
             self.assertTrue(debug_pages)
             self.assertFalse((wiki_root / "index.md").exists())
             self.assertFalse((wiki_root / "overview.md").exists())

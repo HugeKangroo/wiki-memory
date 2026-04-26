@@ -407,19 +407,26 @@ class MarkdownProjector:
         return "Code"
 
     def _render_interface(self, interface: dict) -> list[str]:
-        lines = [f"##### `{interface.get('signature') or interface.get('name')}`"]
+        lines = [f"##### `{interface.get('name')}`"]
         if interface.get("doc"):
-            lines.extend(["", str(interface["doc"])])
+            lines.extend(["", f"**Purpose**: {interface['doc']}"])
+        if interface.get("signature"):
+            lines.extend(["", "**Signature**", "", f"`{interface['signature']}`"])
         parameters = interface.get("parameters") or []
         if parameters:
-            lines.extend(["", "| Parameter | Type | Default |", "| --- | --- | --- |"])
+            lines.extend(["", "**Parameters**", "", "| Parameter | Type | Default | Description |", "| --- | --- | --- | --- |"])
             for parameter in parameters:
                 default = "required" if parameter.get("required") else f"`{parameter.get('default') or ''}`"
                 annotation = parameter.get("annotation") or "unknown"
-                lines.append(f"| `{parameter.get('name')}` | `{annotation}` | {default} |")
+                description = parameter.get("description") or "-"
+                lines.append(f"| `{parameter.get('name')}` | `{annotation}` | {default} | {description} |")
         returns = interface.get("returns")
         if returns:
-            lines.extend(["", f"Returns: `{returns}`"])
+            return_description = interface.get("return_description")
+            rendered_return = f"`{returns}`"
+            if return_description:
+                rendered_return += f" - {return_description}"
+            lines.extend(["", "**Returns**", "", rendered_return])
         lines.append("")
         return lines
 

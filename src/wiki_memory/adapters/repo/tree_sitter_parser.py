@@ -162,6 +162,7 @@ class TreeSitterParser:
 
     def _python_interface(self, node: ast.FunctionDef | ast.AsyncFunctionDef, class_name: str | None = None) -> dict:
         name = f"{class_name}.{node.name}" if class_name else node.name
+        doc_info = self._parse_docstring(ast.get_docstring(node) or "")
         parameters = []
         defaults_by_arg = self._defaults_by_arg(node.args)
         for arg in [*node.args.posonlyargs, *node.args.args, *node.args.kwonlyargs]:
@@ -173,6 +174,7 @@ class TreeSitterParser:
                     "annotation": self._annotation(arg.annotation),
                     "default": defaults_by_arg.get(arg.arg),
                     "required": arg.arg not in defaults_by_arg,
+                    "description": doc_info["params"].get(arg.arg, ""),
                 }
             )
         signature_parameters = []
@@ -193,7 +195,41 @@ class TreeSitterParser:
             "signature": signature,
             "parameters": parameters,
             "returns": returns,
-            "doc": (ast.get_docstring(node) or "").splitlines()[0] if ast.get_docstring(node) else "",
+            "return_description": doc_info["returns"],
+            "doc": doc_info["summary"],
+        }
+
+    def _parse_docstring(self, doc: str) -> dict:
+        if not doc:
+            return {"summary": "", "params": {}, "returns": ""}
+        lines = [line.rstrip() for line in doc.splitlines()]
+        summary_lines: list[str] = []
+        params: dict[str, str] = {}
+        returns: list[str] = []
+        section = "summary"
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line:
+                continue
+            lowered = line.lower()
+            if lowered in {"args:", "arguments:", "parameters:"}:
+                section = "args"
+                continue
+            if lowered in {"returns:", "return:"}:
+                section = "returns"
+                continue
+            if section == "summary":
+                summary_lines.append(line)
+            elif section == "args":
+                name, sep, description = line.partition(":")
+                if sep:
+                    params[name.strip()] = description.strip()
+            elif section == "returns":
+                returns.append(line)
+        return {
+            "summary": " ".join(summary_lines),
+            "params": params,
+            "returns": " ".join(returns),
         }
 
     def _defaults_by_arg(self, args: ast.arguments) -> dict[str, str]:
