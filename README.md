@@ -13,6 +13,7 @@ The wiki root contains two different kinds of data:
 - `memory/objects/` is the canonical object store. MCP tools read and write this data.
 - `memory/projections/wiki/` is a generated Obsidian-friendly reading view. Open this directory as the Obsidian vault.
 - `memory/projections/debug/` is a generated object-level markdown mirror for debugging, linting, and traceability.
+- `memory/projections/doxygen/` is an optional Doxygen HTML projection for source API documentation.
 
 Treat projections as derived output. They are safe to read, link, and browse, but changes made directly inside `memory/projections/wiki/` can be overwritten by a later projection rebuild and are not the reliable source of truth.
 
@@ -49,7 +50,41 @@ Recommended root layout:
         knowledge/
         activities/
         work_items/
+      doxygen/            # optional Doxygen config and generated HTML
+        Doxyfile
+        html/
 ```
+
+### Optional Doxygen API Docs
+
+`wiki-memory` can generate a Doxygen projection for repository API documentation. Doxygen is an external system tool, not a Python package managed by `uv`.
+
+Install it with your OS package manager:
+
+```bash
+# Ubuntu / Debian
+sudo apt-get update
+sudo apt-get install -y doxygen graphviz
+
+# macOS
+brew install doxygen graphviz
+```
+
+After installing Doxygen, rebuild the projection by ingesting the repo again through MCP, or locally:
+
+```bash
+uv run --group dev python -c "from pathlib import Path; from wiki_memory.application.ingest.service import IngestService; IngestService(Path.home() / 'wiki-memory').ingest_repo(Path.cwd())"
+```
+
+Generated files:
+
+```text
+~/wiki-memory/memory/projections/wiki/API_Docs.md
+~/wiki-memory/memory/projections/doxygen/Doxyfile
+~/wiki-memory/memory/projections/doxygen/html/index.html
+```
+
+Open `API_Docs.md` from Obsidian to view the embedded Doxygen HTML page. If `doxygen` is not installed, `API_Docs.md` still gets generated but reports that HTML output was not produced.
 
 ## MCP Server
 
