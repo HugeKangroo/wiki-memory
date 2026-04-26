@@ -323,7 +323,7 @@ class MarkdownProjector:
             status = "generated" if result.returncode == 0 else f"failed: {result.stderr.strip() or result.stdout.strip()}"
 
         api_docs = self.wiki_root / "API_Docs.md"
-        api_docs.write_text(self._render_doxygen_entry(repo_name, repo_path, status), encoding="utf-8")
+        api_docs.write_text(self._render_doxygen_entry(repo_name, repo_path, status, repo_source), encoding="utf-8")
         return [str(doxyfile), str(api_docs)]
 
     def _primary_repo_source(self) -> dict | None:
@@ -350,19 +350,29 @@ class MarkdownProjector:
             ]
         ) + "\n"
 
-    def _render_doxygen_entry(self, repo_name: str, repo_path: Path, status: str) -> str:
+    def _render_doxygen_entry(self, repo_name: str, repo_path: Path, status: str, repo_source: dict) -> str:
         html_path = self.doxygen_root / "html" / "index.html"
         doxyfile_path = self.doxygen_root / "Doxyfile"
-        return "\n".join(
+        lines = [
+            "# Doxygen API Docs",
+            "",
+            f"- Project: `{repo_name}`",
+            f"- Source: `{repo_path}`",
+            f"- Status: `{status}`",
+            f"- Doxyfile: `../doxygen/Doxyfile`",
+            f"- HTML entry: `../doxygen/html/index.html`",
+            f"- HTML absolute path: `{html_path}`",
+            "",
+            "## Obsidian Native API Reference",
+            "",
+            "This section is generated as Markdown so it is readable inside Obsidian without opening local HTML.",
+            "",
+        ]
+        api_lines = self._render_code_interfaces(repo_source)
+        if api_lines:
+            lines.extend(api_lines)
+        lines.extend(
             [
-                "# Doxygen API Docs",
-                "",
-                f"- Project: `{repo_name}`",
-                f"- Source: `{repo_path}`",
-                f"- Status: `{status}`",
-                f"- Doxyfile: `../doxygen/Doxyfile`",
-                f"- HTML entry: `../doxygen/html/index.html`",
-                f"- HTML absolute path: `{html_path}`",
                 "",
                 "## Open",
                 "",
@@ -377,6 +387,7 @@ class MarkdownProjector:
                 "",
             ]
         )
+        return "\n".join(lines)
 
     def _project_nodes(self) -> list[dict]:
         return [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
