@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 import re
 import shutil
+import subprocess
 
 from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from wiki_memory.infrastructure.storage.fs_utils import ensure_directory
@@ -25,6 +26,7 @@ class MarkdownProjector:
         self.repository = FsObjectRepository(self.root)
         self.wiki_root = self.paths.projections_root / "wiki"
         self.debug_root = self.paths.projections_root / "debug"
+        self.doxygen_root = self.paths.projections_root / "doxygen"
 
     def rebuild(self) -> dict:
         ensure_directory(self.wiki_root)
@@ -42,6 +44,7 @@ class MarkdownProjector:
                 written.append(str(path))
 
         written.extend(self._write_obsidian_views())
+        written.extend(self._write_doxygen_projection())
 
         for stale_root_page in ("index.md", "overview.md"):
             stale_path = self.wiki_root / stale_root_page
@@ -273,6 +276,7 @@ class MarkdownProjector:
                 "- [[Sources]]",
                 "- [[Activities]]",
                 "- [[Work_Items]]",
+                "- [[API_Docs|Doxygen API Docs]]",
                 "",
                 "## Editing Boundary",
                 "",
@@ -289,6 +293,80 @@ class MarkdownProjector:
             path.write_text(self._render_project_page(node, title), encoding="utf-8")
             written.append(str(path))
         return written
+
+    def _write_doxygen_projection(self) -> list[str]:
+        repo_source = self._primary_repo_source()
+        if repo_source is None:
+            return []
+        payload = repo_source.get("payload", {})
+        origin = repo_source.get("origin", {})
+        repo_name = str(payload.get("repo_name") or repo_source.get("title") or "wiki-memory") if isinstance(payload, dict) else str(repo_source.get("title") or "wiki-memory")
+        repo_path = Path(str(origin.get("path", ""))) if isinstance(origin, dict) else Path()
+        if not repo_path:
+            return []
+
+        ensure_directory(self.doxygen_root)
+        doxyfile = self.doxygen_root / "Doxyfile"
+        doxyfile.write_text(self._render_doxyfile(repo_name, repo_path), encoding="utf-8")
+
+        status = "not generated: doxygen is not installed"
+        doxygen = shutil.which("doxygen")
+        if doxygen:
+            result = subprocess.run(
+                [doxygen, str(doxyfile)],
+                cwd=str(self.doxygen_root),
+                capture_output=True,
+                text=True,
+                timeout=60,
+                check=False,
+            )
+            status = "generated" if result.returncode == 0 else f"failed: {result.stderr.strip() or result.stdout.strip()}"
+
+        api_docs = self.wiki_root / "API_Docs.md"
+        api_docs.write_text(self._render_doxygen_entry(repo_name, repo_path, status), encoding="utf-8")
+        return [str(doxyfile), str(api_docs)]
+
+    def _primary_repo_source(self) -> dict | None:
+        for source in self.repository.list("source"):
+            if source.get("kind") == "repo":
+                return source
+        return None
+
+    def _render_doxyfile(self, repo_name: str, repo_path: Path) -> str:
+        return "\n".join(
+            [
+                f'PROJECT_NAME = "{repo_name}"',
+                f"INPUT = {repo_path}",
+                f"OUTPUT_DIRECTORY = {self.doxygen_root}",
+                "HTML_OUTPUT = html",
+                "GENERATE_HTML = YES",
+                "GENERATE_XML = NO",
+                "RECURSIVE = YES",
+                "EXTRACT_ALL = YES",
+                "EXTRACT_PRIVATE = NO",
+                "JAVADOC_AUTOBRIEF = YES",
+                "QUIET = YES",
+                "WARN_IF_UNDOCUMENTED = NO",
+            ]
+        ) + "\n"
+
+    def _render_doxygen_entry(self, repo_name: str, repo_path: Path, status: str) -> str:
+        return "\n".join(
+            [
+                "# Doxygen API Docs",
+                "",
+                f"- Project: `{repo_name}`",
+                f"- Source: `{repo_path}`",
+                f"- Status: `{status}`",
+                f"- Doxyfile: `../doxygen/Doxyfile`",
+                f"- HTML entry: `../doxygen/html/index.html`",
+                "",
+                "<iframe src=\"../doxygen/html/index.html\" width=\"100%\" height=\"900\"></iframe>",
+                "",
+                "> If the frame is empty, install `doxygen` and rebuild the wiki projection through MCP.",
+                "",
+            ]
+        )
 
     def _project_nodes(self) -> list[dict]:
         return [node for node in self.repository.list("node") if node.get("kind") in {"project", "repo"}]
