@@ -72,12 +72,16 @@ class McpServerTest(unittest.TestCase):
     def test_server_instructions_explain_agent_workflow_and_mutation_guard(self) -> None:
         server = create_server()
         self.assertIn("Recommended workflow", server.instructions)
-        self.assertIn("memory_query before memory_ingest", server.instructions)
-        self.assertIn("memory_remember only for durable memory", server.instructions)
+        self.assertIn("Task start: use memory_query", server.instructions)
+        self.assertIn("New evidence: use memory_ingest", server.instructions)
+        self.assertIn("analyze evidence outside ingest", server.instructions)
+        self.assertIn("memory_query before memory_remember", server.instructions)
+        self.assertNotIn("memory_query before memory_ingest", server.instructions)
         self.assertIn("options.apply=true", server.instructions)
 
         descriptions = {tool.name: tool.description for tool in server._tool_manager.list_tools()}
-        self.assertIn("Use before memory_remember", descriptions["memory_query"])
+        self.assertIn("Use at task start", descriptions["memory_query"])
+        self.assertIn("before durable writes", descriptions["memory_query"])
         self.assertIn("requires options.apply=true", descriptions["memory_maintain"])
 
     def test_agent_facing_schema_uses_structured_nested_models(self) -> None:

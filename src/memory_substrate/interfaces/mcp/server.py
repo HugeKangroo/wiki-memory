@@ -15,10 +15,12 @@ from memory_substrate.interfaces.mcp.tools import (
 SERVER_INSTRUCTIONS = (
     "Memory Substrate MCP server for capturing evidence, remembering durable knowledge, "
     "querying accumulated context, and maintaining memory lifecycle health.\n\n"
-    "Recommended workflow: use memory_query before memory_ingest to avoid duplicate work; "
-    "use memory_ingest to capture durable evidence; use memory_remember only for durable memory "
-    "that should survive future sessions; use memory_query again to retrieve grounded context; "
-    "use memory_maintain report/structure for read-only checks before mutating maintenance. "
+    "Recommended workflow: Task start: use memory_query to load existing context. "
+    "New evidence: use memory_ingest to capture files, repos, web pages, PDFs, or conversations "
+    "as citable evidence. Then analyze evidence outside ingest and call memory_remember only when "
+    "the user or agent decides the extracted information should survive future sessions. "
+    "Use memory_query before memory_remember to check related context, duplicates, and conflicts. "
+    "Use memory_maintain report/structure for read-only checks before mutating maintenance. "
     "Mutating memory_maintain modes require options.apply=true."
 )
 
@@ -36,7 +38,7 @@ def create_server() -> FastMCP:
     def memory_ingest(args: IngestToolArgs) -> dict:
         return dispatch_ingest(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_query", description="Query existing memory. Use before memory_remember and before new ingest when checking what is already known.")
+    @mcp.tool(name="memory_query", description="Query existing memory. Use at task start and before durable writes when checking context, duplicates, or conflicts.")
     def memory_query(args: QueryToolArgs) -> dict:
         return dispatch_query(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 

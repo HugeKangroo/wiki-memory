@@ -116,11 +116,12 @@ The MCP server exposes exactly four tools:
 
 Recommended agent workflow:
 
-1. Call `memory_query` first to check what is already known.
-2. Call `memory_ingest` to capture durable evidence from files, repos, web pages, PDFs, or conversations.
-3. Call `memory_remember` only for information that should survive future sessions as durable memory.
-4. Call `memory_query` again to retrieve grounded context for the current task.
-5. Call `memory_maintain` read-only modes before mutating maintenance. Mutating maintain modes require `options.apply=true`.
+1. At task start, call `memory_query` to load existing context.
+2. For new evidence, call `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as citable evidence.
+3. Analyze the evidence outside ingest and decide whether any extracted information should survive future sessions.
+4. Before durable writes, call `memory_query` to check related context, duplicates, and conflicts.
+5. Call `memory_remember` only for durable memory the user requested or the agent can justify.
+6. Call `memory_maintain` read-only modes before mutating maintenance. Mutating maintain modes require `options.apply=true`.
 
 ### Supported Modes
 
