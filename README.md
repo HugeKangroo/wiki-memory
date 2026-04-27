@@ -10,6 +10,7 @@ Research notes:
 
 - [Compounding Memory Core Design](docs/superpowers/specs/2026-04-28-compounding-memory-core-design.md)
 - [Context Substrate Memory Core Research](docs/research/2026-04-28-context-substrate-memory-core-research.md)
+- [Memory Backend Library Spike](docs/research/2026-04-28-memory-backend-library-spike.md)
 - [Agent Memory MCP Usage](docs/agent-memory-mcp-usage.md)
 
 ## Storage and Editing Boundary
