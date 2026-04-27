@@ -114,6 +114,14 @@ The MCP server exposes exactly four tools:
 - `memory_remember`
 - `memory_maintain`
 
+Recommended agent workflow:
+
+1. Call `memory_query` first to check what is already known.
+2. Call `memory_ingest` to capture durable evidence from files, repos, web pages, PDFs, or conversations.
+3. Call `memory_remember` only for information that should survive future sessions as durable memory.
+4. Call `memory_query` again to retrieve grounded context for the current task.
+5. Call `memory_maintain` read-only modes before mutating maintenance. Mutating maintain modes require `options.apply=true`.
+
 ### Supported Modes
 
 - `memory_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`
@@ -143,6 +151,7 @@ Notes:
 - `input_data` is required at the MCP boundary even when empty
 - `options` is optional
 - unexpected extra fields inside `args` are rejected
+- mutating `memory_maintain` modes reject the call unless `options.apply` is exactly `true`
 
 ### MCP API Reference
 
@@ -200,6 +209,18 @@ Allowed modes:
 
 `file` stores plain text sources. `markdown` stores markdown sources and uses headings as segment boundaries where possible.
 `web` stores fetched text from a URL, `pdf` stores extracted text when readable or a binary stub otherwise, and `conversation` stores role/content message lists.
+
+`conversation` messages are structured:
+
+```json
+{
+  "role": "user",
+  "content": "Remember that project X uses Neo4j.",
+  "name": "optional-speaker",
+  "created_at": "2026-04-27T00:00:00+00:00",
+  "metadata": {}
+}
+```
 
 #### `memory_query`
 
@@ -422,13 +443,29 @@ Examples:
         "subject": "node:...",
         "predicate": "primary_language",
         "value": "python",
-        "object": null
+        "object": null,
+        "metadata": {}
       },
       "confidence": 0.8
     }
   }
 }
 ```
+
+`evidence_refs` entries are structured as:
+
+```json
+{
+  "source_id": "src:...",
+  "segment_id": "seg-1",
+  "locator": {
+    "kind": "line",
+    "line": 12
+  }
+}
+```
+
+`payload` is a structured claim: `subject`, `predicate`, `value`, `object`, and optional `metadata`.
 
 `work_item`
 
@@ -528,7 +565,10 @@ Examples:
 {
   "args": {
     "mode": "repair",
-    "input_data": {}
+    "input_data": {},
+    "options": {
+      "apply": true
+    }
   }
 }
 ```
@@ -554,6 +594,9 @@ Examples:
     "input_data": {
       "min_confidence": 0.75,
       "min_evidence": 1
+    },
+    "options": {
+      "apply": true
     }
   }
 }
@@ -565,7 +608,10 @@ Examples:
 {
   "args": {
     "mode": "merge_duplicates",
-    "input_data": {}
+    "input_data": {},
+    "options": {
+      "apply": true
+    }
   }
 }
 ```
@@ -579,6 +625,9 @@ Examples:
     "input_data": {
       "reference_time": "2026-04-24T00:00:00+00:00",
       "stale_after_days": 30
+    },
+    "options": {
+      "apply": true
     }
   }
 }
@@ -595,6 +644,9 @@ Examples:
       "min_evidence": 1,
       "reference_time": "2026-04-24T00:00:00+00:00",
       "stale_after_days": 30
+    },
+    "options": {
+      "apply": true
     }
   }
 }

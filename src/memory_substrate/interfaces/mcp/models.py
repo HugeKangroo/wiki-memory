@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,18 +11,95 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class EmptyOptions(StrictModel):
+    """Empty options object accepted when a mode has no optional controls."""
+
+    pass
+
+
 class BaseToolArgs(StrictModel):
     """Shared top-level MCP tool arguments."""
 
-    root: str | None = None
-    options: dict | None = None
+    root: str | None = Field(default=None, description="Memory root path. Defaults to ~/memory-substrate when omitted.")
+    options: EmptyOptions | None = None
+
+
+class ActorRef(StrictModel):
+    """Actor metadata recorded in audit and patch sources."""
+
+    type: str = Field(description="Actor category, such as user, agent, system, or host.")
+    id: str = Field(description="Stable actor identifier.")
+    name: str | None = Field(default=None, description="Optional display name.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Optional host-specific actor metadata.")
+
+
+class EvidenceRef(StrictModel):
+    """Citation reference to one ingested source segment."""
+
+    source_id: str = Field(description="Source object id, normally prefixed with src:.")
+    segment_id: str = Field(description="Segment id inside the source object.")
+    locator: dict[str, Any] | None = Field(default=None, description="Optional line, page, URL, or span locator.")
+
+
+class KnowledgePayload(StrictModel):
+    """Structured claim payload for fact-like knowledge."""
+
+    subject: str | None = Field(default=None, description="Primary subject entity or object id for the claim.")
+    predicate: str = Field(description="Relationship or property being asserted, such as primary_language.")
+    value: Any = Field(default=None, description="Literal claim value when the predicate points to a value.")
+    object: Any = Field(default=None, description="Object-side entity/value when the predicate links two things.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Optional structured details that do not fit the core claim fields.")
+
+
+class ConversationMessage(StrictModel):
+    """One message in an ingested conversation transcript."""
+
+    role: str = Field(description="Message role, such as user, assistant, system, or tool.")
+    content: str = Field(description="Message text content.")
+    name: str | None = Field(default=None, description="Optional speaker or tool name.")
+    created_at: str | None = Field(default=None, description="Optional ISO timestamp.")
+    metadata: dict[str, Any] = Field(default_factory=dict, description="Optional host-specific message metadata.")
+
+
+class QueryFilters(StrictModel):
+    """Structured filters accepted by memory_query recent, search, and context scope."""
+
+    object_type: str | None = None
+    object_types: list[str] = Field(default_factory=list)
+    kind: str | None = None
+    kinds: list[str] = Field(default_factory=list)
+    status: str | None = None
+    statuses: list[str] = Field(default_factory=list)
+    node_id: str | None = None
+    node_ids: list[str] = Field(default_factory=list)
+    source_id: str | None = None
+    source_ids: list[str] = Field(default_factory=list)
+
+
+class QueryOptions(StrictModel):
+    """Query controls shared by memory_query modes."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
+    filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
+
+
+class AuditOptions(StrictModel):
+    """Options for reading audit events."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum audit events to return.")
+
+
+class ApplyOptions(StrictModel):
+    """Required confirmation for memory_maintain modes that mutate memory."""
+
+    apply: Literal[True] = Field(description="Must be true. Required because this maintain mode mutates memory.")
 
 
 class QueryContextInput(StrictModel):
     """Input payload for building a task-focused context pack."""
 
     task: str
-    scope: dict | None = None
+    scope: QueryFilters | None = None
 
 
 class QueryExpandInput(StrictModel):
@@ -55,42 +132,48 @@ class QueryGraphInput(StrictModel):
     id: str
 
 
-class QueryContextArgs(BaseToolArgs):
+class QueryBaseArgs(BaseToolArgs):
+    """Base MCP arguments for memory_query modes."""
+
+    options: QueryOptions | None = None
+
+
+class QueryContextArgs(QueryBaseArgs):
     """MCP arguments for memory_query context mode."""
 
     mode: Literal["context"]
     input_data: QueryContextInput
 
 
-class QueryExpandArgs(BaseToolArgs):
+class QueryExpandArgs(QueryBaseArgs):
     """MCP arguments for memory_query expand mode."""
 
     mode: Literal["expand"]
     input_data: QueryExpandInput
 
 
-class QueryPageArgs(BaseToolArgs):
+class QueryPageArgs(QueryBaseArgs):
     """MCP arguments for memory_query page mode."""
 
     mode: Literal["page"]
     input_data: QueryPageInput
 
 
-class QueryRecentArgs(BaseToolArgs):
+class QueryRecentArgs(QueryBaseArgs):
     """MCP arguments for memory_query recent mode."""
 
     mode: Literal["recent"]
     input_data: QueryRecentInput
 
 
-class QuerySearchArgs(BaseToolArgs):
+class QuerySearchArgs(QueryBaseArgs):
     """MCP arguments for memory_query search mode."""
 
     mode: Literal["search"]
     input_data: QuerySearchInput
 
 
-class QueryGraphArgs(BaseToolArgs):
+class QueryGraphArgs(QueryBaseArgs):
     """MCP arguments for memory_query graph mode."""
 
     mode: Literal["graph"]
@@ -109,15 +192,15 @@ class RememberActivityInput(StrictModel):
     kind: str
     title: str
     summary: str
-    actor: dict | None = None
+    actor: ActorRef | None = None
     status: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
-    related_node_refs: list[str] = []
-    related_work_item_refs: list[str] = []
-    source_refs: list[str] = []
-    produced_object_refs: list[str] = []
-    artifact_refs: list[str] = []
+    related_node_refs: list[str] = Field(default_factory=list)
+    related_work_item_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    produced_object_refs: list[str] = Field(default_factory=list)
+    artifact_refs: list[str] = Field(default_factory=list)
 
 
 class RememberKnowledgeInput(StrictModel):
@@ -126,10 +209,10 @@ class RememberKnowledgeInput(StrictModel):
     kind: str
     title: str
     summary: str
-    actor: dict | None = None
-    subject_refs: list[str] = []
-    evidence_refs: list[dict] = []
-    payload: dict = {}
+    actor: ActorRef | None = None
+    subject_refs: list[str] = Field(default_factory=list)
+    evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    payload: KnowledgePayload
     status: str | None = None
     confidence: float | None = None
     valid_from: str | None = None
@@ -143,18 +226,18 @@ class RememberWorkItemInput(StrictModel):
     kind: str
     title: str
     summary: str
-    actor: dict | None = None
+    actor: ActorRef | None = None
     status: str | None = None
     lifecycle_state: str | None = None
     priority: str | None = None
-    owner_refs: list[str] = []
-    related_node_refs: list[str] = []
-    related_knowledge_refs: list[str] = []
-    source_refs: list[str] = []
-    depends_on: list[str] = []
-    blocked_by: list[str] = []
+    owner_refs: list[str] = Field(default_factory=list)
+    related_node_refs: list[str] = Field(default_factory=list)
+    related_knowledge_refs: list[str] = Field(default_factory=list)
+    source_refs: list[str] = Field(default_factory=list)
+    depends_on: list[str] = Field(default_factory=list)
+    blocked_by: list[str] = Field(default_factory=list)
     parent_ref: str | None = None
-    child_refs: list[str] = []
+    child_refs: list[str] = Field(default_factory=list)
     resolution: str | None = None
     due_at: str | None = None
     opened_at: str | None = None
@@ -164,7 +247,7 @@ class RememberPromoteInput(StrictModel):
     """Input payload for promoting one knowledge object."""
 
     knowledge_id: str
-    actor: dict | None = None
+    actor: ActorRef | None = None
     reason: str | None = None
 
 
@@ -173,7 +256,7 @@ class RememberSupersedeInput(StrictModel):
 
     old_knowledge_id: str
     new_knowledge_id: str
-    actor: dict | None = None
+    actor: ActorRef | None = None
     reason: str | None = None
 
 
@@ -181,22 +264,42 @@ class RememberContestInput(StrictModel):
     """Input payload for marking one knowledge object contested."""
 
     knowledge_id: str
-    actor: dict | None = None
+    actor: ActorRef | None = None
     reason: str | None = None
 
 
-class RememberBatchEntryInput(StrictModel):
-    """One create entry inside a remember batch request."""
+class RememberBatchActivityEntryInput(StrictModel):
+    """One activity create entry inside a remember batch request."""
 
-    mode: Literal["activity", "knowledge", "work_item"]
-    input_data: dict
+    mode: Literal["activity"]
+    input_data: RememberActivityInput
+
+
+class RememberBatchKnowledgeEntryInput(StrictModel):
+    """One knowledge create entry inside a remember batch request."""
+
+    mode: Literal["knowledge"]
+    input_data: RememberKnowledgeInput
+
+
+class RememberBatchWorkItemEntryInput(StrictModel):
+    """One work item create entry inside a remember batch request."""
+
+    mode: Literal["work_item"]
+    input_data: RememberWorkItemInput
+
+
+RememberBatchEntryInput = Annotated[
+    RememberBatchActivityEntryInput | RememberBatchKnowledgeEntryInput | RememberBatchWorkItemEntryInput,
+    Field(discriminator="mode"),
+]
 
 
 class RememberBatchInput(StrictModel):
     """Input payload for running multiple remember create operations."""
 
     entries: list[RememberBatchEntryInput]
-    actor: dict | None = None
+    actor: ActorRef | None = None
 
 
 class RememberActivityArgs(BaseToolArgs):
@@ -298,28 +401,34 @@ class MaintainLifecycleReportInput(StrictModel):
     stale_after_days: int | None = None
 
 
-class MaintainLifecyclePromoteCandidatesArgs(BaseToolArgs):
+class MaintainApplyArgs(BaseToolArgs):
+    """Base MCP arguments for memory_maintain modes that mutate memory."""
+
+    options: ApplyOptions | None = None
+
+
+class MaintainLifecyclePromoteCandidatesArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain promote_candidates mode."""
 
     mode: Literal["promote_candidates"]
     input_data: MaintainLifecyclePromoteCandidatesInput
 
 
-class MaintainLifecycleMergeDuplicatesArgs(BaseToolArgs):
+class MaintainLifecycleMergeDuplicatesArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain merge_duplicates mode."""
 
     mode: Literal["merge_duplicates"]
     input_data: MaintainLifecycleMergeDuplicatesInput
 
 
-class MaintainLifecycleDecayStaleArgs(BaseToolArgs):
+class MaintainLifecycleDecayStaleArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain decay_stale mode."""
 
     mode: Literal["decay_stale"]
     input_data: MaintainLifecycleDecayStaleInput
 
 
-class MaintainLifecycleCycleArgs(BaseToolArgs):
+class MaintainLifecycleCycleArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain cycle mode."""
 
     mode: Literal["cycle"]
@@ -369,6 +478,7 @@ class MaintainStructureAuditArgs(BaseToolArgs):
 
     mode: Literal["audit"]
     input_data: MaintainStructureAuditInput
+    options: AuditOptions | None = None
 
 
 class MaintainStructureReindexArgs(BaseToolArgs):
@@ -378,7 +488,7 @@ class MaintainStructureReindexArgs(BaseToolArgs):
     input_data: MaintainStructureReindexInput
 
 
-class MaintainStructureRepairArgs(BaseToolArgs):
+class MaintainStructureRepairArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain repair mode."""
 
     mode: Literal["repair"]
@@ -433,8 +543,8 @@ class IngestConversationInput(StrictModel):
     """Input payload for ingesting a conversation transcript."""
 
     title: str
-    messages: list[dict]
-    origin: dict | None = None
+    messages: list[ConversationMessage]
+    origin: dict[str, Any] | None = None
 
 
 class IngestRepoArgs(BaseToolArgs):

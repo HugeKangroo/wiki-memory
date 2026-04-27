@@ -8,6 +8,9 @@ from memory_substrate.application.maintain.service import MaintainService
 from memory_substrate.application.query.service import QueryService
 
 
+MUTATING_MAINTAIN_MODES = {"repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
+
+
 def resolve_root(root: str | Path | None) -> Path:
     """Resolve an optional MCP root argument to a concrete memory-substrate root.
 
@@ -20,6 +23,13 @@ def resolve_root(root: str | Path | None) -> Path:
     if root is None:
         return Path.home() / "memory-substrate"
     return Path(root).expanduser()
+
+
+def _require_apply(mode: str, options: dict | None) -> None:
+    if mode not in MUTATING_MAINTAIN_MODES:
+        return
+    if not options or options.get("apply") is not True:
+        raise ValueError(f"memory_maintain mode '{mode}' mutates memory and requires options.apply=true")
 
 
 def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
@@ -153,6 +163,7 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
     """
     input_data = input_data or {}
     options = options or {}
+    _require_apply(mode, options)
     service = MaintainService(resolve_root(root))
     if mode == "structure":
         return service.structure()

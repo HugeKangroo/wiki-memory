@@ -14,34 +14,39 @@ from memory_substrate.interfaces.mcp.tools import (
 
 SERVER_INSTRUCTIONS = (
     "Memory Substrate MCP server for capturing evidence, remembering durable knowledge, "
-    "querying accumulated context, and maintaining memory lifecycle health."
+    "querying accumulated context, and maintaining memory lifecycle health.\n\n"
+    "Recommended workflow: use memory_query before memory_ingest to avoid duplicate work; "
+    "use memory_ingest to capture durable evidence; use memory_remember only for durable memory "
+    "that should survive future sessions; use memory_query again to retrieve grounded context; "
+    "use memory_maintain report/structure for read-only checks before mutating maintenance. "
+    "Mutating memory_maintain modes require options.apply=true."
 )
 
 
 def _model_to_dict(value) -> dict:
     if isinstance(value, BaseModel):
-        return value.model_dump()
+        return value.model_dump(exclude_none=True)
     return value
 
 
 def create_server() -> FastMCP:
     mcp = FastMCP(name="memory-substrate", instructions=SERVER_INSTRUCTIONS)
 
-    @mcp.tool(name="memory_ingest", description="Capture content into the memory substrate evidence store.")
+    @mcp.tool(name="memory_ingest", description="Capture files, repos, web pages, PDFs, or conversations as citable evidence before deciding what to remember.")
     def memory_ingest(args: IngestToolArgs) -> dict:
-        return dispatch_ingest(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+        return dispatch_ingest(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_query", description="Query context, pages, recent items, and graph/search results from memory.")
+    @mcp.tool(name="memory_query", description="Query existing memory. Use before memory_remember and before new ingest when checking what is already known.")
     def memory_query(args: QueryToolArgs) -> dict:
-        return dispatch_query(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+        return dispatch_query(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_remember", description="Govern durable memory writes for activities, knowledge, and work items.")
+    @mcp.tool(name="memory_remember", description="Govern durable memory writes for activities, claims, and work items after evidence has been captured or verified.")
     def memory_remember(args: RememberToolArgs) -> dict:
-        return dispatch_remember(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+        return dispatch_remember(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_maintain", description="Validate, repair, reindex, and consolidate accumulated memory.")
+    @mcp.tool(name="memory_maintain", description="Validate, report, repair, reindex, and consolidate memory. Any mutating mode requires options.apply=true.")
     def memory_maintain(args: MaintainToolArgs) -> dict:
-        return dispatch_maintain(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+        return dispatch_maintain(args.root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
     return mcp
 

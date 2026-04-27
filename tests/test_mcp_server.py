@@ -69,6 +69,111 @@ class McpServerTest(unittest.TestCase):
             {"repo", "file", "markdown", "web", "pdf", "conversation"},
         )
 
+    def test_server_instructions_explain_agent_workflow_and_mutation_guard(self) -> None:
+        server = create_server()
+        self.assertIn("Recommended workflow", server.instructions)
+        self.assertIn("memory_query before memory_ingest", server.instructions)
+        self.assertIn("memory_remember only for durable memory", server.instructions)
+        self.assertIn("options.apply=true", server.instructions)
+
+        descriptions = {tool.name: tool.description for tool in server._tool_manager.list_tools()}
+        self.assertIn("Use before memory_remember", descriptions["memory_query"])
+        self.assertIn("requires options.apply=true", descriptions["memory_maintain"])
+
+    def test_agent_facing_schema_uses_structured_nested_models(self) -> None:
+        server = create_server()
+        tools = {tool.name: tool for tool in server._tool_manager.list_tools()}
+
+        remember_defs = tools["memory_remember"].parameters["$defs"]
+        self.assertIn("EvidenceRef", remember_defs)
+        self.assertIn("KnowledgePayload", remember_defs)
+        self.assertEqual(
+            remember_defs["RememberKnowledgeInput"]["properties"]["evidence_refs"]["items"]["$ref"],
+            "#/$defs/EvidenceRef",
+        )
+        self.assertEqual(
+            remember_defs["RememberKnowledgeInput"]["properties"]["payload"]["$ref"],
+            "#/$defs/KnowledgePayload",
+        )
+
+        query_defs = tools["memory_query"].parameters["$defs"]
+        self.assertIn("QueryOptions", query_defs)
+        self.assertIn("QueryFilters", query_defs)
+        recent_args = query_defs["QueryRecentArgs"]
+        self.assertEqual(
+            recent_args["properties"]["options"]["anyOf"][0]["$ref"],
+            "#/$defs/QueryOptions",
+        )
+
+        ingest_defs = tools["memory_ingest"].parameters["$defs"]
+        self.assertIn("ConversationMessage", ingest_defs)
+        self.assertEqual(
+            ingest_defs["IngestConversationInput"]["properties"]["messages"]["items"]["$ref"],
+            "#/$defs/ConversationMessage",
+        )
+
+    def test_maintain_mutating_modes_require_explicit_apply_option(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with self.assertRaisesRegex(Exception, "apply"):
+                    await server.call_tool(
+                        "memory_maintain",
+                        {"args": {"root": tmpdir, "mode": "merge_duplicates", "input_data": {}}},
+                    )
+
+                result = await server.call_tool(
+                    "memory_maintain",
+                    {
+                        "args": {
+                            "root": tmpdir,
+                            "mode": "merge_duplicates",
+                            "input_data": {},
+                            "options": {"apply": True},
+                        }
+                    },
+                )
+                payload = json.loads(result[0].text)
+                self.assertEqual(payload["status"], "noop")
+                self.assertEqual(payload["merged"], 0)
+
+        asyncio.run(run_smoke())
+
+    def test_server_omits_unset_optional_model_fields_before_dispatch(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                recent_result = await server.call_tool(
+                    "memory_query",
+                    {
+                        "args": {
+                            "root": tmpdir,
+                            "mode": "recent",
+                            "input_data": {},
+                            "options": {"filters": {"object_type": "knowledge"}},
+                        }
+                    },
+                )
+                recent_payload = json.loads(recent_result[0].text)
+                self.assertEqual(recent_payload["result_type"], "recent")
+
+                cycle_result = await server.call_tool(
+                    "memory_maintain",
+                    {
+                        "args": {
+                            "root": tmpdir,
+                            "mode": "cycle",
+                            "input_data": {"reference_time": "2026-04-24T00:00:00+00:00"},
+                            "options": {"apply": True},
+                        }
+                    },
+                )
+                cycle_payload = json.loads(cycle_result[0].text)
+                self.assertEqual(cycle_payload["status"], "completed")
+                self.assertEqual(cycle_payload["promoted"], 0)
+
+        asyncio.run(run_smoke())
+
     def test_main_runs_server(self) -> None:
         with patch("memory_substrate.interfaces.mcp.server.create_server") as create:
             server = create.return_value
@@ -149,6 +254,7 @@ class McpServerTest(unittest.TestCase):
                             "root": tmpdir,
                             "mode": "promote_candidates",
                             "input_data": {"min_confidence": 0.8, "min_evidence": 2},
+                            "options": {"apply": True},
                         }
                     },
                 )

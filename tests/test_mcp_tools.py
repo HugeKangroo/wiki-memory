@@ -28,15 +28,20 @@ class McpToolsTest(unittest.TestCase):
             service.cycle.return_value = {"status": "completed", "promoted": 1, "merged": 1, "decayed": 1}
 
             self.assertEqual(
-                memory_maintain(".", "promote_candidates", {"min_confidence": 0.8, "min_evidence": 2})["promoted"],
+                memory_maintain(".", "promote_candidates", {"min_confidence": 0.8, "min_evidence": 2}, {"apply": True})["promoted"],
                 1,
             )
-            self.assertEqual(memory_maintain(".", "merge_duplicates", {})["merged"], 1)
+            self.assertEqual(memory_maintain(".", "merge_duplicates", {}, {"apply": True})["merged"], 1)
             self.assertEqual(
-                memory_maintain(".", "decay_stale", {"reference_time": "2026-04-24T00:00:00+00:00", "stale_after_days": 10})["decayed"],
+                memory_maintain(
+                    ".",
+                    "decay_stale",
+                    {"reference_time": "2026-04-24T00:00:00+00:00", "stale_after_days": 10},
+                    {"apply": True},
+                )["decayed"],
                 1,
             )
-            self.assertEqual(memory_maintain(".", "cycle", {"reference_time": "2026-04-24T00:00:00+00:00"})["merged"], 1)
+            self.assertEqual(memory_maintain(".", "cycle", {"reference_time": "2026-04-24T00:00:00+00:00"}, {"apply": True})["merged"], 1)
 
             service.promote_candidates.assert_called_once_with(min_confidence=0.8, min_evidence=2)
             service.merge_duplicates.assert_called_once_with()
@@ -63,10 +68,17 @@ class McpToolsTest(unittest.TestCase):
             service = maintain_service.return_value
             service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
 
-            result = memory_maintain(None, "merge_duplicates", {})
+            result = memory_maintain(None, "merge_duplicates", {}, {"apply": True})
 
             self.assertEqual(result["merged"], 1)
             maintain_service.assert_called_once_with(Path("/tmp/fake-home/memory-substrate"))
+
+    def test_memory_maintain_requires_apply_for_mutating_modes(self) -> None:
+        with self.assertRaisesRegex(ValueError, "options.apply=true"):
+            memory_maintain(".", "merge_duplicates", {})
+
+        with self.assertRaisesRegex(ValueError, "options.apply=true"):
+            memory_maintain(".", "repair", {}, {"apply": False})
 
 
 if __name__ == "__main__":
