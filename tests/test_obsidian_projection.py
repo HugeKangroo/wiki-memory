@@ -11,17 +11,17 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from wiki_memory.application.ingest.service import IngestService
-from wiki_memory.projections.markdown.projector import MarkdownProjector
+from memory_substrate.application.ingest.service import IngestService
+from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
 class ObsidianProjectionTest(unittest.TestCase):
     def test_rebuild_writes_human_readable_home_and_alias_pages(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            repo = root / "wiki-memory"
+            repo = root / "memory-substrate"
             repo.mkdir()
-            (repo / "README.md").write_text("# wiki-memory\n", encoding="utf-8")
+            (repo / "README.md").write_text("# memory-substrate\n", encoding="utf-8")
             src = repo / "src"
             src.mkdir()
             (src / "api.py").write_text(
@@ -51,18 +51,18 @@ class ObsidianProjectionTest(unittest.TestCase):
             wiki_root = root / "memory" / "projections" / "wiki"
             debug_root = root / "memory" / "projections" / "debug"
             home = (wiki_root / "Home.md").read_text(encoding="utf-8")
-            maps = (wiki_root / "Projects" / "wiki-memory.md").read_text(encoding="utf-8")
-            source = (wiki_root / "Sources" / "wiki-memory.md").read_text(encoding="utf-8")
+            maps = (wiki_root / "Projects" / "memory-substrate.md").read_text(encoding="utf-8")
+            source = (wiki_root / "Sources" / "memory-substrate.md").read_text(encoding="utf-8")
             api_docs = (wiki_root / "API_Docs.md").read_text(encoding="utf-8")
             api_home = (wiki_root / "API" / "Home.md").read_text(encoding="utf-8")
             api_module = (wiki_root / "API" / "Modules" / "Application-src-api-py.md").read_text(encoding="utf-8")
             api_class = (wiki_root / "API" / "Classes" / "MemoryApi.md").read_text(encoding="utf-8")
-            css = (wiki_root / ".obsidian" / "snippets" / "wiki-memory-api.css").read_text(encoding="utf-8")
+            css = (wiki_root / ".obsidian" / "snippets" / "memory-substrate-api.css").read_text(encoding="utf-8")
             doxyfile = (root / "memory" / "projections" / "doxygen" / "Doxyfile").read_text(encoding="utf-8")
             debug_pages = list((debug_root / "nodes").glob("*.md"))
 
-            self.assertIn("# Wiki Memory Home", home)
-            self.assertIn("[[Projects/wiki-memory|wiki-memory]]", home)
+            self.assertIn("# Memory Substrate Home", home)
+            self.assertIn("[[Projects/memory-substrate|memory-substrate]]", home)
             self.assertIn("[[API_Docs|API Docs]]", home)
             self.assertIn("# API Docs", api_docs)
             self.assertIn("[[API/Home|Obsidian API Reference]]", api_docs)
@@ -100,7 +100,7 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertIn("HTML absolute path:", api_docs)
             self.assertIn("../doxygen/html/index.html", api_docs)
             self.assertIn("Doxygen HTML is an optional browser artifact.", api_docs)
-            self.assertIn("PROJECT_NAME = \"wiki-memory\"", doxyfile)
+            self.assertIn("PROJECT_NAME = \"memory-substrate\"", doxyfile)
             self.assertIn("RECURSIVE = YES", doxyfile)
             self.assertIn(f"INPUT = {repo}", doxyfile)
             self.assertIn("## What This Is", maps)

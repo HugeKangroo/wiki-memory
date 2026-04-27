@@ -3,16 +3,16 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "wiki-memory"
+name = "memory-substrate"
 version = "0.3.0"
-description = "Wiki-based context substrate for agents."
+description = "Graph-backed memory substrate for agents, with derived wiki projections."
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.27.0",
 ]
 
 [project.scripts]
-wiki-memory-mcp = "wiki_memory.interfaces.mcp.server:main"
+memory-substrate-mcp = "memory_substrate.interfaces.mcp.server:main"
 
 [dependency-groups]
 dev = [
@@ -23,4 +23,4 @@ dev = [
 testpaths = ["tests"]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/wiki_memory"]
+packages = ["src/memory_substrate"]

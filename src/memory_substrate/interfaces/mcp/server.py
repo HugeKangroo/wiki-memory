@@ -1,0 +1,54 @@
+from __future__ import annotations
+
+from mcp.server.fastmcp import FastMCP
+from pydantic import BaseModel
+
+from memory_substrate.interfaces.mcp.models import IngestToolArgs, MaintainToolArgs, QueryToolArgs, RememberToolArgs
+from memory_substrate.interfaces.mcp.tools import (
+    memory_ingest as dispatch_ingest,
+    memory_maintain as dispatch_maintain,
+    memory_query as dispatch_query,
+    memory_remember as dispatch_remember,
+)
+
+
+SERVER_INSTRUCTIONS = (
+    "Memory Substrate MCP server for capturing evidence, remembering durable knowledge, "
+    "querying accumulated context, and maintaining memory lifecycle health."
+)
+
+
+def _model_to_dict(value) -> dict:
+    if isinstance(value, BaseModel):
+        return value.model_dump()
+    return value
+
+
+def create_server() -> FastMCP:
+    mcp = FastMCP(name="memory-substrate", instructions=SERVER_INSTRUCTIONS)
+
+    @mcp.tool(name="memory_ingest", description="Capture content into the memory substrate evidence store.")
+    def memory_ingest(args: IngestToolArgs) -> dict:
+        return dispatch_ingest(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+
+    @mcp.tool(name="memory_query", description="Query context, pages, recent items, and graph/search results from memory.")
+    def memory_query(args: QueryToolArgs) -> dict:
+        return dispatch_query(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+
+    @mcp.tool(name="memory_remember", description="Govern durable memory writes for activities, knowledge, and work items.")
+    def memory_remember(args: RememberToolArgs) -> dict:
+        return dispatch_remember(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+
+    @mcp.tool(name="memory_maintain", description="Validate, repair, reindex, and consolidate accumulated memory.")
+    def memory_maintain(args: MaintainToolArgs) -> dict:
+        return dispatch_maintain(args.root, args.mode, _model_to_dict(args.input_data), args.options)
+
+    return mcp
+
+
+def main() -> None:
+    create_server().run()
+
+
+if __name__ == "__main__":
+    main()

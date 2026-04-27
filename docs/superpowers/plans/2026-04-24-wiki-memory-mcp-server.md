@@ -1,5 +1,7 @@
 # Wiki Memory MCP Server Implementation Plan
 
+> Historical snapshot: this plan implemented the previous wiki-centered MCP surface. The current implementation plan is `2026-04-27-memory-substrate-redesign.md`.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Build a runnable stdio MCP server for wiki-memory with five tools, including a full `wiki_dream` consolidation tool.

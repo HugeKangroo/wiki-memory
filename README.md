@@ -1,36 +1,36 @@
-# wiki-memory
+# memory-substrate
 
-Wiki-based context substrate for agents. The project stores semantic objects on disk, derives markdown projections, and exposes the workflow through an MCP server.
+Graph-backed memory substrate for agents, with derived wiki projections. The project stores semantic objects on disk, derives markdown projections, and exposes the workflow through an MCP server.
 
-By default, the MCP tools use `~/wiki-memory` as the wiki root on Linux and macOS when the caller does not pass an explicit `root`.
+By default, the MCP tools use `~/memory-substrate` as the memory root on Linux and macOS when the caller does not pass an explicit `root`.
 
 The MCP server uses a strict argument model with `extra="forbid"`. Older argument layouts or unexpected fields fail fast instead of being accepted silently.
 
 ## Storage and Editing Boundary
 
-The wiki root contains two different kinds of data:
+The memory root contains two different kinds of data:
 
 - `memory/objects/` is the canonical object store. MCP tools read and write this data.
 - `memory/projections/wiki/` is a generated Obsidian-friendly reading view. Open this directory as the Obsidian vault.
-- `memory/projections/debug/` is a generated object-level markdown mirror for debugging, linting, and traceability.
+- `memory/projections/debug/` is a generated object-level markdown mirror for debugging, validation, and traceability.
 - `memory/projections/doxygen/` is an optional Doxygen HTML projection for source API documentation.
 
 Treat projections as derived output. They are safe to read, link, and browse, but changes made directly inside `memory/projections/wiki/` can be overwritten by a later projection rebuild and are not the reliable source of truth.
 
-All durable changes should go through the MCP server, whether the caller is a human, an agent, Codex, Claude Code, Gemini CLI, VS Code, or another host. This keeps object IDs, references, indexes, projections, lint checks, and repair behavior consistent.
+All durable changes should go through the MCP server, whether the caller is a human, an agent, Codex, Claude Code, Gemini CLI, VS Code, or another host. This keeps object IDs, references, indexes, projections, validation checks, and repair behavior consistent.
 
-Direct file edits are possible for emergency recovery or local debugging, but they must preserve object schema and references. After direct edits, run `wiki_lint` with `structure` or `repair`, then `reindex`, before relying on query or dream results.
+Direct file edits are possible for emergency recovery or local debugging, but they must preserve object schema and references. After direct edits, run `memory_maintain` with `structure` or `repair`, then `reindex`, before relying on query or maintenance results.
 
 Recommended Obsidian entrypoint:
 
 ```text
-~/wiki-memory/memory/projections/wiki/Home.md
+~/memory-substrate/memory/projections/wiki/Home.md
 ```
 
 Recommended root layout:
 
 ```text
-~/wiki-memory/
+~/memory-substrate/
   memory/
     objects/              # canonical JSON objects
     indexes/              # derived query state
@@ -57,7 +57,7 @@ Recommended root layout:
 
 ### Optional Doxygen API Docs
 
-`wiki-memory` can generate a Doxygen projection for repository API documentation. Doxygen is an external system tool, not a Python package managed by `uv`.
+`memory-substrate` can generate a Doxygen projection for repository API documentation. Doxygen is an external system tool, not a Python package managed by `uv`.
 
 Install it with your OS package manager:
 
@@ -73,15 +73,15 @@ brew install doxygen graphviz
 After installing Doxygen, rebuild the projection by ingesting the repo again through MCP, or locally:
 
 ```bash
-uv run --group dev python -c "from pathlib import Path; from wiki_memory.application.ingest.service import IngestService; IngestService(Path.home() / 'wiki-memory').ingest_repo(Path.cwd())"
+uv run --group dev python -c "from pathlib import Path; from memory_substrate.application.ingest.service import IngestService; IngestService(Path.home() / 'memory-substrate').ingest_repo(Path.cwd())"
 ```
 
 Generated files:
 
 ```text
-~/wiki-memory/memory/projections/wiki/API_Docs.md
-~/wiki-memory/memory/projections/doxygen/Doxyfile
-~/wiki-memory/memory/projections/doxygen/html/index.html
+~/memory-substrate/memory/projections/wiki/API_Docs.md
+~/memory-substrate/memory/projections/doxygen/Doxyfile
+~/memory-substrate/memory/projections/doxygen/html/index.html
 ```
 
 Open `API_Docs.md` from Obsidian to view the embedded Doxygen HTML page. If `doxygen` is not installed, `API_Docs.md` still gets generated but reports that HTML output was not produced.
@@ -89,7 +89,7 @@ Open `API_Docs.md` from Obsidian to view the embedded Doxygen HTML page. If `dox
 `API_Docs.md` is an Obsidian entry page, not the full API document itself. It links to and embeds:
 
 ```text
-~/wiki-memory/memory/projections/doxygen/html/index.html
+~/memory-substrate/memory/projections/doxygen/html/index.html
 ```
 
 If Obsidian does not render the embedded frame or relative HTML link in your setup, open the generated `index.html` directly in a browser.
@@ -107,21 +107,19 @@ The current built-in projections are:
 
 ## MCP Server
 
-The MCP server exposes exactly five tools:
+The MCP server exposes exactly four tools:
 
-- `wiki_ingest`
-- `wiki_query`
-- `wiki_crystallize`
-- `wiki_lint`
-- `wiki_dream`
+- `memory_ingest`
+- `memory_query`
+- `memory_remember`
+- `memory_maintain`
 
 ### Supported Modes
 
-- `wiki_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`
-- `wiki_query`: `context`, `expand`, `page`, `recent`, `search`, `graph`
-- `wiki_crystallize`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`, `contest`, `batch`
-- `wiki_lint`: `structure`, `audit`, `reindex`, `repair`
-- `wiki_dream`: `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
+- `memory_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`
+- `memory_query`: `context`, `expand`, `page`, `recent`, `search`, `graph`
+- `memory_remember`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`, `contest`, `batch`
+- `memory_maintain`: `structure`, `audit`, `reindex`, `repair`, `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
 
 ### Required MCP Call Shape
 
@@ -130,7 +128,7 @@ Every tool call must include:
 ```json
 {
   "args": {
-    "root": "/absolute/path/to/wiki-memory",
+    "root": "/absolute/path/to/memory-substrate",
     "mode": "...",
     "input_data": {},
     "options": {}
@@ -141,7 +139,7 @@ Every tool call must include:
 Notes:
 
 - `args` is required
-- `root` is optional; if omitted, it defaults to `~/wiki-memory`
+- `root` is optional; if omitted, it defaults to `~/memory-substrate`
 - `input_data` is required at the MCP boundary even when empty
 - `options` is optional
 - unexpected extra fields inside `args` are rejected
@@ -153,7 +151,7 @@ The outer envelope is always:
 ```json
 {
   "args": {
-    "root": "/absolute/path/to/wiki-memory",
+    "root": "/absolute/path/to/memory-substrate",
     "mode": "...",
     "input_data": {},
     "options": {}
@@ -163,7 +161,7 @@ The outer envelope is always:
 
 What changes per tool is the allowed `mode` set and the required shape of `input_data`.
 
-#### `wiki_ingest`
+#### `memory_ingest`
 
 Allowed modes:
 
@@ -203,7 +201,7 @@ Allowed modes:
 `file` stores plain text sources. `markdown` stores markdown sources and uses headings as segment boundaries where possible.
 `web` stores fetched text from a URL, `pdf` stores extracted text when readable or a binary stub otherwise, and `conversation` stores role/content message lists.
 
-#### `wiki_query`
+#### `memory_query`
 
 Allowed modes:
 
@@ -327,7 +325,7 @@ Supported query filters:
 }
 ```
 
-#### `wiki_crystallize`
+#### `memory_remember`
 
 Allowed modes:
 
@@ -477,7 +475,7 @@ Examples:
 }
 ```
 
-#### `wiki_lint`
+#### `memory_maintain` Structural Modes
 
 Allowed modes:
 
@@ -535,7 +533,7 @@ Examples:
 }
 ```
 
-#### `wiki_dream`
+#### `memory_maintain` Lifecycle Modes
 
 Allowed modes:
 
@@ -624,7 +622,7 @@ Examples:
 
 ```bash
 uv sync --group dev
-uv run wiki-memory-mcp
+uv run memory-substrate-mcp
 ```
 
 The server runs over stdio using the official Python MCP SDK.
@@ -635,10 +633,10 @@ Use the server as a stdio command. Many MCP hosts expect the same shape:
 
 ```json
 {
-  "wiki-memory": {
+  "memory-substrate": {
     "command": "uv",
-    "args": ["run", "wiki-memory-mcp"],
-    "cwd": "/absolute/path/to/wiki-memory"
+    "args": ["run", "memory-substrate-mcp"],
+    "cwd": "/absolute/path/to/memory-substrate"
   }
 }
 ```
@@ -647,23 +645,23 @@ If your host uses a different wrapper format, keep the same command, args, and w
 
 ## Host-Specific Setup
 
-Replace `/absolute/path/to/wiki-memory` with your local checkout path.
+Replace `/absolute/path/to/memory-substrate` with your local checkout path.
 
 ### Codex
 
 Codex can register the server directly from the CLI:
 
 ```bash
-codex mcp add wiki-memory -- uv run --directory /absolute/path/to/wiki-memory wiki-memory-mcp
+codex mcp add memory-substrate -- uv run --directory /absolute/path/to/memory-substrate memory-substrate-mcp
 ```
 
 If you prefer editing config manually, use the same command and arguments in your Codex MCP server entry.
 For non-interactive smoke tests or trusted local use, set the server approval mode:
 
 ```toml
-[mcp_servers.wiki-memory]
+[mcp_servers.memory-substrate]
 command = "uv"
-args = ["run", "--directory", "/absolute/path/to/wiki-memory", "wiki-memory-mcp"]
+args = ["run", "--directory", "/absolute/path/to/memory-substrate", "memory-substrate-mcp"]
 default_tools_approval_mode = "approve"
 ```
 
@@ -674,13 +672,13 @@ For a project-shared setup, add this to `.mcp.json` at the repo root:
 ```json
 {
   "mcpServers": {
-    "wiki-memory": {
+    "memory-substrate": {
       "command": "uv",
       "args": [
         "run",
         "--directory",
-        "/absolute/path/to/wiki-memory",
-        "wiki-memory-mcp"
+        "/absolute/path/to/memory-substrate",
+        "memory-substrate-mcp"
       ],
       "env": {}
     }
@@ -691,8 +689,8 @@ For a project-shared setup, add this to `.mcp.json` at the repo root:
 You can also add it from the CLI:
 
 ```bash
-claude mcp add --transport stdio --scope project wiki-memory -- \
-  uv run --directory /absolute/path/to/wiki-memory wiki-memory-mcp
+claude mcp add --transport stdio --scope project memory-substrate -- \
+  uv run --directory /absolute/path/to/memory-substrate memory-substrate-mcp
 ```
 
 ### Gemini CLI
@@ -702,15 +700,15 @@ Add this to `.gemini/settings.json` or `~/.gemini/settings.json`:
 ```json
 {
   "mcpServers": {
-    "wiki-memory": {
+    "memory-substrate": {
       "command": "uv",
       "args": [
         "run",
         "--directory",
-        "/absolute/path/to/wiki-memory",
-        "wiki-memory-mcp"
+        "/absolute/path/to/memory-substrate",
+        "memory-substrate-mcp"
       ],
-      "cwd": "/absolute/path/to/wiki-memory",
+      "cwd": "/absolute/path/to/memory-substrate",
       "timeout": 30000,
       "trust": true
     }
@@ -725,14 +723,14 @@ Add this to `.vscode/mcp.json` in the workspace or your user `mcp.json`:
 ```json
 {
   "servers": {
-    "wikiMemory": {
+    "memorySubstrate": {
       "type": "stdio",
       "command": "uv",
       "args": [
         "run",
         "--directory",
-        "/absolute/path/to/wiki-memory",
-        "wiki-memory-mcp"
+        "/absolute/path/to/memory-substrate",
+        "memory-substrate-mcp"
       ]
     }
   }
@@ -745,15 +743,15 @@ Add this to `.vscode/mcp.json` in the workspace or your user `mcp.json`:
 - missing required fields such as `mode` or `input_data` fail at MCP argument validation
 - unexpected extra fields inside `args` fail with `Extra inputs are not permitted`
 - missing required tool arguments fail through the MCP SDK argument validation layer
-- `wiki_dream` no-op paths return success payloads with zero counts instead of raising
+- `memory_maintain` no-op paths return success payloads with zero counts instead of raising
 - domain object lookup failures keep the missing object id in the error message
 
 ## Notes
 
-- `wiki-memory-mcp` is installed by `uv sync --group dev`
+- `memory-substrate-mcp` is installed by `uv sync --group dev`
 - all four host examples above use stdio transport
-- `uv run --directory ... wiki-memory-mcp` avoids relying on the caller's current working directory
-- if a tool call omits `root`, the server resolves it to `~/wiki-memory`
+- `uv run --directory ... memory-substrate-mcp` avoids relying on the caller's current working directory
+- if a tool call omits `root`, the server resolves it to `~/memory-substrate`
 
 ## Release
 

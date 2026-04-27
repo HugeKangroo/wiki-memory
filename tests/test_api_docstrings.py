@@ -11,11 +11,10 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 class ApiDocstringsTest(unittest.TestCase):
     def test_application_services_document_public_api_methods(self) -> None:
         service_files = [
-            PROJECT_ROOT / "src/wiki_memory/application/ingest/service.py",
-            PROJECT_ROOT / "src/wiki_memory/application/query/service.py",
-            PROJECT_ROOT / "src/wiki_memory/application/dream/service.py",
-            PROJECT_ROOT / "src/wiki_memory/application/lint/service.py",
-            PROJECT_ROOT / "src/wiki_memory/application/crystallize/service.py",
+            PROJECT_ROOT / "src/memory_substrate/application/ingest/service.py",
+            PROJECT_ROOT / "src/memory_substrate/application/query/service.py",
+            PROJECT_ROOT / "src/memory_substrate/application/maintain/service.py",
+            PROJECT_ROOT / "src/memory_substrate/application/remember/service.py",
         ]
 
         missing: list[str] = []
@@ -38,14 +37,14 @@ class ApiDocstringsTest(unittest.TestCase):
         self.assertEqual([], missing)
 
     def test_mcp_tools_document_public_dispatch_functions(self) -> None:
-        path = PROJECT_ROOT / "src/wiki_memory/interfaces/mcp/tools.py"
+        path = PROJECT_ROOT / "src/memory_substrate/interfaces/mcp/tools.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         missing: list[str] = []
         for node in tree.body:
             if not isinstance(node, ast.FunctionDef):
                 continue
-            if not node.name.startswith("wiki_"):
+            if not node.name.startswith("memory_"):
                 continue
             doc = ast.get_docstring(node) or ""
             if "Args:" not in doc or "Returns:" not in doc:
@@ -54,7 +53,7 @@ class ApiDocstringsTest(unittest.TestCase):
         self.assertEqual([], missing)
 
     def test_mcp_models_document_schema_classes(self) -> None:
-        path = PROJECT_ROOT / "src/wiki_memory/interfaces/mcp/models.py"
+        path = PROJECT_ROOT / "src/memory_substrate/interfaces/mcp/models.py"
         tree = ast.parse(path.read_text(encoding="utf-8"))
 
         missing: list[str] = []

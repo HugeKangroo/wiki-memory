@@ -1,5 +1,7 @@
 # Wiki Memory Phase 1 Implementation Plan
 
+> Historical snapshot: this plan describes the original wiki-memory MVP slice. The current implementation direction starts from memory-substrate naming and a governed memory core.
+
 ## Goal
 
 Implement the smallest end-to-end slice that validates the architecture without collapsing back into an ad hoc wiki tool.

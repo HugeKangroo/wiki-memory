@@ -11,23 +11,23 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from wiki_memory.application.crystallize.service import CrystallizeService
-from wiki_memory.application.lint.service import LintService
-from wiki_memory.domain.protocols.wiki_patch import PatchOperation, WikiPatch
-from wiki_memory.domain.services.patch_applier import PatchApplier, utc_now_iso
-from wiki_memory.infrastructure.repositories.fs_audit_repository import FsAuditRepository
-from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjectRepository
-from wiki_memory.infrastructure.repositories.fs_patch_repository import FsPatchRepository
+from memory_substrate.application.remember.service import RememberService
+from memory_substrate.application.maintain.service import MaintainService
+from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
+from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
+from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
+from memory_substrate.infrastructure.repositories.fs_patch_repository import FsPatchRepository
 
 
 class RepairMissingReferencesTest(unittest.TestCase):
     def test_repair_clears_missing_owner_refs(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
-            crystallize = CrystallizeService(root)
-            lint = LintService(root)
+            remember = RememberService(root)
+            validator = MaintainService(root)
 
-            result = crystallize.create_work_item(
+            result = remember.create_work_item(
                 {
                     "kind": "issue",
                     "title": "Broken ref test",
@@ -37,7 +37,7 @@ class RepairMissingReferencesTest(unittest.TestCase):
             )
             work_item_id = result["work_item_id"]
 
-            report_before = lint.structure()
+            report_before = validator.structure()
             self.assertTrue(
                 any(
                     issue["kind"] == "missing_reference"
@@ -47,13 +47,13 @@ class RepairMissingReferencesTest(unittest.TestCase):
                 )
             )
 
-            repair_result = lint.repair()
+            repair_result = validator.repair()
             work_item = FsObjectRepository(root).get("work_item", work_item_id)
 
             self.assertEqual(repair_result["data"]["status"], "completed")
             self.assertEqual(work_item["owner_refs"], [])
 
-            report_after = lint.structure()
+            report_after = validator.structure()
             self.assertFalse(
                 any(
                     issue["kind"] == "missing_reference"

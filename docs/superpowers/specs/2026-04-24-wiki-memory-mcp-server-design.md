@@ -1,5 +1,7 @@
 # Wiki Memory MCP Server Design
 
+> Historical snapshot: this document describes the earlier wiki-centered MCP surface. The current product surface is defined by `2026-04-27-memory-substrate-redesign.md`.
+
 ## Goal
 
 Turn the current phase-1 wiki-memory slice into a runnable stdio MCP server with five tools:

@@ -1,5 +1,7 @@
 # Wiki Memory System Design
 
+> Historical snapshot: this document describes the initial wiki-memory framing. The current product direction is memory-substrate first, with wiki output as a derived projection.
+
 ## Goal
 
 Build a wiki-based memory system for a single user that supports:

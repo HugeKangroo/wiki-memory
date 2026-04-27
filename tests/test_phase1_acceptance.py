@@ -12,13 +12,13 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from wiki_memory.application.crystallize.service import CrystallizeService
-from wiki_memory.application.ingest.service import IngestService
-from wiki_memory.application.lint.service import LintService
-from wiki_memory.application.query.service import QueryService
-from wiki_memory.infrastructure.repositories.fs_audit_repository import FsAuditRepository
-from wiki_memory.infrastructure.repositories.fs_object_repository import FsObjectRepository
-from wiki_memory.infrastructure.storage.paths import StoragePaths
+from memory_substrate.application.remember.service import RememberService
+from memory_substrate.application.ingest.service import IngestService
+from memory_substrate.application.maintain.service import MaintainService
+from memory_substrate.application.query.service import QueryService
+from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
+from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
+from memory_substrate.infrastructure.storage.paths import StoragePaths
 
 
 class Phase1AcceptanceTest(unittest.TestCase):
@@ -153,7 +153,7 @@ class Phase1AcceptanceTest(unittest.TestCase):
             for index in range(25):
                 (tests / f"test_{index}.py").write_text(f"def test_{index}():\n    return None\n", encoding="utf-8")
             (app / "service.py").write_text("def run():\n    return True\n", encoding="utf-8")
-            (interface / "tools.py").write_text("def wiki_query():\n    return {}\n", encoding="utf-8")
+            (interface / "tools.py").write_text("def memory_query():\n    return {}\n", encoding="utf-8")
 
             ingest = IngestService(root)
             result = ingest.ingest_repo(repo)
@@ -278,12 +278,12 @@ class Phase1AcceptanceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             document = root / "guide.md"
-            document.write_text("# Guide\n\nInstall wiki memory.\n", encoding="utf-8")
+            document.write_text("# Guide\n\nInstall memory substrate.\n", encoding="utf-8")
 
             ingest = IngestService(root)
             ingest_result = ingest.ingest_markdown(document)
-            crystallize = CrystallizeService(root)
-            crystallize.create_knowledge(
+            remember = RememberService(root)
+            remember.create_knowledge(
                 {
                     "kind": "fact",
                     "title": "Guide install command",
@@ -321,9 +321,9 @@ class Phase1AcceptanceTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             document = root / "guide.md"
-            document.write_text("# Guide\n\nInstall wiki memory.\n", encoding="utf-8")
+            document.write_text("# Guide\n\nInstall memory substrate.\n", encoding="utf-8")
             ingest_result = IngestService(root).ingest_markdown(document)
-            knowledge = CrystallizeService(root).create_knowledge(
+            knowledge = RememberService(root).create_knowledge(
                 {
                     "kind": "fact",
                     "title": "Guide graph fact",
@@ -343,20 +343,20 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertIn(ingest_result["node_id"], node_ids)
             self.assertIn(knowledge["knowledge_id"], edge_targets)
 
-    def test_phase1_crystallize_mutations_emit_audit_and_keep_lint_clean(self) -> None:
+    def test_phase1_remember_mutations_emit_audit_and_keep_structure_clean(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             repo = self._make_repo(root)
 
             ingest = IngestService(root)
             ingest_result = ingest.ingest_repo(repo)
-            crystallize = CrystallizeService(root)
-            lint = LintService(root)
+            remember = RememberService(root)
+            validator = MaintainService(root)
             objects = FsObjectRepository(root)
             audit = FsAuditRepository(root)
             paths = StoragePaths(root)
 
-            activity_result = crystallize.create_activity(
+            activity_result = remember.create_activity(
                 {
                     "kind": "research",
                     "title": "Inspect demo repo",
@@ -365,7 +365,7 @@ class Phase1AcceptanceTest(unittest.TestCase):
                     "related_node_refs": ingest_result["node_ids"][:1],
                 }
             )
-            knowledge_result = crystallize.create_knowledge(
+            knowledge_result = remember.create_knowledge(
                 {
                     "kind": "fact",
                     "title": "Demo repo exposes hello",
@@ -386,7 +386,7 @@ class Phase1AcceptanceTest(unittest.TestCase):
                     "confidence": 0.8,
                 }
             )
-            work_item_result = crystallize.create_work_item(
+            work_item_result = remember.create_work_item(
                 {
                     "kind": "task",
                     "title": "Follow up on demo repo",
@@ -416,24 +416,24 @@ class Phase1AcceptanceTest(unittest.TestCase):
                 + work_item_result["applied_operations"],
             )
 
-            report = lint.structure()
-            self.assertEqual(report["result_type"], "lint_report")
+            report = validator.structure()
+            self.assertEqual(report["result_type"], "structure_report")
             self.assertEqual(report["data"]["counts"]["warning"], 0)
             self.assertEqual(report["data"]["counts"]["error"], 0)
 
-            audit_snapshot = lint.audit(max_items=50)
+            audit_snapshot = validator.audit(max_items=50)
             self.assertEqual(audit_snapshot["result_type"], "audit_log")
             self.assertGreater(len(audit_snapshot["data"]["events"]), 0)
 
-    def test_crystallize_batch_and_contest_knowledge(self) -> None:
+    def test_remember_batch_and_contest_knowledge(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             repo = self._make_repo(root)
             ingest_result = IngestService(root).ingest_repo(repo)
-            crystallize = CrystallizeService(root)
+            remember = RememberService(root)
             objects = FsObjectRepository(root)
 
-            batch = crystallize.batch(
+            batch = remember.batch(
                 [
                     {
                         "mode": "knowledge",
@@ -459,7 +459,7 @@ class Phase1AcceptanceTest(unittest.TestCase):
                 ]
             )
             knowledge_id = batch["results"][0]["knowledge_id"]
-            contest = crystallize.contest_knowledge(knowledge_id, reason="Conflicting source found.")
+            contest = remember.contest_knowledge(knowledge_id, reason="Conflicting source found.")
 
             self.assertEqual(batch["created"], 2)
             self.assertEqual(contest["knowledge_id"], knowledge_id)

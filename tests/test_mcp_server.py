@@ -14,20 +14,20 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from wiki_memory.interfaces.mcp.server import create_server, main
+from memory_substrate.interfaces.mcp.server import create_server, main
 
 
 class McpServerTest(unittest.TestCase):
-    def test_create_server_registers_exactly_five_tools(self) -> None:
+    def test_create_server_registers_exactly_four_tools(self) -> None:
         server = create_server()
         tool_names = sorted(tool.name for tool in server._tool_manager.list_tools())
 
         self.assertEqual(
             tool_names,
-            ["wiki_crystallize", "wiki_dream", "wiki_ingest", "wiki_lint", "wiki_query"],
+            ["memory_ingest", "memory_maintain", "memory_query", "memory_remember"],
         )
 
-        query_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_query")
+        query_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_query")
         args_schema = query_tool.parameters["properties"]["args"]
         self.assertEqual(args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
@@ -35,31 +35,33 @@ class McpServerTest(unittest.TestCase):
             {"context", "expand", "page", "recent", "search", "graph"},
         )
 
-        crystallize_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_crystallize")
-        crystallize_args_schema = crystallize_tool.parameters["properties"]["args"]
-        self.assertEqual(crystallize_args_schema["discriminator"]["propertyName"], "mode")
+        remember_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_remember")
+        remember_args_schema = remember_tool.parameters["properties"]["args"]
+        self.assertEqual(remember_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
-            set(crystallize_args_schema["discriminator"]["mapping"].keys()),
+            set(remember_args_schema["discriminator"]["mapping"].keys()),
             {"activity", "knowledge", "work_item", "promote", "supersede", "contest", "batch"},
         )
 
-        dream_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_dream")
-        dream_args_schema = dream_tool.parameters["properties"]["args"]
-        self.assertEqual(dream_args_schema["discriminator"]["propertyName"], "mode")
+        maintain_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_maintain")
+        maintain_args_schema = maintain_tool.parameters["properties"]["args"]
+        self.assertEqual(maintain_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
-            set(dream_args_schema["discriminator"]["mapping"].keys()),
-            {"promote_candidates", "merge_duplicates", "decay_stale", "cycle", "report"},
+            set(maintain_args_schema["discriminator"]["mapping"].keys()),
+            {
+                "structure",
+                "audit",
+                "reindex",
+                "repair",
+                "promote_candidates",
+                "merge_duplicates",
+                "decay_stale",
+                "cycle",
+                "report",
+            },
         )
 
-        lint_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_lint")
-        lint_args_schema = lint_tool.parameters["properties"]["args"]
-        self.assertEqual(lint_args_schema["discriminator"]["propertyName"], "mode")
-        self.assertEqual(
-            set(lint_args_schema["discriminator"]["mapping"].keys()),
-            {"structure", "audit", "reindex", "repair"},
-        )
-
-        ingest_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "wiki_ingest")
+        ingest_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_ingest")
         ingest_args_schema = ingest_tool.parameters["properties"]["args"]
         self.assertEqual(ingest_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
@@ -68,7 +70,7 @@ class McpServerTest(unittest.TestCase):
         )
 
     def test_main_runs_server(self) -> None:
-        with patch("wiki_memory.interfaces.mcp.server.create_server") as create:
+        with patch("memory_substrate.interfaces.mcp.server.create_server") as create:
             server = create.return_value
 
             main()
@@ -82,21 +84,21 @@ class McpServerTest(unittest.TestCase):
             tools = await server.list_tools()
             self.assertEqual(
                 sorted(tool.name for tool in tools),
-                ["wiki_crystallize", "wiki_dream", "wiki_ingest", "wiki_lint", "wiki_query"],
+                ["memory_ingest", "memory_maintain", "memory_query", "memory_remember"],
             )
 
             with tempfile.TemporaryDirectory() as tmpdir:
-                lint_result = await server.call_tool(
-                    "wiki_lint",
+                structure_result = await server.call_tool(
+                    "memory_maintain",
                     {"args": {"root": tmpdir, "mode": "structure", "input_data": {}}},
                 )
-                lint_payload = json.loads(lint_result[0].text)
-                self.assertEqual(lint_payload["result_type"], "lint_report")
-                self.assertEqual(lint_payload["data"]["counts"]["warning"], 0)
-                self.assertEqual(lint_payload["data"]["counts"]["error"], 0)
+                structure_payload = json.loads(structure_result[0].text)
+                self.assertEqual(structure_payload["result_type"], "structure_report")
+                self.assertEqual(structure_payload["data"]["counts"]["warning"], 0)
+                self.assertEqual(structure_payload["data"]["counts"]["error"], 0)
 
                 query_result = await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"root": tmpdir, "mode": "recent", "input_data": {}, "options": {"max_items": 5}}},
                 )
                 query_payload = json.loads(query_result[0].text)
@@ -108,9 +110,9 @@ class McpServerTest(unittest.TestCase):
     def test_server_smoke_uses_default_root_when_omitted(self) -> None:
         async def run_smoke() -> None:
             server = create_server()
-            with patch("wiki_memory.interfaces.mcp.tools.Path.home", return_value=Path("/tmp/fake-home")):
+            with patch("memory_substrate.interfaces.mcp.tools.Path.home", return_value=Path("/tmp/fake-home")):
                 query_result = await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"mode": "recent", "input_data": {}, "options": {"max_items": 5}}},
                 )
             query_payload = json.loads(query_result[0].text)
@@ -126,22 +128,22 @@ class McpServerTest(unittest.TestCase):
                 note = Path(tmpdir) / "note.md"
                 note.write_text("# Note\n\nUseful context.\n", encoding="utf-8")
                 ingest_result = await server.call_tool(
-                    "wiki_ingest",
+                    "memory_ingest",
                     {"args": {"root": tmpdir, "mode": "markdown", "input_data": {"path": str(note)}}},
                 )
                 ingest_payload = json.loads(ingest_result[0].text)
                 self.assertEqual(ingest_payload["segment_count"], 1)
 
                 query_result = await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"root": tmpdir, "mode": "search", "input_data": {"query": "missing"}}},
                 )
                 query_payload = json.loads(query_result[0].text)
                 self.assertEqual(query_payload["result_type"], "search_results")
                 self.assertEqual(query_payload["data"]["items"], [])
 
-                dream_result = await server.call_tool(
-                    "wiki_dream",
+                maintain_result = await server.call_tool(
+                    "memory_maintain",
                     {
                         "args": {
                             "root": tmpdir,
@@ -150,9 +152,9 @@ class McpServerTest(unittest.TestCase):
                         }
                     },
                 )
-                dream_payload = json.loads(dream_result[0].text)
-                self.assertEqual(dream_payload["status"], "noop")
-                self.assertEqual(dream_payload["promoted"], 0)
+                maintain_payload = json.loads(maintain_result[0].text)
+                self.assertEqual(maintain_payload["status"], "noop")
+                self.assertEqual(maintain_payload["promoted"], 0)
 
         asyncio.run(run_smoke())
 
@@ -161,7 +163,7 @@ class McpServerTest(unittest.TestCase):
             server = create_server()
             with self.assertRaisesRegex(Exception, "input_data"):
                 await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"mode": "recent", "options": {"max_items": 5}}},
                 )
 
@@ -172,7 +174,7 @@ class McpServerTest(unittest.TestCase):
             server = create_server()
             with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
                 await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"mode": "recent", "input_data": {}, "options": {"max_items": 5}, "legacy": 1}},
                 )
 
@@ -183,40 +185,40 @@ class McpServerTest(unittest.TestCase):
             server = create_server()
             with self.assertRaisesRegex(Exception, "query"):
                 await server.call_tool(
-                    "wiki_query",
+                    "memory_query",
                     {"args": {"mode": "search", "input_data": {}}},
                 )
 
         asyncio.run(run_smoke())
 
-    def test_server_rejects_crystallize_mode_specific_missing_fields(self) -> None:
+    def test_server_rejects_remember_mode_specific_missing_fields(self) -> None:
         async def run_smoke() -> None:
             server = create_server()
             with self.assertRaisesRegex(Exception, "knowledge_id"):
                 await server.call_tool(
-                    "wiki_crystallize",
+                    "memory_remember",
                     {"args": {"mode": "promote", "input_data": {}}},
                 )
 
         asyncio.run(run_smoke())
 
-    def test_server_rejects_dream_mode_specific_extra_fields(self) -> None:
+    def test_server_rejects_maintain_lifecycle_mode_specific_extra_fields(self) -> None:
         async def run_smoke() -> None:
             server = create_server()
             with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
                 await server.call_tool(
-                    "wiki_dream",
+                    "memory_maintain",
                     {"args": {"mode": "merge_duplicates", "input_data": {"legacy": 1}}},
                 )
 
         asyncio.run(run_smoke())
 
-    def test_server_rejects_lint_mode_specific_extra_fields(self) -> None:
+    def test_server_rejects_maintain_structure_mode_specific_extra_fields(self) -> None:
         async def run_smoke() -> None:
             server = create_server()
             with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
                 await server.call_tool(
-                    "wiki_lint",
+                    "memory_maintain",
                     {"args": {"mode": "repair", "input_data": {"legacy": 1}}},
                 )
 
@@ -227,7 +229,7 @@ class McpServerTest(unittest.TestCase):
             server = create_server()
             with self.assertRaisesRegex(Exception, "path"):
                 await server.call_tool(
-                    "wiki_ingest",
+                    "memory_ingest",
                     {"args": {"mode": "repo", "input_data": {}}},
                 )
 
