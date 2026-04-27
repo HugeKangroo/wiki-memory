@@ -122,6 +122,22 @@ uv sync --extra kuzu
 
 `KuzuGraphBackend` stores Memory Substrate objects directly in local Kuzu tables under `memory/indexes/kuzu_graph`. It is an adapter behind the project-owned graph contract, not a replacement for `memory_ingest`, `memory_remember`, `memory_query`, or `memory_maintain`.
 
+Graph backends are explicit opt-in per MCP call:
+
+```json
+{
+  "args": {
+    "mode": "reindex",
+    "input_data": {},
+    "options": {
+      "graph_backend": "kuzu"
+    }
+  }
+}
+```
+
+Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` with `graph_backend` to rebuild the graph index from canonical objects, `memory_remember` with `graph_backend` to sync new writes, and `memory_query` `graph` with `graph_backend` to read graph neighborhoods from the selected backend.
+
 ## MCP Server
 
 The MCP server exposes exactly four tools:

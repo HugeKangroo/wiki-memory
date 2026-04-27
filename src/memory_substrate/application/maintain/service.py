@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.application.maintain.lifecycle import MaintenanceLifecycle
 from memory_substrate.domain.services.repair_engine import RepairEngine
 from memory_substrate.domain.services.structure_validator import StructureValidator
@@ -10,7 +11,7 @@ from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
 class MaintainService:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, graph_backend=None) -> None:
         """Create a maintain service bound to one memory-substrate root.
 
         Args:
@@ -25,6 +26,7 @@ class MaintainService:
         self.audit_repository = FsAuditRepository(self.root)
         self.projector = MarkdownProjector(self.root)
         self.lifecycle = MaintenanceLifecycle(self.root)
+        self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
 
     def structure(self) -> dict:
         """Validate memory object structure and projection consistency.
@@ -62,6 +64,8 @@ class MaintainService:
             Reindex result with projection write metadata.
         """
         result = self.projector.rebuild()
+        if self.graph_sync is not None:
+            result = {**result, "graph_sync": self.graph_sync.sync_all()}
         return {
             "result_type": "reindex_result",
             "data": result,

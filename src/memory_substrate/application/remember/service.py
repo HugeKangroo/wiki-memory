@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
@@ -12,7 +13,7 @@ from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
 class RememberService:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, graph_backend=None) -> None:
         """Create a remember service bound to one memory-substrate root.
 
         Args:
@@ -31,16 +32,36 @@ class RememberService:
             audit_repository=self.audit_repository,
         )
         self.projector = MarkdownProjector(self.root)
+        self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
 
     def _apply_and_project(self, patch: MemoryPatch) -> dict:
         result = self.patch_applier.apply(patch)
         projection_result = self.projector.rebuild()
-        return {
+        payload = {
             "patch_id": result.patch_id,
             "applied_operations": result.applied_operations,
             "audit_event_ids": result.audit_event_ids,
             "projection_count": projection_result["count"],
             "affected_object_ids": result.affected_object_ids,
+        }
+        if self.graph_sync is not None:
+            payload["graph_sync"] = self._sync_patch_to_graph(patch)
+        return payload
+
+    def _sync_patch_to_graph(self, patch: MemoryPatch) -> dict:
+        synced_objects = 0
+        synced_relations = 0
+        for operation in patch.operations:
+            if operation.op == "delete_object":
+                continue
+            result = self.graph_sync.sync_object(operation.object_type, operation.object_id)
+            synced_objects += result["synced_objects"]
+            synced_relations += result["synced_relations"]
+        return {
+            "status": "completed",
+            "synced_objects": synced_objects,
+            "synced_relations": synced_relations,
+            "backend": self.graph_sync.graph_backend.__class__.__name__,
         }
 
     def create_activity(self, data: dict, actor: dict | None = None) -> dict:
@@ -83,13 +104,16 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "activity_id": activity_id,
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
 
     def create_knowledge(self, data: dict, actor: dict | None = None) -> dict:
         """Create a candidate knowledge object from structured input.
@@ -131,13 +155,16 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
 
     def create_work_item(self, data: dict, actor: dict | None = None) -> dict:
         """Create an actionable work item from structured input.
@@ -185,13 +212,16 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "work_item_id": work_item_id,
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
 
     def promote_knowledge(self, knowledge_id: str, actor: dict | None = None, reason: str = "") -> dict:
         """Promote one knowledge object to active status.
@@ -227,13 +257,16 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
 
     def contest_knowledge(self, knowledge_id: str, actor: dict | None = None, reason: str = "") -> dict:
         """Mark one knowledge object as contested.
@@ -269,13 +302,16 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
 
     def batch(self, entries: list[dict], actor: dict | None = None) -> dict:
         """Run multiple remember create operations in sequence.
@@ -360,7 +396,7 @@ class RememberService:
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
-        return {
+        output = {
             "patch_id": result["patch_id"],
             "old_knowledge_id": old_knowledge_id,
             "new_knowledge_id": new_knowledge_id,
@@ -368,3 +404,6 @@ class RememberService:
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
         }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output

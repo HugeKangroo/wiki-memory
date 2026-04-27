@@ -6,6 +6,7 @@ from memory_substrate.application.remember.service import RememberService
 from memory_substrate.application.ingest.service import IngestService
 from memory_substrate.application.maintain.service import MaintainService
 from memory_substrate.application.query.service import QueryService
+from memory_substrate.infrastructure.graph.factory import create_graph_backend
 
 
 MUTATING_MAINTAIN_MODES = {"repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
@@ -30,6 +31,18 @@ def _require_apply(mode: str, options: dict | None) -> None:
         return
     if not options or options.get("apply") is not True:
         raise ValueError(f"memory_maintain mode '{mode}' mutates memory and requires options.apply=true")
+
+
+def _requested_graph_backend(options: dict | None) -> str | None:
+    if not options:
+        return None
+    return options.get("graph_backend")
+
+
+def _close_graph_backend(graph_backend) -> None:
+    close = getattr(graph_backend, "close", None)
+    if callable(close):
+        close()
 
 
 def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
@@ -78,27 +91,36 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
         Query result produced by the selected application service method.
     """
     options = options or {}
-    service = QueryService(resolve_root(root))
-    if mode == "context":
-        return service.context(
-            task=input_data["task"],
-            scope=input_data.get("scope"),
-            max_items=options.get("max_items", 12),
-        )
-    if mode == "expand":
-        return service.expand(
-            object_id=input_data["id"],
-            max_items=options.get("max_items", 10),
-        )
-    if mode == "page":
-        return service.page(object_id=input_data["id"])
-    if mode == "recent":
-        return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
-    if mode == "search":
-        return service.search(query=input_data["query"], max_items=options.get("max_items", 20), filters=options.get("filters"))
-    if mode == "graph":
-        return service.graph(object_id=input_data["id"], max_items=options.get("max_items", 20))
-    raise ValueError(f"Unsupported query mode: {mode}")
+    resolved_root = resolve_root(root)
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    service = (
+        QueryService(resolved_root, graph_backend=graph_backend)
+        if graph_backend is not None
+        else QueryService(resolved_root)
+    )
+    try:
+        if mode == "context":
+            return service.context(
+                task=input_data["task"],
+                scope=input_data.get("scope"),
+                max_items=options.get("max_items", 12),
+            )
+        if mode == "expand":
+            return service.expand(
+                object_id=input_data["id"],
+                max_items=options.get("max_items", 10),
+            )
+        if mode == "page":
+            return service.page(object_id=input_data["id"])
+        if mode == "recent":
+            return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
+        if mode == "search":
+            return service.search(query=input_data["query"], max_items=options.get("max_items", 20), filters=options.get("filters"))
+        if mode == "graph":
+            return service.graph(object_id=input_data["id"], max_items=options.get("max_items", 20))
+        raise ValueError(f"Unsupported query mode: {mode}")
+    finally:
+        _close_graph_backend(graph_backend)
 
 
 def memory_remember(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
@@ -114,39 +136,48 @@ def memory_remember(root: str | Path | None, mode: str, input_data: dict, option
         Mutation result with patch, audit, object, and projection metadata.
     """
     options = options or {}
-    service = RememberService(resolve_root(root))
+    resolved_root = resolve_root(root)
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    service = (
+        RememberService(resolved_root, graph_backend=graph_backend)
+        if graph_backend is not None
+        else RememberService(resolved_root)
+    )
     actor = input_data.get("actor")
-    if mode == "activity":
-        return service.create_activity(input_data, actor=actor)
-    if mode == "knowledge":
-        return service.create_knowledge(input_data, actor=actor)
-    if mode == "work_item":
-        return service.create_work_item(input_data, actor=actor)
-    if mode == "promote":
-        return service.promote_knowledge(
-            knowledge_id=input_data["knowledge_id"],
-            actor=actor,
-            reason=input_data.get("reason", ""),
-        )
-    if mode == "supersede":
-        return service.supersede_knowledge(
-            old_knowledge_id=input_data["old_knowledge_id"],
-            new_knowledge_id=input_data["new_knowledge_id"],
-            actor=actor,
-            reason=input_data.get("reason", ""),
-        )
-    if mode == "contest":
-        return service.contest_knowledge(
-            knowledge_id=input_data["knowledge_id"],
-            actor=actor,
-            reason=input_data.get("reason", ""),
-        )
-    if mode == "batch":
-        return service.batch(
-            entries=input_data["entries"],
-            actor=actor,
-        )
-    raise ValueError(f"Unsupported remember mode: {mode}")
+    try:
+        if mode == "activity":
+            return service.create_activity(input_data, actor=actor)
+        if mode == "knowledge":
+            return service.create_knowledge(input_data, actor=actor)
+        if mode == "work_item":
+            return service.create_work_item(input_data, actor=actor)
+        if mode == "promote":
+            return service.promote_knowledge(
+                knowledge_id=input_data["knowledge_id"],
+                actor=actor,
+                reason=input_data.get("reason", ""),
+            )
+        if mode == "supersede":
+            return service.supersede_knowledge(
+                old_knowledge_id=input_data["old_knowledge_id"],
+                new_knowledge_id=input_data["new_knowledge_id"],
+                actor=actor,
+                reason=input_data.get("reason", ""),
+            )
+        if mode == "contest":
+            return service.contest_knowledge(
+                knowledge_id=input_data["knowledge_id"],
+                actor=actor,
+                reason=input_data.get("reason", ""),
+            )
+        if mode == "batch":
+            return service.batch(
+                entries=input_data["entries"],
+                actor=actor,
+            )
+        raise ValueError(f"Unsupported remember mode: {mode}")
+    finally:
+        _close_graph_backend(graph_backend)
 
 
 def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None = None, options: dict | None = None) -> dict:
@@ -164,39 +195,48 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
     input_data = input_data or {}
     options = options or {}
     _require_apply(mode, options)
-    service = MaintainService(resolve_root(root))
-    if mode == "structure":
-        return service.structure()
-    if mode == "audit":
-        return service.audit(max_items=options.get("max_items", 100))
-    if mode == "reindex":
-        return service.reindex()
-    if mode == "repair":
-        return service.repair()
-    if mode == "promote_candidates":
-        return service.promote_candidates(
-            min_confidence=input_data.get("min_confidence", 0.75),
-            min_evidence=input_data.get("min_evidence", 1),
-        )
-    if mode == "merge_duplicates":
-        return service.merge_duplicates()
-    if mode == "decay_stale":
-        return service.decay_stale(
-            reference_time=input_data.get("reference_time"),
-            stale_after_days=input_data.get("stale_after_days", 30),
-        )
-    if mode == "cycle":
-        return service.cycle(
-            min_confidence=input_data.get("min_confidence", 0.75),
-            min_evidence=input_data.get("min_evidence", 1),
-            reference_time=input_data.get("reference_time"),
-            stale_after_days=input_data.get("stale_after_days", 30),
-        )
-    if mode == "report":
-        return service.report(
-            min_confidence=input_data.get("min_confidence", 0.75),
-            min_evidence=input_data.get("min_evidence", 1),
-            reference_time=input_data.get("reference_time"),
-            stale_after_days=input_data.get("stale_after_days", 30),
-        )
-    raise ValueError(f"Unsupported maintain mode: {mode}")
+    resolved_root = resolve_root(root)
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    service = (
+        MaintainService(resolved_root, graph_backend=graph_backend)
+        if graph_backend is not None
+        else MaintainService(resolved_root)
+    )
+    try:
+        if mode == "structure":
+            return service.structure()
+        if mode == "audit":
+            return service.audit(max_items=options.get("max_items", 100))
+        if mode == "reindex":
+            return service.reindex()
+        if mode == "repair":
+            return service.repair()
+        if mode == "promote_candidates":
+            return service.promote_candidates(
+                min_confidence=input_data.get("min_confidence", 0.75),
+                min_evidence=input_data.get("min_evidence", 1),
+            )
+        if mode == "merge_duplicates":
+            return service.merge_duplicates()
+        if mode == "decay_stale":
+            return service.decay_stale(
+                reference_time=input_data.get("reference_time"),
+                stale_after_days=input_data.get("stale_after_days", 30),
+            )
+        if mode == "cycle":
+            return service.cycle(
+                min_confidence=input_data.get("min_confidence", 0.75),
+                min_evidence=input_data.get("min_evidence", 1),
+                reference_time=input_data.get("reference_time"),
+                stale_after_days=input_data.get("stale_after_days", 30),
+            )
+        if mode == "report":
+            return service.report(
+                min_confidence=input_data.get("min_confidence", 0.75),
+                min_evidence=input_data.get("min_evidence", 1),
+                reference_time=input_data.get("reference_time"),
+                stale_after_days=input_data.get("stale_after_days", 30),
+            )
+        raise ValueError(f"Unsupported maintain mode: {mode}")
+    finally:
+        _close_graph_backend(graph_backend)

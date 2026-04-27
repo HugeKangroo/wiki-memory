@@ -9,7 +9,7 @@ from memory_substrate.infrastructure.repositories.fs_object_repository import Fs
 
 
 class QueryService:
-    def __init__(self, root: str | Path) -> None:
+    def __init__(self, root: str | Path, graph_backend=None) -> None:
         """Create a query service bound to one memory-substrate root.
 
         Args:
@@ -20,6 +20,7 @@ class QueryService:
         """
         self.builder = ContextBuilder(root)
         self.repository = FsObjectRepository(root)
+        self.graph_backend = graph_backend
 
     def context(self, task: str, scope: dict | None = None, max_items: int = 12) -> dict:
         """Build a task-focused context pack from relevant memory objects.
@@ -113,6 +114,28 @@ class QueryService:
         Returns:
             Graph result with root id, nodes, edges, and warnings for missing roots.
         """
+        if self.graph_backend is not None:
+            graph = self.graph_backend.neighborhood(object_id, max_items=max_items)
+            nodes = graph.get("nodes", [])
+            warnings = [] if nodes else [f"Object not found: {object_id}"]
+            return {
+                "result_type": "graph",
+                "data": {
+                    "root_id": object_id,
+                    "nodes": nodes,
+                    "edges": [
+                        {
+                            "source_id": relation.get("source_id"),
+                            "target_id": relation.get("target_id"),
+                            "relation": relation.get("relation_type"),
+                            "id": relation.get("id"),
+                        }
+                        for relation in graph.get("relations", [])
+                    ],
+                },
+                "warnings": warnings,
+            }
+
         nodes: list[dict] = []
         edges: list[dict] = []
         seen_nodes: set[str] = set()

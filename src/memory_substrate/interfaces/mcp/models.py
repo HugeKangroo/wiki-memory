@@ -5,6 +5,9 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+GraphBackendName = Literal["file", "kuzu"]
+
+
 class StrictModel(BaseModel):
     """Base schema that rejects unknown MCP argument fields."""
 
@@ -81,12 +84,25 @@ class QueryOptions(StrictModel):
 
     max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend for graph mode.")
+
+
+class RememberOptions(StrictModel):
+    """Optional controls shared by memory_remember modes."""
+
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend to sync after durable writes.")
 
 
 class AuditOptions(StrictModel):
     """Options for reading audit events."""
 
     max_items: int | None = Field(default=None, ge=1, description="Maximum audit events to return.")
+
+
+class ReindexOptions(StrictModel):
+    """Options for rebuilding projections and optional graph indexes."""
+
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend to rebuild from canonical objects.")
 
 
 class ApplyOptions(StrictModel):
@@ -302,49 +318,55 @@ class RememberBatchInput(StrictModel):
     actor: ActorRef | None = None
 
 
-class RememberActivityArgs(BaseToolArgs):
+class RememberBaseArgs(BaseToolArgs):
+    """Base MCP arguments for memory_remember modes."""
+
+    options: RememberOptions | None = None
+
+
+class RememberActivityArgs(RememberBaseArgs):
     """MCP arguments for memory_remember activity mode."""
 
     mode: Literal["activity"]
     input_data: RememberActivityInput
 
 
-class RememberKnowledgeArgs(BaseToolArgs):
+class RememberKnowledgeArgs(RememberBaseArgs):
     """MCP arguments for memory_remember knowledge mode."""
 
     mode: Literal["knowledge"]
     input_data: RememberKnowledgeInput
 
 
-class RememberWorkItemArgs(BaseToolArgs):
+class RememberWorkItemArgs(RememberBaseArgs):
     """MCP arguments for memory_remember work_item mode."""
 
     mode: Literal["work_item"]
     input_data: RememberWorkItemInput
 
 
-class RememberPromoteArgs(BaseToolArgs):
+class RememberPromoteArgs(RememberBaseArgs):
     """MCP arguments for memory_remember promote mode."""
 
     mode: Literal["promote"]
     input_data: RememberPromoteInput
 
 
-class RememberSupersedeArgs(BaseToolArgs):
+class RememberSupersedeArgs(RememberBaseArgs):
     """MCP arguments for memory_remember supersede mode."""
 
     mode: Literal["supersede"]
     input_data: RememberSupersedeInput
 
 
-class RememberContestArgs(BaseToolArgs):
+class RememberContestArgs(RememberBaseArgs):
     """MCP arguments for memory_remember contest mode."""
 
     mode: Literal["contest"]
     input_data: RememberContestInput
 
 
-class RememberBatchArgs(BaseToolArgs):
+class RememberBatchArgs(RememberBaseArgs):
     """MCP arguments for memory_remember batch mode."""
 
     mode: Literal["batch"]
@@ -486,6 +508,7 @@ class MaintainStructureReindexArgs(BaseToolArgs):
 
     mode: Literal["reindex"]
     input_data: MaintainStructureReindexInput
+    options: ReindexOptions | None = None
 
 
 class MaintainStructureRepairArgs(MaintainApplyArgs):
