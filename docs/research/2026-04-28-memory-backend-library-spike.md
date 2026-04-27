@@ -2,7 +2,7 @@
 
 Date: 2026-04-28
 
-Status: Proposed
+Status: In progress
 
 ## Decision Context
 
@@ -20,6 +20,10 @@ The core product semantics are owned by Memory Substrate:
 - maintenance and dream lifecycle
 
 Backend libraries should provide graph, retrieval, and extraction capabilities behind a project-owned `GraphBackend` interface.
+
+Hard constraint:
+
+- The memory core must not require a second LLM API key. Codex, Claude Code, a human, or another caller may perform analysis and extraction, but the backend must be able to store and retrieve structured memory without making its own mandatory LLM call.
 
 ## Current Decision
 
@@ -52,6 +56,7 @@ Risks:
 - Works best with structured-output-capable LLMs.
 - Full value depends on graph backend quality.
 - Project semantics may leak if integration is too direct.
+- The high-level `Graphiti.add_episode` path calls internal LLM extraction and is not acceptable as Memory Substrate's canonical write path.
 
 Backend notes:
 
@@ -62,6 +67,22 @@ Backend notes:
 Primary spike question:
 
 Can Graphiti represent `Source/Episode/Segment`, `Entity/Relation/Knowledge`, validity windows, evidence, and context retrieval without forcing Memory Substrate to adopt Graphiti's public API as its own domain model?
+
+Spike result, 2026-04-28:
+
+- `graphiti-core[kuzu]` installs and imports locally.
+- `KuzuDriver` and `Graphiti` can be instantiated, but plain `Graphiti()` defaults to an OpenAI client and requires `OPENAI_API_KEY`.
+- `Graphiti.__init__` supports injected `llm_client`, `embedder`, and `cross_encoder`.
+- `Graphiti.add_episode` always calls `extract_nodes` and `extract_edges`, so high-level ingestion still depends on an LLM even for structured memory workflows.
+- Graphiti's lower-level `KuzuDriver`, node classes, and edge classes can write episode/entity/relation/mention data directly without an API key.
+- `Graphiti.search` can run without an LLM when supplied dummy embedder and cross-encoder clients, but Kuzu full-text indexes must be created explicitly through graph maintenance operations.
+- Practical conclusion: do not use Graphiti high-level ingestion as the core. Use the Graphiti temporal-graph model as a reference, and optionally evaluate its lower-level driver/model pieces behind `GraphBackend`.
+
+Local implementation result:
+
+- Added a project-owned optional `KuzuGraphBackend` that uses Kuzu directly with a Memory Substrate schema.
+- It stores `episode`, `entity`, `knowledge`, and typed `relation` records without Graphiti and without any LLM API key.
+- Kuzu remains an optional extra; the default package and normal tests do not require it.
 
 Sources:
 
@@ -339,16 +360,16 @@ Score each candidate 1 to 5.
 
 | Criterion | Weight | Graphiti | Cognee | LlamaIndex PG | File Test Graph |
 |---|---:|---:|---:|---:|---:|
-| Local-first setup | 5 | TBD | TBD | TBD | 5 |
-| Temporal memory fit | 5 | TBD | TBD | TBD | 1 |
-| Evidence/provenance fit | 5 | TBD | TBD | TBD | 3 |
-| Graph + semantic retrieval | 5 | TBD | TBD | TBD | 1 |
-| Governance boundary | 5 | TBD | TBD | TBD | 5 |
-| Schema control | 4 | TBD | TBD | TBD | 4 |
-| Testability | 4 | TBD | TBD | TBD | 5 |
-| Operational burden | 4 | TBD | TBD | TBD | 5 |
-| Migration/rebuild story | 4 | TBD | TBD | TBD | 4 |
-| Dependency risk | 3 | TBD | TBD | TBD | 5 |
+| Local-first setup | 5 | 3 | TBD | TBD | 5 |
+| Temporal memory fit | 5 | 5 | TBD | TBD | 1 |
+| Evidence/provenance fit | 5 | 4 | TBD | TBD | 3 |
+| Graph + semantic retrieval | 5 | 4 | TBD | TBD | 1 |
+| Governance boundary | 5 | 2 high-level / 4 low-level | TBD | TBD | 5 |
+| Schema control | 4 | 3 | TBD | TBD | 4 |
+| Testability | 4 | 3 | TBD | TBD | 5 |
+| Operational burden | 4 | 3 | TBD | TBD | 5 |
+| Migration/rebuild story | 4 | 3 | TBD | TBD | 4 |
+| Dependency risk | 3 | 3 | TBD | TBD | 5 |
 
 The `TBD` values should be filled by implementation spike results, not by reading docs alone.
 
@@ -356,14 +377,21 @@ The `TBD` values should be filled by implementation spike results, not by readin
 
 Expected outcome before implementation:
 
-1. `Graphiti` is the preferred semantic graph engine if it preserves Memory Substrate's governance boundary.
+1. `Graphiti` remains a strong temporal-graph reference, but high-level Graphiti ingestion is not the preferred core because it requires an internal LLM extraction path.
 2. `Cognee` is the strongest alternative because it is local-first by default and already combines relational, vector, and graph stores.
 3. `LlamaIndex PropertyGraphIndex` is likely a useful fallback adapter, not the memory engine.
 4. `file-backed test graph` is mandatory for core tests but not sufficient for real memory.
 5. `Neo4j` should remain optional production backend, not required for the first local prototype.
+6. Direct Kuzu is the best current local-first prototype backend because it has no service requirement and no mandatory LLM API key.
 
 ## Next Step
 
 Do not choose a production backend from documentation alone.
 
-Implement the `GraphBackend` contract and file-backed test graph first. Then run the three library spikes behind the same contract and update the decision matrix with real results.
+Keep the `GraphBackend` contract as the integration boundary.
+
+Next:
+
+1. Harden the direct `KuzuGraphBackend` enough to support local prototypes.
+2. Continue Cognee and LlamaIndex spikes only if they can operate behind the same contract without taking over memory governance.
+3. Treat Neo4j as a production backend option after the local contract is stable.

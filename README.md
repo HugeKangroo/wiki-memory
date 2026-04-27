@@ -112,6 +112,16 @@ The current built-in projections are:
 - Obsidian-native Markdown pages for memory browsing.
 - Optional Doxygen HTML pages for source API documentation.
 
+### Optional Kuzu Graph Backend
+
+The core package does not require a graph database or a separate LLM API key. For local graph-backed prototypes, install the optional Kuzu extra:
+
+```bash
+uv sync --extra kuzu
+```
+
+`KuzuGraphBackend` stores Memory Substrate objects directly in local Kuzu tables under `memory/indexes/kuzu_graph`. It is an adapter behind the project-owned graph contract, not a replacement for `memory_ingest`, `memory_remember`, `memory_query`, or `memory_maintain`.
+
 ## MCP Server
 
 The MCP server exposes exactly four tools:

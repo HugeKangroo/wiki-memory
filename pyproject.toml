@@ -11,6 +11,11 @@ dependencies = [
     "mcp>=1.27.0",
 ]
 
+[project.optional-dependencies]
+kuzu = [
+    "kuzu>=0.11.2",
+]
+
 [project.scripts]
 memory-substrate-mcp = "memory_substrate.interfaces.mcp.server:main"
 

@@ -26,6 +26,8 @@ Derived data:
 
 The current schema is already suitable for an early memory substrate. It should not be replaced by Markdown or a raw graph database model. The next upgrade should harden the memory write contract before changing storage backends.
 
+The memory server should not require agents to configure a separate LLM API key. Agents or humans may perform analysis and extraction, then call `memory_remember` with structured candidates. Backends such as Kuzu, Neo4j, Graphiti, Cognee, or LlamaIndex must remain behind Memory Substrate contracts.
+
 Recommended near-term data upgrades:
 
 - Require a durable write reason for `memory_remember` create operations.

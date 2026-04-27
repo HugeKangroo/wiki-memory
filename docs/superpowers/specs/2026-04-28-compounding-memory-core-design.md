@@ -44,6 +44,18 @@ The design borrows capabilities from existing systems without inheriting their p
 
 The common requirement is not any one backend. The common requirement is a governable context substrate that compounds.
 
+## Backend Boundary
+
+The memory core must not require a separate LLM API key. LLMs are callers or analyzers, not mandatory storage backends.
+
+Rules:
+
+- `memory_ingest` captures evidence deterministically.
+- Extraction may be done by Codex, Claude Code, a local model, a script, or a human.
+- `memory_remember` receives structured candidate memory and governs the durable write.
+- Graph backends store, retrieve, traverse, and maintain memory objects.
+- A backend that insists on running its own LLM extraction can be used only as an optional adapter or reference, not as the canonical memory core.
+
 ## Core Lifecycle
 
 The memory core lifecycle is:
