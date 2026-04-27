@@ -6,6 +6,11 @@ By default, the MCP tools use `~/memory-substrate` as the memory root on Linux a
 
 The MCP server uses a strict argument model with `extra="forbid"`. Older argument layouts or unexpected fields fail fast instead of being accepted silently.
 
+Research notes:
+
+- [Context Substrate Memory Core Research](docs/research/2026-04-28-context-substrate-memory-core-research.md)
+- [Agent Memory MCP Usage](docs/agent-memory-mcp-usage.md)
+
 ## Storage and Editing Boundary
 
 The memory root contains two different kinds of data:
