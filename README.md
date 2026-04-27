@@ -123,6 +123,8 @@ Recommended agent workflow:
 5. Call `memory_remember` only for durable memory the user requested or the agent can justify.
 6. Call `memory_maintain` read-only modes before mutating maintenance. Mutating maintain modes require `options.apply=true`.
 
+For the full agent protocol, current data model, memory review gate, and call examples, see [Agent Memory MCP Usage](docs/agent-memory-mcp-usage.md).
+
 ### Supported Modes
 
 - `memory_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`

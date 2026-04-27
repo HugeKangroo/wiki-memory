@@ -1,0 +1,262 @@
+# Agent Memory MCP Usage
+
+This document defines how agents should use the Memory Substrate MCP tools. It is a protocol for agent behavior, not just a set of examples.
+
+## Current Data Model
+
+The canonical data is a structured object store under `memory/objects/`. Markdown files under `memory/projections/` are derived views and are not the source of truth.
+
+Current canonical object types:
+
+- `source`: durable evidence origin, such as a file, repository, web page, PDF, or conversation.
+- `source.segments`: citable evidence slices inside a source, each with a locator, excerpt, and hash.
+- `node`: reusable long-lived entity, such as a project, person, file, concept, tool, preference, or decision anchor.
+- `knowledge`: a claim the system believes or is evaluating. It carries subject refs, evidence refs, payload, status, confidence, and validity windows.
+- `activity`: completed work or analysis, linked to nodes, work items, sources, produced objects, and artifacts.
+- `work_item`: actionable task or issue, linked to owners, nodes, knowledge, sources, dependencies, and children.
+- `patch`: governed memory mutation record.
+- `audit_event`: accountability record for writes and lifecycle changes.
+
+Derived data:
+
+- `memory/indexes/`: query state derived from canonical objects.
+- `memory/projections/wiki/`: Obsidian-friendly reading projection.
+- `memory/projections/debug/`: object-level markdown mirror for traceability.
+- `memory/projections/doxygen/`: optional API documentation projection.
+
+The current schema is already suitable for an early memory substrate. It should not be replaced by Markdown or a raw graph database model. The next upgrade should harden the memory write contract before changing storage backends.
+
+Recommended near-term data upgrades:
+
+- Require a durable write reason for `memory_remember` create operations.
+- Record whether the memory came from explicit user intent, agent inference, system maintenance, or imported data.
+- Require scope metadata, such as project, user, repo, topic, or workspace.
+- Enforce evidence policy: active knowledge should have evidence refs unless it is explicitly marked as user-declared.
+- Add stronger duplicate and conflict checks inside `memory_remember`, not only in `memory_maintain`.
+- Keep Graphiti/Neo4j behind backend interfaces when graph scale, temporal relation queries, or hybrid retrieval become core requirements.
+
+## Tool Responsibilities
+
+Use the four MCP tools with strict boundaries:
+
+- `memory_query`: load existing context, search related memory, expand objects, and check duplicates or conflicts.
+- `memory_ingest`: capture source material as evidence. It should not decide what deserves durable memory.
+- `memory_remember`: commit durable memory after the user or agent can justify it.
+- `memory_maintain`: validate, report, repair, reindex, and run lifecycle consolidation.
+
+## Required Agent Workflow
+
+At task start:
+
+1. Call `memory_query` with `mode: "context"` or `mode: "search"` to load existing context.
+2. Use the returned context to avoid repeating known work and to identify relevant memory IDs.
+
+When new material appears:
+
+1. Call `memory_ingest` to capture the material as evidence.
+2. Analyze the ingested evidence outside ingest.
+3. Decide whether anything should become durable memory.
+4. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
+5. Call `memory_remember` only for information that should survive future sessions.
+
+Before ending substantial work:
+
+1. Perform a memory review.
+2. If there is durable information, call `memory_remember`.
+3. If there is nothing durable, state that nothing should be remembered and why.
+
+## Memory Review Gate
+
+Agents should run this review before calling `memory_remember`:
+
+```json
+{
+  "should_remember": true,
+  "reason": "This decision changes future implementation work.",
+  "source": "agent_inferred",
+  "scope": {
+    "project": "memory-substrate",
+    "topic": "agent memory protocol"
+  },
+  "evidence_refs": [
+    {
+      "source_id": "src:example",
+      "segment_id": "seg:example"
+    }
+  ],
+  "items": [
+    {
+      "type": "knowledge",
+      "status": "candidate",
+      "confidence": 0.76,
+      "title": "Agents must review memory before ending substantial work"
+    }
+  ]
+}
+```
+
+Use `should_remember: true` when at least one item is durable and future-useful.
+
+Use `should_remember: false` when the information is transient, duplicated, low confidence, unsupported, or not useful beyond the current turn.
+
+## What Should Be Remembered
+
+Remember information when it is likely to be reused and can be grounded:
+
+- Explicit user instructions, preferences, or principles.
+- Architecture decisions and their reasons.
+- Stable project facts.
+- Reusable domain knowledge.
+- Important task outcomes.
+- Work items that should persist beyond the current interaction.
+- Evidence-backed conclusions that affect future work.
+
+Do not remember:
+
+- One-off reasoning steps.
+- Generic summaries of the current answer.
+- Transient status updates.
+- Unsupported guesses, unless they are stored as `candidate` and clearly marked as inferred.
+- Duplicate facts already present in memory.
+- Sensitive or private data unless the user explicitly requested durable retention and the host policy allows it.
+
+## Status Rules
+
+Use status deliberately:
+
+- `candidate`: plausible but not fully confirmed, agent-inferred, weakly evidenced, or pending review.
+- `active`: confirmed, durable, and evidence-backed. Active knowledge should have evidence refs unless it is explicit user-declared memory.
+- `contested`: conflicting evidence exists or the claim is disputed.
+- `superseded`: replaced by newer knowledge.
+- `stale`: likely outdated due to age or changed context.
+- `archived`: retained for history but not used as current context.
+
+## Call Examples
+
+Task-start query:
+
+```json
+{
+  "args": {
+    "mode": "context",
+    "input_data": {
+      "task": "Design how agents should use memory MCP",
+      "scope": {
+        "object_types": ["knowledge", "activity", "work_item"]
+      }
+    },
+    "options": {
+      "max_items": 10
+    }
+  }
+}
+```
+
+Ingest a conversation as evidence:
+
+```json
+{
+  "args": {
+    "mode": "conversation",
+    "input_data": {
+      "title": "Memory protocol design discussion",
+      "messages": [
+        {
+          "role": "user",
+          "content": "How can we make agents follow the memory recording logic?"
+        },
+        {
+          "role": "assistant",
+          "content": "Use protocol, validation, and lifecycle checks instead of relying on agent discipline."
+        }
+      ],
+      "origin": {
+        "host": "codex",
+        "project": "memory-substrate"
+      }
+    }
+  }
+}
+```
+
+Remember a durable knowledge item:
+
+```json
+{
+  "args": {
+    "mode": "knowledge",
+    "input_data": {
+      "kind": "agent_memory_policy",
+      "title": "Remember is the governed durable write path",
+      "summary": "Agents may propose memory, but memory_remember governs durable writes and should validate evidence, scope, confidence, and lifecycle status.",
+      "actor": {
+        "type": "agent",
+        "id": "codex"
+      },
+      "evidence_refs": [
+        {
+          "source_id": "src:example",
+          "segment_id": "seg:example"
+        }
+      ],
+      "payload": {
+        "subject": "memory_remember",
+        "predicate": "role",
+        "value": "governed durable write path",
+        "metadata": {
+          "reason": "Prevents agent mistakes from polluting durable memory.",
+          "memory_source": "agent_inferred",
+          "scope": {
+            "project": "memory-substrate"
+          }
+        }
+      },
+      "status": "candidate",
+      "confidence": 0.8
+    }
+  }
+}
+```
+
+Run a read-only maintenance report:
+
+```json
+{
+  "args": {
+    "mode": "report",
+    "input_data": {
+      "min_confidence": 0.75,
+      "min_evidence": 1
+    }
+  }
+}
+```
+
+Run mutating maintenance only with explicit apply:
+
+```json
+{
+  "args": {
+    "mode": "cycle",
+    "input_data": {
+      "min_confidence": 0.75,
+      "min_evidence": 1
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+## Failure Handling
+
+If `memory_remember` is rejected:
+
+1. Do not bypass it by editing projection files.
+2. Query for related context.
+3. Ingest missing evidence if needed.
+4. Lower the status to `candidate` when evidence is weak.
+5. Mark conflicts as `contested` instead of overwriting older memory.
+
+If an agent is unsure whether to remember something, prefer no write or `candidate` with a clear reason. Durable memory should optimize for future usefulness and traceability, not maximum recall of every conversation detail.
