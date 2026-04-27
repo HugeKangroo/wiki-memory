@@ -8,6 +8,7 @@ The MCP server uses a strict argument model with `extra="forbid"`. Older argumen
 
 Research notes:
 
+- [Compounding Memory Core Design](docs/superpowers/specs/2026-04-28-compounding-memory-core-design.md)
 - [Context Substrate Memory Core Research](docs/research/2026-04-28-context-substrate-memory-core-research.md)
 - [Agent Memory MCP Usage](docs/agent-memory-mcp-usage.md)
 
