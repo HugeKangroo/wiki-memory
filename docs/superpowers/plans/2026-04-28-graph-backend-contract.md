@@ -84,7 +84,7 @@ uv build
 
 Expected: existing suite remains green and package builds.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add docs/superpowers/plans/2026-04-28-graph-backend-contract.md tests/test_graph_backend.py src/memory_substrate/domain/protocols/graph_backend.py src/memory_substrate/infrastructure/graph/__init__.py src/memory_substrate/infrastructure/graph/file_graph_backend.py
