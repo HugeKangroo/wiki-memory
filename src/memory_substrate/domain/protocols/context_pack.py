@@ -20,9 +20,14 @@ class ContextPack:
     summary: str
     scope: dict = field(default_factory=dict)
     items: list[ContextItem] = field(default_factory=list)
+    evidence: list[dict] = field(default_factory=list)
+    decisions: list[dict] = field(default_factory=list)
+    procedures: list[dict] = field(default_factory=list)
+    open_work: list[dict] = field(default_factory=list)
     conflicts: list[dict] = field(default_factory=list)
     missing_context: list[str] = field(default_factory=list)
     recommended_next_reads: list[str] = field(default_factory=list)
     citations: list[dict] = field(default_factory=list)
+    freshness: dict = field(default_factory=dict)
     generated_at: str = ""
     expires_at: str | None = None

@@ -25,16 +25,22 @@ class ContextBuilder:
         selected = filtered[:max_items]
         summary = self._summary(task, selected)
         generated_at = utc_now_iso()
+        citations = self._citations(selected)
         return ContextPack(
             id=new_id("ctx"),
             task=task,
             summary=summary,
             scope=scope,
             items=selected,
+            evidence=citations,
+            decisions=self._typed_items(selected, object_type="knowledge", kind="decision"),
+            procedures=self._typed_items(selected, object_type="knowledge", kind="procedure"),
+            open_work=self._open_work(selected),
             conflicts=[],
             missing_context=[] if selected else ["No relevant context found yet."],
             recommended_next_reads=[item.id for item in selected[:5]],
-            citations=self._citations(selected),
+            citations=citations,
+            freshness={"generated_at": generated_at, "expires_at": None},
             generated_at=generated_at,
             expires_at=None,
         )
@@ -139,6 +145,35 @@ class ContextBuilder:
                 seen.add(key)
                 citations.append({"source_id": source_id, "segment_id": segment_id, "object_id": item.id})
         return citations
+
+    def _typed_items(self, items: list[ContextItem], object_type: str, kind: str) -> list[dict]:
+        return [
+            {
+                "object_type": item.object_type,
+                "id": item.id,
+                "kind": item.kind,
+                "title": item.title,
+                "status": item.status,
+                "summary": item.summary,
+            }
+            for item in items
+            if item.object_type == object_type and item.kind == kind
+        ]
+
+    def _open_work(self, items: list[ContextItem]) -> list[dict]:
+        open_statuses = {"open", "in_progress", "blocked"}
+        return [
+            {
+                "object_type": item.object_type,
+                "id": item.id,
+                "kind": item.kind,
+                "title": item.title,
+                "status": item.status,
+                "summary": item.summary,
+            }
+            for item in items
+            if item.object_type == "work_item" and item.status in open_statuses
+        ]
 
     def _related_items(self, root_id: str, obj: dict, max_items: int) -> list[ContextItem]:
         refs: list[str] = []
