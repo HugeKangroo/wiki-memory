@@ -235,6 +235,51 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertEqual(repository.get("knowledge", first["knowledge_id"])["status"], "candidate")
             self.assertEqual(repository.get("knowledge", second["knowledge_id"])["status"], "candidate")
 
+    def test_report_flags_active_agent_inferred_knowledge_without_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            maintain = MaintenanceLifecycle(root)
+
+            flagged = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Agent inferred active claim",
+                    "summary": "This active claim has no evidence.",
+                    "status": "active",
+                    "confidence": 0.8,
+                    "payload": {
+                        "subject": "memory_remember",
+                        "predicate": "requires",
+                        "value": "evidence",
+                        "metadata": {"memory_source": "agent_inferred"},
+                    },
+                }
+            )
+            allowed = remember.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "User declared active preference",
+                    "summary": "User-declared memory can be active without external evidence.",
+                    "status": "active",
+                    "confidence": 1.0,
+                    "payload": {
+                        "subject": "user",
+                        "predicate": "prefers",
+                        "value": "local-first memory",
+                        "metadata": {"memory_source": "user_declared"},
+                    },
+                }
+            )
+
+            report = maintain.report()
+            violations = report["data"]["governance_violations"]
+
+            self.assertEqual(report["data"]["counts"]["governance_violations"], 1)
+            self.assertEqual(violations[0]["object_id"], flagged["knowledge_id"])
+            self.assertEqual(violations[0]["kind"], "active_knowledge_without_evidence")
+            self.assertNotEqual(violations[0]["object_id"], allowed["knowledge_id"])
+
     def test_merge_duplicates_preserves_active_status_when_merging_candidate_into_active(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

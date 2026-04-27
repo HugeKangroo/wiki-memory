@@ -182,11 +182,13 @@ class MaintenanceLifecycle:
         promote_candidate_ids: list[str] = []
         low_evidence_candidate_ids: list[str] = []
         stale_candidate_ids: list[str] = []
+        governance_violations: list[dict] = []
 
         for item in self.object_repository.list("knowledge"):
             status = item.get("status")
             evidence_count = len(item.get("evidence_refs", []))
             confidence = float(item.get("confidence", 0.0))
+            governance_violations.extend(self._governance_violations(item, evidence_count))
             if status == "candidate" and confidence >= min_confidence and item.get("subject_refs"):
                 if evidence_count >= min_evidence:
                     promote_candidate_ids.append(item["id"])
@@ -210,15 +212,43 @@ class MaintenanceLifecycle:
                 "low_evidence_candidate_ids": sorted(low_evidence_candidate_ids),
                 "stale_candidate_ids": sorted(stale_candidate_ids),
                 "duplicate_groups": duplicate_groups,
+                "governance_violations": sorted(governance_violations, key=lambda item: item["object_id"]),
                 "counts": {
                     "promote_candidates": len(promote_candidate_ids),
                     "low_evidence_candidates": len(low_evidence_candidate_ids),
                     "stale_candidates": len(stale_candidate_ids),
                     "duplicate_groups": len(duplicate_groups),
+                    "governance_violations": len(governance_violations),
                 },
             },
             "warnings": [],
         }
+
+    def _governance_violations(self, item: dict, evidence_count: int) -> list[dict]:
+        if item.get("status") != "active" or evidence_count > 0:
+            return []
+        memory_source = self._memory_source(item)
+        if memory_source in {"user_declared", "human_curated"}:
+            return []
+        return [
+            {
+                "object_id": item["id"],
+                "kind": "active_knowledge_without_evidence",
+                "severity": "warning",
+                "summary": "Active knowledge has no evidence and is not user-declared or human-curated.",
+                "memory_source": memory_source or "unknown",
+            }
+        ]
+
+    def _memory_source(self, item: dict) -> str | None:
+        payload = item.get("payload", {})
+        if not isinstance(payload, dict):
+            return None
+        metadata = payload.get("metadata", {})
+        if not isinstance(metadata, dict):
+            return None
+        value = metadata.get("memory_source")
+        return str(value) if value else None
 
     def cycle(
         self,
