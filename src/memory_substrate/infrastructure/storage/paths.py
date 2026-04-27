@@ -4,6 +4,10 @@ from pathlib import Path
 
 
 OBJECT_DIRS = {
+    "memory_scope": "memory_scopes",
+    "episode": "episodes",
+    "entity": "entities",
+    "relation": "relations",
     "source": "sources",
     "node": "nodes",
     "knowledge": "knowledge",
