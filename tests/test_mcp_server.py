@@ -93,6 +93,7 @@ class McpServerTest(unittest.TestCase):
         remember_defs = tools["memory_remember"].parameters["$defs"]
         self.assertIn("EvidenceRef", remember_defs)
         self.assertIn("KnowledgePayload", remember_defs)
+        self.assertIn("hash", remember_defs["EvidenceRef"]["properties"])
         self.assertEqual(
             remember_defs["RememberKnowledgeInput"]["properties"]["evidence_refs"]["items"]["$ref"],
             "#/$defs/EvidenceRef",

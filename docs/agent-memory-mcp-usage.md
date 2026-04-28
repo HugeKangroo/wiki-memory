@@ -38,11 +38,10 @@ Governed `memory_remember` create operations require:
 - `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`.
 - `scope_refs`: at least one durable scope id, such as a project, user, repo, or topic scope.
 
-Governed knowledge writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate structured claims with the same `kind`, overlapping `scope_refs`, subject, predicate, and value/object, store same-kind/same-scope subject/predicate conflicts as `contested`, and reject `evidence_refs` that do not point to an existing source segment.
+Governed knowledge writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate structured claims with the same `kind`, overlapping `scope_refs`, subject, predicate, and value/object, store same-kind/same-scope subject/predicate conflicts as `contested`, and reject `evidence_refs` that do not point to an existing source segment or whose optional `locator`/`hash` does not match that segment.
 
 Recommended near-term data upgrades:
 
-- Validate citation locator and segment hash details, not only source and segment ids.
 - Add stronger semantic matching for unstructured title/summary-only knowledge.
 - Keep Graphiti/Neo4j behind backend interfaces when graph scale, temporal relation queries, or hybrid retrieval become core requirements.
 

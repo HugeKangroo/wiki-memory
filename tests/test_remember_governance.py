@@ -313,6 +313,108 @@ class RememberGovernanceTest(unittest.TestCase):
             self.assertEqual(stored["status"], "active")
             self.assertEqual(stored["evidence_refs"], [{"source_id": source_id, "segment_id": "seg:valid"}])
 
+    def test_create_knowledge_accepts_matching_evidence_locator_and_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_id = self._seed_source(root)
+            service = RememberService(root)
+            evidence_ref = {
+                "source_id": source_id,
+                "segment_id": "seg:valid",
+                "locator": {"kind": "message", "index": 1},
+                "hash": "valid",
+            }
+
+            result = service.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Governance evidence details are traceable",
+                    "summary": "Valid locator and hash details are accepted.",
+                    "reason": "This verifies detailed evidence validation.",
+                    "memory_source": "system_generated",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "subject_refs": ["node:remember"],
+                    "evidence_refs": [evidence_ref],
+                    "payload": {
+                        "subject": "node:remember",
+                        "predicate": "has_detailed_evidence",
+                        "value": True,
+                    },
+                    "status": "active",
+                    "confidence": 0.95,
+                }
+            )
+
+            stored = FsObjectRepository(root).get("knowledge", result["knowledge_id"])
+
+            self.assertEqual(stored["evidence_refs"], [evidence_ref])
+
+    def test_create_knowledge_rejects_mismatched_evidence_locator(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_id = self._seed_source(root)
+            service = RememberService(root)
+
+            with self.assertRaisesRegex(ValueError, f"locator mismatch: {source_id}#seg:valid"):
+                service.create_knowledge(
+                    {
+                        "kind": "fact",
+                        "title": "Mismatched locator evidence",
+                        "summary": "This evidence locator does not match the source segment.",
+                        "reason": "Invalid evidence details must not enter durable memory.",
+                        "memory_source": "system_generated",
+                        "scope_refs": ["scope:memory-substrate"],
+                        "subject_refs": ["node:remember"],
+                        "evidence_refs": [
+                            {
+                                "source_id": source_id,
+                                "segment_id": "seg:valid",
+                                "locator": {"kind": "message", "index": 2},
+                            }
+                        ],
+                        "payload": {
+                            "subject": "node:remember",
+                            "predicate": "has_detailed_evidence",
+                            "value": False,
+                        },
+                        "status": "candidate",
+                        "confidence": 0.5,
+                    }
+                )
+
+    def test_create_knowledge_rejects_mismatched_evidence_hash(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_id = self._seed_source(root)
+            service = RememberService(root)
+
+            with self.assertRaisesRegex(ValueError, f"hash mismatch: {source_id}#seg:valid"):
+                service.create_knowledge(
+                    {
+                        "kind": "fact",
+                        "title": "Mismatched hash evidence",
+                        "summary": "This evidence hash does not match the source segment.",
+                        "reason": "Invalid evidence details must not enter durable memory.",
+                        "memory_source": "system_generated",
+                        "scope_refs": ["scope:memory-substrate"],
+                        "subject_refs": ["node:remember"],
+                        "evidence_refs": [
+                            {
+                                "source_id": source_id,
+                                "segment_id": "seg:valid",
+                                "hash": "wrong",
+                            }
+                        ],
+                        "payload": {
+                            "subject": "node:remember",
+                            "predicate": "has_detailed_evidence",
+                            "value": False,
+                        },
+                        "status": "candidate",
+                        "confidence": 0.5,
+                    }
+                )
+
     def test_create_knowledge_rejects_missing_evidence_source(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

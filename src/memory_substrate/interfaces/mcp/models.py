@@ -43,6 +43,7 @@ class EvidenceRef(StrictModel):
     source_id: str = Field(description="Source object id, normally prefixed with src:.")
     segment_id: str = Field(description="Segment id inside the source object.")
     locator: dict[str, Any] | None = Field(default=None, description="Optional line, page, URL, or span locator.")
+    hash: str | None = Field(default=None, description="Optional expected source segment hash for citation integrity checks.")
 
 
 class KnowledgePayload(StrictModel):

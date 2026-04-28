@@ -422,7 +422,7 @@ Create modes (`activity`, `knowledge`, `work_item`, and create entries inside `b
 - `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`
 - `scope_refs`: at least one durable scope id, such as a project, user, repo, or topic scope
 
-Governed `knowledge` writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate structured claims with the same `kind`, overlapping `scope_refs`, subject, predicate, and value/object, store same-kind/same-scope subject/predicate conflicts as `contested`, and require provided `evidence_refs` to point to existing source segments.
+Governed `knowledge` writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate structured claims with the same `kind`, overlapping `scope_refs`, subject, predicate, and value/object, store same-kind/same-scope subject/predicate conflicts as `contested`, and require provided `evidence_refs` to point to existing source segments with matching optional `locator` and `hash` values.
 
 Examples:
 
@@ -536,7 +536,8 @@ Examples:
   "locator": {
     "kind": "line",
     "line": 12
-  }
+  },
+  "hash": "optional-segment-hash"
 }
 ```
 

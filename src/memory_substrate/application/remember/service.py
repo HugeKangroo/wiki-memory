@@ -118,9 +118,14 @@ class RememberService:
             source = self.object_repository.get("source", source_id)
             if source is None:
                 raise ValueError(f"evidence_refs source not found: {source_id}")
-            segment_ids = {str(segment.get("segment_id")) for segment in source.get("segments", [])}
-            if segment_id not in segment_ids:
+            segments = {str(segment.get("segment_id")): segment for segment in source.get("segments", [])}
+            segment = segments.get(segment_id)
+            if segment is None:
                 raise ValueError(f"evidence_refs segment not found: {source_id}#{segment_id}")
+            if evidence.get("locator") is not None and evidence.get("locator") != segment.get("locator"):
+                raise ValueError(f"evidence_refs locator mismatch: {source_id}#{segment_id}")
+            if evidence.get("hash") is not None and str(evidence.get("hash")) != str(segment.get("hash")):
+                raise ValueError(f"evidence_refs hash mismatch: {source_id}#{segment_id}")
 
     def _normalize_json(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
