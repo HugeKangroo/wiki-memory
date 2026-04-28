@@ -128,8 +128,14 @@ Most MCP hosts can run the server with this stdio command:
 Codex CLI:
 
 ```bash
+# Only needed when migrating from the old wiki-memory server name.
+codex mcp remove wiki-memory
+
 codex mcp add memory-substrate -- uv run --directory /absolute/path/to/memory-substrate memory-substrate-mcp
+codex mcp list
 ```
+
+The configured command must use `memory-substrate-mcp`. The old `wiki-memory-mcp` entrypoint is obsolete.
 
 Claude Code:
 
