@@ -161,7 +161,9 @@ class KuzuGraphBackend:
                     "id": record["id"],
                     "kind": record.get("kind", record["object_type"]),
                     "title": title,
+                    "status": record.get("status", "active"),
                     "summary": summary,
+                    "evidence_refs": record.get("evidence_refs", []),
                     "score": self._score(q, title.lower(), summary.lower(), payload.lower()),
                 }
             )

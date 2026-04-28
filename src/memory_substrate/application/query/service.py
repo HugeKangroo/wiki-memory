@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from memory_substrate.domain.services.context_builder import ContextBuilder
+from memory_substrate.domain.services.ids import new_id
+from memory_substrate.domain.services.patch_applier import utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
 
@@ -33,6 +35,9 @@ class QueryService:
         Returns:
             Context pack with ranked items, conflicts, missing context, citations, and expiry metadata.
         """
+        if self.graph_backend is not None:
+            return self._graph_context(task=task, scope=scope, max_items=max_items)
+
         pack = self.builder.build(task=task, scope=scope, max_items=max_items)
         return {
             "result_type": "context_pack",
@@ -215,6 +220,21 @@ class QueryService:
                 "warnings": [],
             }
 
+        if self.graph_backend is not None:
+            graph_items = [
+                item
+                for item in self.graph_backend.search(query=query, max_items=max_items)
+                if self._matches_filters(item.get("object_type", ""), item, filters)
+            ]
+            return {
+                "result_type": "search_results",
+                "data": {
+                    "query": query,
+                    "items": graph_items[:max_items],
+                },
+                "warnings": [],
+            }
+
         for object_type in ("node", "knowledge", "activity", "work_item", "source"):
             for obj in self.repository.list(object_type):
                 if not self._matches_filters(object_type, obj, filters):
@@ -247,6 +267,82 @@ class QueryService:
             },
             "warnings": [],
         }
+
+    def _graph_context(self, task: str, scope: dict | None = None, max_items: int = 12) -> dict:
+        scope = scope or {}
+        filters = scope if isinstance(scope, dict) else {}
+        items = [
+            self._graph_context_item(item)
+            for item in self.graph_backend.search(query=task, max_items=max_items)
+            if self._matches_filters(item.get("object_type", ""), item, filters)
+        ][:max_items]
+        generated_at = utc_now_iso()
+        citations = self._graph_citations(items)
+        return {
+            "result_type": "context_pack",
+            "data": {
+                "id": new_id("ctx"),
+                "task": task,
+                "summary": self._graph_context_summary(task, items),
+                "scope": scope,
+                "items": items,
+                "evidence": citations,
+                "decisions": [
+                    item for item in items if item["object_type"] == "knowledge" and item["kind"] == "decision"
+                ],
+                "procedures": [
+                    item for item in items if item["object_type"] == "knowledge" and item["kind"] == "procedure"
+                ],
+                "open_work": [
+                    item
+                    for item in items
+                    if item["object_type"] == "work_item" and item.get("status") in {"open", "in_progress", "blocked"}
+                ],
+                "conflicts": [],
+                "missing_context": [] if items else ["No relevant context found yet."],
+                "recommended_next_reads": [item["id"] for item in items[:5]],
+                "citations": citations,
+                "freshness": {"generated_at": generated_at, "expires_at": None},
+                "generated_at": generated_at,
+                "expires_at": None,
+            },
+            "warnings": [],
+        }
+
+    def _graph_context_item(self, item: dict) -> dict:
+        return {
+            "object_type": item.get("object_type", "unknown"),
+            "id": item["id"],
+            "kind": item.get("kind", item.get("object_type", "unknown")),
+            "title": item.get("title", item["id"]),
+            "status": item.get("status", "active"),
+            "summary": item.get("summary", ""),
+            "evidence_refs": item.get("evidence_refs", []),
+        }
+
+    def _graph_citations(self, items: list[dict]) -> list[dict]:
+        citations: list[dict] = []
+        seen: set[tuple[str, str, str]] = set()
+        for item in items:
+            for evidence in item.get("evidence_refs", []):
+                if not isinstance(evidence, dict):
+                    continue
+                source_id = str(evidence.get("source_id", ""))
+                segment_id = str(evidence.get("segment_id", ""))
+                if not source_id or not segment_id:
+                    continue
+                key = (source_id, segment_id, item["id"])
+                if key in seen:
+                    continue
+                seen.add(key)
+                citations.append({"source_id": source_id, "segment_id": segment_id, "object_id": item["id"]})
+        return citations
+
+    def _graph_context_summary(self, task: str, items: list[dict]) -> str:
+        if not items:
+            return f"No stored context available yet for task: {task}"
+        titles = ", ".join(item["title"] for item in items[:3])
+        return f"Context for '{task}' built from {len(items)} graph items. Key entries: {titles}"
 
     def _parse_time(self, value: str | None) -> datetime:
         if not value:

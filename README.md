@@ -136,7 +136,7 @@ Graph backends are explicit opt-in per MCP call:
 }
 ```
 
-Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` with `graph_backend` to rebuild the graph index from canonical objects, `memory_remember` with `graph_backend` to sync new writes, and `memory_query` `graph` with `graph_backend` to read graph neighborhoods from the selected backend.
+Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` with `graph_backend` to rebuild the graph index from canonical objects, `memory_remember` with `graph_backend` to sync new writes, and `memory_query` `context`, `search`, or `graph` with `graph_backend` to read from the selected backend.
 
 ## MCP Server
 

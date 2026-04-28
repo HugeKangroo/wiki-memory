@@ -28,7 +28,7 @@ The current schema is already suitable for an early memory substrate. It should 
 
 The memory server should not require agents to configure a separate LLM API key. Agents or humans may perform analysis and extraction, then call `memory_remember` with structured candidates. Backends such as Kuzu, Neo4j, Graphiti, Cognee, or LlamaIndex must remain behind Memory Substrate contracts.
 
-Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to rebuild or inspect a graph index. When used, allowed values are `file` and `kuzu`.
+Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to rebuild, sync, or query a graph index. When used, allowed values are `file` and `kuzu`.
 
 Recommended near-term data upgrades:
 
@@ -250,7 +250,7 @@ Rebuild a local Kuzu graph index from canonical memory objects:
 }
 ```
 
-Read a graph neighborhood from a selected backend:
+Read context, search results, or a graph neighborhood from a selected backend:
 
 ```json
 {

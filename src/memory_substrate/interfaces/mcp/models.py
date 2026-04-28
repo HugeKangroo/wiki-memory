@@ -84,7 +84,7 @@ class QueryOptions(StrictModel):
 
     max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
-    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend for graph mode.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend for context, search, and graph modes.")
 
 
 class RememberOptions(StrictModel):
