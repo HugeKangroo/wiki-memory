@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 GraphBackendName = Literal["file", "kuzu"]
+MemorySourceName = Literal["user_declared", "human_curated", "agent_inferred", "system_generated", "imported"]
 
 
 class StrictModel(BaseModel):
@@ -208,6 +209,9 @@ class RememberActivityInput(StrictModel):
     kind: str
     title: str
     summary: str
+    reason: str = Field(description="Durable write reason explaining why this activity should survive future sessions.")
+    memory_source: MemorySourceName = Field(description="Where the remembered activity came from.")
+    scope_refs: list[str] = Field(min_length=1, description="Memory scopes this activity belongs to, such as project, user, repo, or topic scopes.")
     actor: ActorRef | None = None
     status: str | None = None
     started_at: str | None = None
@@ -225,6 +229,9 @@ class RememberKnowledgeInput(StrictModel):
     kind: str
     title: str
     summary: str
+    reason: str = Field(description="Durable write reason explaining why this knowledge should survive future sessions.")
+    memory_source: MemorySourceName = Field(description="Where the remembered knowledge came from.")
+    scope_refs: list[str] = Field(min_length=1, description="Memory scopes this knowledge belongs to, such as project, user, repo, or topic scopes.")
     actor: ActorRef | None = None
     subject_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
@@ -234,6 +241,7 @@ class RememberKnowledgeInput(StrictModel):
     valid_from: str | None = None
     valid_until: str | None = None
     last_verified_at: str | None = None
+    allow_duplicate: bool = Field(default=False, description="Set true only for imports or tests that intentionally seed duplicate knowledge.")
 
 
 class RememberWorkItemInput(StrictModel):
@@ -242,6 +250,9 @@ class RememberWorkItemInput(StrictModel):
     kind: str
     title: str
     summary: str
+    reason: str = Field(description="Durable write reason explaining why this work item should survive future sessions.")
+    memory_source: MemorySourceName = Field(description="Where the remembered work item came from.")
+    scope_refs: list[str] = Field(min_length=1, description="Memory scopes this work item belongs to, such as project, user, repo, or topic scopes.")
     actor: ActorRef | None = None
     status: str | None = None
     lifecycle_state: str | None = None

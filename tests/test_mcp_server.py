@@ -77,6 +77,7 @@ class McpServerTest(unittest.TestCase):
         self.assertIn("New evidence: use memory_ingest", server.instructions)
         self.assertIn("analyze evidence outside ingest", server.instructions)
         self.assertIn("memory_query before memory_remember", server.instructions)
+        self.assertIn("reason, memory_source, and scope_refs", server.instructions)
         self.assertNotIn("memory_query before memory_ingest", server.instructions)
         self.assertIn("options.apply=true", server.instructions)
 
@@ -99,6 +100,26 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             remember_defs["RememberKnowledgeInput"]["properties"]["payload"]["$ref"],
             "#/$defs/KnowledgePayload",
+        )
+        self.assertEqual(
+            set(remember_defs["RememberKnowledgeInput"]["required"]),
+            {
+                "kind",
+                "title",
+                "summary",
+                "reason",
+                "memory_source",
+                "scope_refs",
+                "payload",
+            },
+        )
+        self.assertEqual(
+            set(remember_defs["RememberActivityInput"]["required"]),
+            {"kind", "title", "summary", "reason", "memory_source", "scope_refs"},
+        )
+        self.assertEqual(
+            set(remember_defs["RememberWorkItemInput"]["required"]),
+            {"kind", "title", "summary", "reason", "memory_source", "scope_refs"},
         )
 
         query_defs = tools["memory_query"].parameters["$defs"]
@@ -320,6 +341,23 @@ class McpServerTest(unittest.TestCase):
                 await server.call_tool(
                     "memory_remember",
                     {"args": {"mode": "promote", "input_data": {}}},
+                )
+            with self.assertRaisesRegex(Exception, "reason"):
+                await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "mode": "knowledge",
+                            "input_data": {
+                                "kind": "fact",
+                                "title": "Missing governance",
+                                "summary": "This write should be rejected at the MCP boundary.",
+                                "scope_refs": ["scope:test"],
+                                "memory_source": "agent_inferred",
+                                "payload": {"predicate": "missing_reason"},
+                            },
+                        }
+                    },
                 )
 
         asyncio.run(run_smoke())

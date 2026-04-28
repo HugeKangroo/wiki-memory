@@ -4,6 +4,7 @@ from dataclasses import dataclass, field, replace
 
 
 USER_CURATED_SOURCES = {"user_declared", "human_curated"}
+VALID_MEMORY_SOURCES = {*USER_CURATED_SOURCES, "agent_inferred", "system_generated", "imported"}
 
 
 @dataclass(slots=True)
@@ -22,6 +23,8 @@ class RememberRequest:
     def validate_governance(self) -> "RememberRequest":
         if not self.reason.strip():
             raise ValueError("remember request requires reason")
+        if self.memory_source not in VALID_MEMORY_SOURCES:
+            raise ValueError(f"remember request has unsupported memory_source: {self.memory_source}")
         if not self.scope_refs:
             raise ValueError("remember request requires scope_refs")
         if self.status == "active" and self.mode == "knowledge":

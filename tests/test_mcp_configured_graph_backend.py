@@ -27,9 +27,12 @@ class McpConfiguredGraphBackendTest(unittest.TestCase):
                     "kind": "decision",
                     "title": "Configured graph backend",
                     "summary": "Remember uses the configured graph backend.",
+                    "reason": "This verifies configured graph backend defaults.",
+                    "memory_source": "system_generated",
+                    "scope_refs": ["scope:test"],
                     "payload": {"subject": "node:memory", "predicate": "uses", "object": "node:file-graph"},
                     "subject_refs": ["node:memory"],
-                    "status": "active",
+                    "status": "candidate",
                     "confidence": 0.9,
                 },
             )

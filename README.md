@@ -416,6 +416,14 @@ Allowed modes:
 - `contest`
 - `batch`
 
+Create modes (`activity`, `knowledge`, `work_item`, and create entries inside `batch`) require governance fields:
+
+- `reason`: why the memory should survive future sessions
+- `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`
+- `scope_refs`: at least one durable scope id, such as a project, user, repo, or topic scope
+
+Governed `knowledge` writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate facts by default, and store same-subject/same-predicate conflicting facts as `contested`.
+
 Examples:
 
 `activity`
@@ -428,6 +436,9 @@ Examples:
       "kind": "research",
       "title": "Repo walkthrough",
       "summary": "Captured reusable findings.",
+      "reason": "This walkthrough records reusable project context.",
+      "memory_source": "agent_inferred",
+      "scope_refs": ["scope:project"],
       "source_refs": ["src:..."],
       "related_node_refs": ["node:..."]
     }
@@ -463,6 +474,9 @@ Examples:
             "kind": "fact",
             "title": "Reusable fact",
             "summary": "Captured by the agent.",
+            "reason": "This fact affects future work in this project.",
+            "memory_source": "agent_inferred",
+            "scope_refs": ["scope:project"],
             "subject_refs": ["node:..."],
             "evidence_refs": [],
             "payload": {
@@ -490,6 +504,9 @@ Examples:
       "kind": "fact",
       "title": "Repo uses Python",
       "summary": "Primary language is Python.",
+      "reason": "The detected language changes future repository work.",
+      "memory_source": "agent_inferred",
+      "scope_refs": ["scope:project"],
       "subject_refs": ["node:..."],
       "evidence_refs": [
         {
@@ -535,6 +552,9 @@ Examples:
       "kind": "task",
       "title": "Review repo",
       "summary": "Track next step.",
+      "reason": "This task should persist beyond the current session.",
+      "memory_source": "user_declared",
+      "scope_refs": ["scope:project"],
       "source_refs": ["src:..."]
     }
   }

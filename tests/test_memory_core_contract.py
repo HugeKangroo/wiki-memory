@@ -103,6 +103,17 @@ class MemoryCoreContractTest(unittest.TestCase):
             self.assertEqual(objects.get("relation", "rel:applies-to")["relation_type"], "applies_to")
 
     def test_remember_request_requires_governance_for_active_knowledge(self) -> None:
+        with self.assertRaisesRegex(ValueError, "memory_source"):
+            RememberRequest(
+                mode="knowledge",
+                reason="This decision affects future backend work.",
+                memory_source="unknown_source",
+                scope_refs=["scope:project"],
+                status="candidate",
+                confidence=0.9,
+                payload={"kind": "decision", "title": "Use GraphBackend"},
+            ).validate_governance()
+
         with self.assertRaisesRegex(ValueError, "active knowledge requires evidence_refs"):
             RememberRequest(
                 mode="knowledge",

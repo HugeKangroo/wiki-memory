@@ -32,13 +32,18 @@ Graph backend usage is explicit. Agents should omit `options.graph_backend` unle
 
 When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
 
+Governed `memory_remember` create operations require:
+
+- `reason`: why the memory should survive future sessions.
+- `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`.
+- `scope_refs`: at least one durable scope id, such as a project, user, repo, or topic scope.
+
+Governed knowledge writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate facts by default, and store same-subject/same-predicate conflicting facts as `contested`.
+
 Recommended near-term data upgrades:
 
-- Require a durable write reason for `memory_remember` create operations.
-- Record whether the memory came from explicit user intent, agent inference, system maintenance, or imported data.
-- Require scope metadata, such as project, user, repo, topic, or workspace.
-- Enforce evidence policy: active knowledge should have evidence refs unless it is explicitly marked as user-declared.
-- Add stronger duplicate and conflict checks inside `memory_remember`, not only in `memory_maintain`.
+- Validate that `evidence_refs` point to existing source segments before accepting active knowledge.
+- Expand duplicate and conflict checks beyond fact signatures.
 - Keep Graphiti/Neo4j behind backend interfaces when graph scale, temporal relation queries, or hybrid retrieval become core requirements.
 
 ## Tool Responsibilities
@@ -195,6 +200,9 @@ Remember a durable knowledge item:
       "kind": "agent_memory_policy",
       "title": "Remember is the governed durable write path",
       "summary": "Agents may propose memory, but memory_remember governs durable writes and should validate evidence, scope, confidence, and lifecycle status.",
+      "reason": "Prevents agent mistakes from polluting durable memory.",
+      "memory_source": "agent_inferred",
+      "scope_refs": ["scope:memory-substrate"],
       "actor": {
         "type": "agent",
         "id": "codex"
@@ -209,13 +217,7 @@ Remember a durable knowledge item:
         "subject": "memory_remember",
         "predicate": "role",
         "value": "governed durable write path",
-        "metadata": {
-          "reason": "Prevents agent mistakes from polluting durable memory.",
-          "memory_source": "agent_inferred",
-          "scope": {
-            "project": "memory-substrate"
-          }
-        }
+        "metadata": {}
       },
       "status": "candidate",
       "confidence": 0.8

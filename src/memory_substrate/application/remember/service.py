@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.protocols.remember_request import RememberRequest
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
@@ -64,6 +66,104 @@ class RememberService:
             "backend": self.graph_sync.graph_backend.__class__.__name__,
         }
 
+    def _has_governance_fields(self, data: dict) -> bool:
+        return any(field in data for field in ("reason", "memory_source", "scope_refs"))
+
+    def _normalize_governance(
+        self,
+        mode: str,
+        data: dict,
+        payload: dict,
+        status: str,
+        confidence: float,
+        evidence_refs: list[dict] | None = None,
+    ) -> RememberRequest | None:
+        if not self._has_governance_fields(data):
+            return None
+        metadata = payload.get("metadata", {}) if isinstance(payload.get("metadata"), dict) else {}
+        request = RememberRequest(
+            mode=mode,
+            reason=str(data.get("reason") or metadata.get("reason") or ""),
+            memory_source=str(data.get("memory_source") or metadata.get("memory_source") or ""),
+            scope_refs=[str(ref) for ref in data.get("scope_refs", [])],
+            status=status,
+            confidence=confidence,
+            payload=payload,
+            evidence_refs=evidence_refs or [],
+            actor=data.get("actor"),
+        )
+        return request.normalize()
+
+    def _with_governance_metadata(self, payload: dict, request: RememberRequest) -> dict:
+        governed_payload = dict(payload)
+        metadata = governed_payload.get("metadata", {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+        governed_payload["metadata"] = {
+            **metadata,
+            "reason": request.reason,
+            "memory_source": request.memory_source,
+            "scope_refs": request.scope_refs,
+        }
+        return governed_payload
+
+    def _normalize_json(self, value) -> str:
+        return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _knowledge_signature(self, item: dict) -> tuple[str, str, str, str] | None:
+        payload = item.get("payload", {})
+        if not isinstance(payload, dict):
+            return None
+        subject_refs = item.get("subject_refs", [])
+        subject = subject_refs[0] if subject_refs else payload.get("subject")
+        predicate = payload.get("predicate")
+        if not subject or not predicate:
+            return None
+        return (
+            str(subject),
+            str(predicate),
+            self._normalize_json(payload.get("value")),
+            self._normalize_json(payload.get("object")),
+        )
+
+    def _knowledge_identity_key(self, data: dict) -> str:
+        signature = self._knowledge_signature(data)
+        if signature is None:
+            return f"knowledge|{data.get('kind', '')}|{data.get('title', '')}".lower()
+        subject, predicate, value, object_value = signature
+        return f"knowledge|{data.get('kind', '')}|{subject}|{predicate}|{value}|{object_value}"
+
+    def _active_knowledge_items(self) -> list[dict]:
+        return [
+            item
+            for item in self.object_repository.list("knowledge")
+            if item.get("status") not in {"superseded", "archived"}
+        ]
+
+    def _duplicate_knowledge_ids(self, data: dict) -> list[str]:
+        signature = self._knowledge_signature(data)
+        if signature is None:
+            return []
+        return [
+            item["id"]
+            for item in self._active_knowledge_items()
+            if self._knowledge_signature(item) == signature
+        ]
+
+    def _conflicting_knowledge_ids(self, data: dict) -> list[str]:
+        signature = self._knowledge_signature(data)
+        if signature is None:
+            return []
+        subject, predicate, value, object_value = signature
+        conflicts: list[str] = []
+        for item in self._active_knowledge_items():
+            existing = self._knowledge_signature(item)
+            if existing is None:
+                continue
+            if existing[0] == subject and existing[1] == predicate and existing[2:] != (value, object_value):
+                conflicts.append(item["id"])
+        return conflicts
+
     def create_activity(self, data: dict, actor: dict | None = None) -> dict:
         """Create a finalized activity object from explicit structured input.
 
@@ -76,6 +176,36 @@ class RememberService:
         """
         activity_id = new_id("act")
         timestamp = utc_now_iso()
+        request = self._normalize_governance(
+            mode="activity",
+            data=data,
+            payload={},
+            status=data.get("status", "finalized"),
+            confidence=1.0,
+        )
+        changes = {
+            "kind": data["kind"],
+            "title": data["title"],
+            "summary": data["summary"],
+            "status": request.status if request else data.get("status", "finalized"),
+            "started_at": data.get("started_at", timestamp),
+            "ended_at": data.get("ended_at", timestamp),
+            "related_node_refs": data.get("related_node_refs", []),
+            "related_work_item_refs": data.get("related_work_item_refs", []),
+            "source_refs": data.get("source_refs", []),
+            "produced_object_refs": data.get("produced_object_refs", []),
+            "artifact_refs": data.get("artifact_refs", []),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        if request is not None:
+            changes.update(
+                {
+                    "reason": request.reason,
+                    "memory_source": request.memory_source,
+                    "scope_refs": request.scope_refs,
+                }
+            )
         patch = MemoryPatch(
             id=new_id("patch"),
             source=actor or {"type": "system", "id": "memory.remember.activity"},
@@ -84,21 +214,7 @@ class RememberService:
                     op="create_object",
                     object_type="activity",
                     object_id=activity_id,
-                    changes={
-                        "kind": data["kind"],
-                        "title": data["title"],
-                        "summary": data["summary"],
-                        "status": data.get("status", "finalized"),
-                        "started_at": data.get("started_at", timestamp),
-                        "ended_at": data.get("ended_at", timestamp),
-                        "related_node_refs": data.get("related_node_refs", []),
-                        "related_work_item_refs": data.get("related_work_item_refs", []),
-                        "source_refs": data.get("source_refs", []),
-                        "produced_object_refs": data.get("produced_object_refs", []),
-                        "artifact_refs": data.get("artifact_refs", []),
-                        "created_at": timestamp,
-                        "updated_at": timestamp,
-                    },
+                    changes=changes,
                 )
             ],
             created_at=timestamp,
@@ -127,6 +243,61 @@ class RememberService:
         """
         knowledge_id = new_id("know")
         timestamp = utc_now_iso()
+        payload = data.get("payload", {})
+        evidence_refs = data.get("evidence_refs", [])
+        request = self._normalize_governance(
+            mode="knowledge",
+            data=data,
+            payload=payload,
+            status=data.get("status", "candidate"),
+            confidence=data.get("confidence", 0.0),
+            evidence_refs=evidence_refs,
+        )
+        candidate = {
+            **data,
+            "payload": payload,
+            "evidence_refs": evidence_refs,
+            "status": request.status if request else data.get("status", "candidate"),
+        }
+        if request is not None:
+            duplicate_ids = self._duplicate_knowledge_ids(candidate)
+            if duplicate_ids and not data.get("allow_duplicate", False):
+                raise ValueError(f"duplicate knowledge exists: {', '.join(duplicate_ids)}")
+            conflict_ids = self._conflicting_knowledge_ids(candidate)
+            payload = self._with_governance_metadata(payload, request)
+            if conflict_ids:
+                metadata = payload.get("metadata", {})
+                payload["metadata"] = {**metadata, "conflicts_with": conflict_ids}
+                candidate["status"] = "contested"
+        else:
+            conflict_ids = []
+        identity_key = data.get("identity_key") or self._knowledge_identity_key(candidate)
+        changes = {
+            "kind": data["kind"],
+            "title": data["title"],
+            "summary": data["summary"],
+            "identity_key": identity_key,
+            "subject_refs": data.get("subject_refs", []),
+            "evidence_refs": evidence_refs,
+            "payload": payload,
+            "status": candidate["status"],
+            "confidence": data.get("confidence", 0.0),
+            "valid_from": data.get("valid_from", timestamp),
+            "valid_until": data.get("valid_until"),
+            "last_verified_at": data.get("last_verified_at"),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        if request is not None:
+            changes.update(
+                {
+                    "reason": request.reason,
+                    "memory_source": request.memory_source,
+                    "scope_refs": request.scope_refs,
+                }
+            )
+            if conflict_ids:
+                changes["conflicts_with"] = conflict_ids
         patch = MemoryPatch(
             id=new_id("patch"),
             source=actor or {"type": "system", "id": "memory.remember.knowledge"},
@@ -135,21 +306,7 @@ class RememberService:
                     op="create_object",
                     object_type="knowledge",
                     object_id=knowledge_id,
-                    changes={
-                        "kind": data["kind"],
-                        "title": data["title"],
-                        "summary": data["summary"],
-                        "subject_refs": data.get("subject_refs", []),
-                        "evidence_refs": data.get("evidence_refs", []),
-                        "payload": data.get("payload", {}),
-                        "status": data.get("status", "candidate"),
-                        "confidence": data.get("confidence", 0.0),
-                        "valid_from": data.get("valid_from", timestamp),
-                        "valid_until": data.get("valid_until"),
-                        "last_verified_at": data.get("last_verified_at"),
-                        "created_at": timestamp,
-                        "updated_at": timestamp,
-                    },
+                    changes=changes,
                 )
             ],
             created_at=timestamp,
@@ -178,6 +335,42 @@ class RememberService:
         """
         work_item_id = new_id("work")
         timestamp = utc_now_iso()
+        request = self._normalize_governance(
+            mode="work_item",
+            data=data,
+            payload={},
+            status=data.get("status", "open"),
+            confidence=1.0,
+        )
+        changes = {
+            "kind": data["kind"],
+            "title": data["title"],
+            "summary": data["summary"],
+            "status": request.status if request else data.get("status", "open"),
+            "lifecycle_state": data.get("lifecycle_state", "active"),
+            "priority": data.get("priority", "medium"),
+            "owner_refs": data.get("owner_refs", []),
+            "related_node_refs": data.get("related_node_refs", []),
+            "related_knowledge_refs": data.get("related_knowledge_refs", []),
+            "source_refs": data.get("source_refs", []),
+            "depends_on": data.get("depends_on", []),
+            "blocked_by": data.get("blocked_by", []),
+            "parent_ref": data.get("parent_ref"),
+            "child_refs": data.get("child_refs", []),
+            "resolution": data.get("resolution"),
+            "due_at": data.get("due_at"),
+            "opened_at": data.get("opened_at", timestamp),
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+        if request is not None:
+            changes.update(
+                {
+                    "reason": request.reason,
+                    "memory_source": request.memory_source,
+                    "scope_refs": request.scope_refs,
+                }
+            )
         patch = MemoryPatch(
             id=new_id("patch"),
             source=actor or {"type": "system", "id": "memory.remember.work_item"},
@@ -186,27 +379,7 @@ class RememberService:
                     op="create_object",
                     object_type="work_item",
                     object_id=work_item_id,
-                    changes={
-                        "kind": data["kind"],
-                        "title": data["title"],
-                        "summary": data["summary"],
-                        "status": data.get("status", "open"),
-                        "lifecycle_state": data.get("lifecycle_state", "active"),
-                        "priority": data.get("priority", "medium"),
-                        "owner_refs": data.get("owner_refs", []),
-                        "related_node_refs": data.get("related_node_refs", []),
-                        "related_knowledge_refs": data.get("related_knowledge_refs", []),
-                        "source_refs": data.get("source_refs", []),
-                        "depends_on": data.get("depends_on", []),
-                        "blocked_by": data.get("blocked_by", []),
-                        "parent_ref": data.get("parent_ref"),
-                        "child_refs": data.get("child_refs", []),
-                        "resolution": data.get("resolution"),
-                        "due_at": data.get("due_at"),
-                        "opened_at": data.get("opened_at", timestamp),
-                        "created_at": timestamp,
-                        "updated_at": timestamp,
-                    },
+                    changes=changes,
                 )
             ],
             created_at=timestamp,
