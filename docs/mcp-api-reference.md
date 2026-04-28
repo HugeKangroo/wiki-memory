@@ -288,6 +288,8 @@ Governed `knowledge` writes:
 - reject evidence refs that point to missing sources or segments
 - reject optional evidence `locator` or `hash` mismatches
 
+For unstructured title/summary-only knowledge, omit `payload` or pass `{}`. For structured fact-like knowledge, include `payload.subject`, `payload.predicate`, and `payload.value` or `payload.object` when applicable.
+
 `knowledge`:
 
 ```json

@@ -152,9 +152,9 @@ class McpServerTest(unittest.TestCase):
                 "reason",
                 "memory_source",
                 "scope_refs",
-                "payload",
             },
         )
+        self.assertNotIn("predicate", remember_defs["KnowledgePayload"].get("required", []))
         self.assertEqual(
             set(remember_defs["RememberActivityInput"]["required"]),
             {"kind", "title", "summary", "reason", "memory_source", "scope_refs"},
@@ -340,6 +340,57 @@ class McpServerTest(unittest.TestCase):
                 maintain_payload = json.loads(maintain_result[0].text)
                 self.assertEqual(maintain_payload["status"], "noop")
                 self.assertEqual(maintain_payload["promoted"], 0)
+
+        asyncio.run(run_smoke())
+
+    def test_server_allows_unstructured_knowledge_payload_for_soft_duplicates(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            with tempfile.TemporaryDirectory() as tmpdir:
+                first_result = await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "root": tmpdir,
+                            "mode": "knowledge",
+                            "input_data": {
+                                "kind": "decision",
+                                "title": "Use Kuzu as the local graph backend",
+                                "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                                "reason": "This decision guides local backend work.",
+                                "memory_source": "user_declared",
+                                "scope_refs": ["scope:smoke"],
+                                "status": "active",
+                                "confidence": 1.0,
+                            },
+                        }
+                    },
+                )
+                first_payload = json.loads(first_result[0].text)
+
+                second_result = await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "root": tmpdir,
+                            "mode": "knowledge",
+                            "input_data": {
+                                "kind": "decision",
+                                "title": "Kuzu remains the local graph backend",
+                                "summary": "The local prototype graph backend should stay on Kuzu.",
+                                "reason": "This may duplicate an existing backend decision.",
+                                "memory_source": "agent_inferred",
+                                "scope_refs": ["scope:smoke"],
+                                "payload": {},
+                                "status": "candidate",
+                                "confidence": 0.7,
+                            },
+                        }
+                    },
+                )
+                second_payload = json.loads(second_result[0].text)
+
+                self.assertEqual(second_payload["possible_duplicates"][0]["object_id"], first_payload["knowledge_id"])
 
         asyncio.run(run_smoke())
 

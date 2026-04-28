@@ -7,6 +7,7 @@
 - Added optional graph backend configuration with file and Kuzu backends behind the project-owned graph contract.
 - Added deterministic query normalization for domain terms such as todo/work-item and decision/preference/procedure/evidence queries, including graph backend metadata matching.
 - Added advisory `possible_duplicates` responses for similar unstructured title/summary-only knowledge.
+- Allowed MCP knowledge writes to omit `payload` for unstructured title/summary-only knowledge.
 - Added unstructured soft duplicate candidates to maintenance reports while keeping automatic duplicate merge limited to structured duplicates.
 - Added MCP resources and prompts for agent policy, task-start query workflow, and memory review guidance.
 - Recorded the current semantic retrieval decision: defer embedding/vector/reasoner infrastructure until deterministic retrieval gaps are proven.

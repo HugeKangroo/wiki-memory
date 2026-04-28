@@ -47,10 +47,10 @@ class EvidenceRef(StrictModel):
 
 
 class KnowledgePayload(StrictModel):
-    """Structured claim payload for fact-like knowledge."""
+    """Optional structured claim payload for fact-like knowledge."""
 
     subject: str | None = Field(default=None, description="Primary subject entity or object id for the claim.")
-    predicate: str = Field(description="Relationship or property being asserted, such as primary_language.")
+    predicate: str | None = Field(default=None, description="Relationship or property being asserted, such as primary_language.")
     value: Any = Field(default=None, description="Literal claim value when the predicate points to a value.")
     object: Any = Field(default=None, description="Object-side entity/value when the predicate links two things.")
     metadata: dict[str, Any] = Field(default_factory=dict, description="Optional structured details that do not fit the core claim fields.")
@@ -236,7 +236,10 @@ class RememberKnowledgeInput(StrictModel):
     actor: ActorRef | None = None
     subject_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
-    payload: KnowledgePayload
+    payload: KnowledgePayload = Field(
+        default_factory=KnowledgePayload,
+        description="Optional structured payload. Omit for unstructured title/summary-only knowledge; include subject, predicate, value, or object for structured claims.",
+    )
     status: str | None = None
     confidence: float | None = None
     valid_from: str | None = None

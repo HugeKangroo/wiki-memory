@@ -21,7 +21,7 @@ Current canonical object types:
 - `source`: durable evidence origin, such as a file, repository, web page, PDF, or conversation.
 - `source.segments`: citable evidence slices inside a source, each with a locator, excerpt, and hash.
 - `node`: reusable long-lived entity, such as a project, person, file, concept, tool, preference, or decision anchor.
-- `knowledge`: a claim the system believes or is evaluating. It carries subject refs, evidence refs, payload, status, confidence, and validity windows.
+- `knowledge`: a claim the system believes or is evaluating. It carries subject refs, evidence refs, optional structured payload, status, confidence, and validity windows.
 - `activity`: completed work or analysis, linked to nodes, work items, sources, produced objects, and artifacts.
 - `work_item`: actionable task or issue, linked to owners, nodes, knowledge, sources, dependencies, and children.
 - `patch`: governed memory mutation record.
@@ -40,7 +40,7 @@ The memory server should not require agents to configure a separate LLM API key.
 
 Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to override the root default for a specific call. Configure a root default with `memory_maintain` `configure` when the memory root should consistently sync, query, report, and reindex through a graph backend. Allowed values are `file` and `kuzu`.
 
-When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
+When remembering unstructured title/summary-only knowledge, omit `payload` or pass `{}`. When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
 
 Governed `memory_remember` create operations require:
 
