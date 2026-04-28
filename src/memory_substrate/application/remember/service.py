@@ -125,7 +125,23 @@ class RememberService:
     def _normalize_json(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
-    def _knowledge_signature(self, item: dict) -> tuple[str, str, str, str] | None:
+    def _knowledge_scope_refs(self, item: dict) -> list[str]:
+        scope_refs = item.get("scope_refs", [])
+        if scope_refs:
+            return [str(ref) for ref in scope_refs]
+        payload = item.get("payload", {})
+        metadata = payload.get("metadata", {}) if isinstance(payload, dict) else {}
+        metadata_scope_refs = metadata.get("scope_refs", []) if isinstance(metadata, dict) else []
+        return [str(ref) for ref in metadata_scope_refs]
+
+    def _scopes_overlap(self, left: dict, right: dict) -> bool:
+        left_scopes = set(self._knowledge_scope_refs(left))
+        right_scopes = set(self._knowledge_scope_refs(right))
+        if not left_scopes or not right_scopes:
+            return True
+        return bool(left_scopes.intersection(right_scopes))
+
+    def _knowledge_signature(self, item: dict) -> tuple[str, str, str, str, str] | None:
         payload = item.get("payload", {})
         if not isinstance(payload, dict):
             return None
@@ -135,6 +151,7 @@ class RememberService:
         if not subject or not predicate:
             return None
         return (
+            str(item.get("kind", "")),
             str(subject),
             str(predicate),
             self._normalize_json(payload.get("value")),
@@ -145,8 +162,9 @@ class RememberService:
         signature = self._knowledge_signature(data)
         if signature is None:
             return f"knowledge|{data.get('kind', '')}|{data.get('title', '')}".lower()
-        subject, predicate, value, object_value = signature
-        return f"knowledge|{data.get('kind', '')}|{subject}|{predicate}|{value}|{object_value}"
+        kind, subject, predicate, value, object_value = signature
+        scope_key = self._normalize_json(sorted(self._knowledge_scope_refs(data)))
+        return f"knowledge|{kind}|{scope_key}|{subject}|{predicate}|{value}|{object_value}"
 
     def _active_knowledge_items(self) -> list[dict]:
         return [
@@ -162,20 +180,26 @@ class RememberService:
         return [
             item["id"]
             for item in self._active_knowledge_items()
-            if self._knowledge_signature(item) == signature
+            if self._scopes_overlap(item, data) and self._knowledge_signature(item) == signature
         ]
 
     def _conflicting_knowledge_ids(self, data: dict) -> list[str]:
         signature = self._knowledge_signature(data)
         if signature is None:
             return []
-        subject, predicate, value, object_value = signature
+        kind, subject, predicate, value, object_value = signature
         conflicts: list[str] = []
         for item in self._active_knowledge_items():
             existing = self._knowledge_signature(item)
             if existing is None:
                 continue
-            if existing[0] == subject and existing[1] == predicate and existing[2:] != (value, object_value):
+            if (
+                self._scopes_overlap(item, data)
+                and existing[0] == kind
+                and existing[1] == subject
+                and existing[2] == predicate
+                and existing[3:] != (value, object_value)
+            ):
                 conflicts.append(item["id"])
         return conflicts
 

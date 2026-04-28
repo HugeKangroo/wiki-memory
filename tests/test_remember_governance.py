@@ -149,6 +149,139 @@ class RememberGovernanceTest(unittest.TestCase):
             self.assertEqual(stored["conflicts_with"], [first["knowledge_id"]])
             self.assertEqual(stored["payload"]["metadata"]["conflicts_with"], [first["knowledge_id"]])
 
+    def test_create_knowledge_allows_same_signature_for_different_kinds(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+            base_payload = {
+                "subject": "node:memory-substrate",
+                "predicate": "uses_graph_backend",
+                "object": "node:kuzu",
+            }
+            fact = service.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Memory uses Kuzu",
+                    "summary": "Kuzu is the local graph backend.",
+                    "reason": "The backend spike selected Kuzu for local graph storage.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "subject_refs": ["node:memory-substrate"],
+                    "payload": base_payload,
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            decision = service.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu locally",
+                    "summary": "This records the decision behind the local graph backend.",
+                    "reason": "The decision rationale should survive future backend work.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "subject_refs": ["node:memory-substrate"],
+                    "payload": base_payload,
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            self.assertNotEqual(fact["knowledge_id"], decision["knowledge_id"])
+
+    def test_create_knowledge_allows_same_signature_in_different_scopes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+            payload = {
+                "subject": "node:agent",
+                "predicate": "prefers",
+                "value": "local graph backend",
+            }
+            first = service.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Project A prefers local graph backend",
+                    "summary": "The preference applies to project A.",
+                    "reason": "Project A should keep local-first backend defaults.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:project-a"],
+                    "subject_refs": ["node:agent"],
+                    "payload": payload,
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            second = service.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Project B prefers local graph backend",
+                    "summary": "The preference applies to project B.",
+                    "reason": "Project B independently uses local-first backend defaults.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:project-b"],
+                    "subject_refs": ["node:agent"],
+                    "payload": payload,
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+            repository = FsObjectRepository(root)
+
+            self.assertNotEqual(first["knowledge_id"], second["knowledge_id"])
+            self.assertNotEqual(
+                repository.get("knowledge", first["knowledge_id"])["identity_key"],
+                repository.get("knowledge", second["knowledge_id"])["identity_key"],
+            )
+
+    def test_create_knowledge_marks_conflicting_preference_in_same_scope_as_contested(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+            first = service.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Agent prefers Kuzu",
+                    "summary": "The agent preference applies in this project.",
+                    "reason": "The user selected a local graph backend.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "subject_refs": ["node:agent"],
+                    "payload": {
+                        "subject": "node:agent",
+                        "predicate": "prefers_graph_backend",
+                        "object": "node:kuzu",
+                    },
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            second = service.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Agent prefers Neo4j",
+                    "summary": "This conflicts with the existing project preference.",
+                    "reason": "The inferred preference conflicts with the user-selected backend.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "subject_refs": ["node:agent"],
+                    "payload": {
+                        "subject": "node:agent",
+                        "predicate": "prefers_graph_backend",
+                        "object": "node:neo4j",
+                    },
+                    "status": "candidate",
+                    "confidence": 0.7,
+                }
+            )
+            stored = FsObjectRepository(root).get("knowledge", second["knowledge_id"])
+
+            self.assertEqual(stored["status"], "contested")
+            self.assertEqual(stored["conflicts_with"], [first["knowledge_id"]])
+
     def test_create_knowledge_accepts_active_with_valid_evidence_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
