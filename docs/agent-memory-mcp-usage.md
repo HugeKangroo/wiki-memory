@@ -69,7 +69,7 @@ Use the four MCP tools with strict boundaries:
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
-Repository ingest may return `warnings` and `suggested_exclude_patterns` when it detects local or agent state that was not excluded. Treat these warnings as a decision point: inspect the entries, decide whether they belong in memory, and re-run `memory_ingest` with the suggested `exclude_patterns` when they should be skipped.
+Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it returns `status: "blocked"`, `requires_decision: true`, `warnings`, and `suggested_exclude_patterns` without writing canonical objects. Treat this as a decision point: inspect the entries, decide whether they belong in memory, and re-run `memory_ingest` with the suggested `exclude_patterns` when they should be skipped. Use `options.force: true` only when those entries are intentionally part of the evidence.
 
 ## Required Agent Workflow
 
@@ -82,7 +82,7 @@ At task start:
 When new material appears:
 
 1. Call `memory_ingest` to capture the material as evidence.
-2. Inspect returned `warnings`. If `suggested_exclude_patterns` are present and the entries are not intended evidence, re-run the ingest with those excludes before using the result.
+2. Inspect returned `status` and `warnings`. If `status` is `blocked`, decide whether to re-run with `suggested_exclude_patterns` or, rarely, `options.force: true`.
 3. Analyze the ingested evidence outside ingest.
 4. Decide whether anything should become durable memory.
 5. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.

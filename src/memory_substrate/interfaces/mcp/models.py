@@ -115,6 +115,15 @@ class ApplyOptions(StrictModel):
     apply: Literal[True] = Field(description="Must be true. Required because this maintain mode mutates memory.")
 
 
+class IngestOptions(StrictModel):
+    """Optional controls shared by memory_ingest modes."""
+
+    force: bool = Field(
+        default=False,
+        description="For repo ingest, proceed with writes even when preflight warnings require an explicit decision.",
+    )
+
+
 class QueryContextInput(StrictModel):
     """Input payload for building a task-focused context pack."""
 
@@ -572,6 +581,12 @@ class IngestRepoInput(StrictModel):
     exclude_patterns: list[str] = Field(default_factory=list, description="Optional glob-like relative path patterns to exclude.")
 
 
+class IngestBaseArgs(BaseToolArgs):
+    """Base MCP arguments for memory_ingest modes."""
+
+    options: IngestOptions | None = None
+
+
 class IngestFileInput(StrictModel):
     """Input payload for ingesting a plain text file."""
 
@@ -604,42 +619,42 @@ class IngestConversationInput(StrictModel):
     origin: dict[str, Any] | None = None
 
 
-class IngestRepoArgs(BaseToolArgs):
+class IngestRepoArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest repo mode."""
 
     mode: Literal["repo"]
     input_data: IngestRepoInput
 
 
-class IngestFileArgs(BaseToolArgs):
+class IngestFileArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest file mode."""
 
     mode: Literal["file"]
     input_data: IngestFileInput
 
 
-class IngestMarkdownArgs(BaseToolArgs):
+class IngestMarkdownArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest markdown mode."""
 
     mode: Literal["markdown"]
     input_data: IngestMarkdownInput
 
 
-class IngestWebArgs(BaseToolArgs):
+class IngestWebArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest web mode."""
 
     mode: Literal["web"]
     input_data: IngestWebInput
 
 
-class IngestPdfArgs(BaseToolArgs):
+class IngestPdfArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest pdf mode."""
 
     mode: Literal["pdf"]
     input_data: IngestPdfInput
 
 
-class IngestConversationArgs(BaseToolArgs):
+class IngestConversationArgs(IngestBaseArgs):
     """MCP arguments for memory_ingest conversation mode."""
 
     mode: Literal["conversation"]

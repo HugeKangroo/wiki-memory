@@ -153,6 +153,12 @@ class Phase1AcceptanceTest(unittest.TestCase):
             ingest = IngestService(root)
             result = ingest.ingest_repo(repo)
 
+            self.assertEqual(result["status"], "blocked")
+            self.assertTrue(result["requires_decision"])
+            self.assertIsNone(result["source_id"])
+            self.assertEqual(result["applied_operations"], 0)
+            self.assertEqual(FsObjectRepository(root).list("source"), [])
+            self.assertEqual(FsObjectRepository(root).list("node"), [])
             self.assertIn(".codex", result["suggested_exclude_patterns"])
             self.assertIn(".worktrees", result["suggested_exclude_patterns"])
             self.assertTrue(result["warnings"])
@@ -160,8 +166,29 @@ class Phase1AcceptanceTest(unittest.TestCase):
 
             filtered = ingest.ingest_repo(repo, exclude_patterns=[".codex", ".worktrees"])
 
+            self.assertEqual(filtered["status"], "completed")
+            self.assertFalse(filtered["requires_decision"])
             self.assertEqual(filtered["suggested_exclude_patterns"], [])
             self.assertEqual(filtered["warnings"], [])
+            self.assertTrue(FsObjectRepository(root).get("source", filtered["source_id"]))
+
+    def test_repo_ingest_can_force_include_agent_local_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "forced-agent-state-repo"
+            repo.mkdir()
+            (repo / "README.md").write_text("# Forced Agent State Repo\n", encoding="utf-8")
+            (repo / ".codex").mkdir()
+            (repo / ".codex" / "session.json").write_text("{}", encoding="utf-8")
+
+            result = IngestService(root).ingest_repo(repo, force=True)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+
+            self.assertEqual(result["status"], "completed")
+            self.assertFalse(result["requires_decision"])
+            self.assertIn(".codex", result["suggested_exclude_patterns"])
+            self.assertTrue(result["warnings"])
+            self.assertIn(".codex", source["payload"]["top_level_entries"])
 
     def test_repo_ingest_captures_python_class_methods_as_code_interfaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

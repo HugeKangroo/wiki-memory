@@ -140,7 +140,9 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 - `applied_filters`
 - `possible_duplicates`
 - `conflicts_with`
+- `requires_decision`
 - `suggested_retry_terms`
+- `suggested_exclude_patterns`
 - `warnings`
 - `next_actions`
 

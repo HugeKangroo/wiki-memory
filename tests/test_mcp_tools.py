@@ -93,6 +93,22 @@ class McpToolsTest(unittest.TestCase):
                 "/repo",
                 include_patterns=["src/**", "README.md"],
                 exclude_patterns=[".codex", ".worktrees"],
+                force=False,
+            )
+
+    def test_memory_ingest_repo_passes_force_option(self) -> None:
+        with patch("memory_substrate.interfaces.mcp.tools.IngestService") as ingest_service:
+            service = ingest_service.return_value
+            service.ingest_repo.return_value = {"source_id": "src:x"}
+
+            result = memory_ingest(".", "repo", {"path": "/repo"}, {"force": True})
+
+            self.assertEqual(result["source_id"], "src:x")
+            service.ingest_repo.assert_called_once_with(
+                "/repo",
+                include_patterns=None,
+                exclude_patterns=None,
+                force=True,
             )
 
     def test_memory_maintain_requires_apply_for_mutating_modes(self) -> None:

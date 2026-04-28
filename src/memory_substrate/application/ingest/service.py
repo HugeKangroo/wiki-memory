@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from memory_substrate.adapters.repo.adapter import RepoAdapter
+from memory_substrate.adapters.repo.models import RepoPreflightOutput
 from memory_substrate.domain.objects.activity import Activity
 from memory_substrate.domain.objects.node import Node
 from memory_substrate.domain.objects.source import Source, SourceSegment
@@ -45,6 +46,7 @@ class IngestService:
         repo_path: str | Path,
         include_patterns: list[str] | None = None,
         exclude_patterns: list[str] | None = None,
+        force: bool = False,
     ) -> dict:
         """Scan a repository and write its source, node, knowledge, and activity objects.
 
@@ -52,10 +54,19 @@ class IngestService:
             repo_path: Local repository path to scan.
             include_patterns: Optional glob-like relative path patterns to include.
             exclude_patterns: Optional glob-like relative path patterns to exclude.
+            force: Proceed with ingest even when preflight warnings require an explicit decision.
 
         Returns:
             Ingest result with patch, source, node, knowledge, activity, audit, and projection metadata.
         """
+        preflight = self.repo_adapter.preflight(
+            repo_path,
+            include_patterns=include_patterns,
+            exclude_patterns=exclude_patterns,
+        )
+        if preflight.suggested_exclude_patterns and not force:
+            return self._blocked_repo_ingest_result(preflight)
+
         output = self.repo_adapter.ingest(repo_path, include_patterns=include_patterns, exclude_patterns=exclude_patterns)
         repo_root = str(Path(repo_path).resolve())
         operations = [
@@ -160,6 +171,9 @@ class IngestService:
         apply_result = self.patch_applier.apply(patch)
         projection_result = self.projector.rebuild()
         return {
+            "result_type": "repo_ingest_result",
+            "status": "completed",
+            "requires_decision": False,
             "patch_id": apply_result.patch_id,
             "source_id": output.source.id,
             "node_ids": [node.id for node in output.nodes],
@@ -170,6 +184,23 @@ class IngestService:
             "projection_count": projection_result["count"],
             "warnings": output.warnings,
             "suggested_exclude_patterns": output.suggested_exclude_patterns,
+        }
+
+    def _blocked_repo_ingest_result(self, preflight: RepoPreflightOutput) -> dict:
+        return {
+            "result_type": "repo_ingest_preflight",
+            "status": "blocked",
+            "requires_decision": True,
+            "patch_id": None,
+            "source_id": None,
+            "node_ids": [],
+            "knowledge_ids": [],
+            "activity_id": None,
+            "applied_operations": 0,
+            "audit_event_ids": [],
+            "projection_count": 0,
+            "warnings": preflight.warnings,
+            "suggested_exclude_patterns": preflight.suggested_exclude_patterns,
         }
 
     def ingest_file(self, file_path: str | Path) -> dict:

@@ -72,6 +72,7 @@ def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options:
             input_data["path"],
             include_patterns=input_data.get("include_patterns"),
             exclude_patterns=input_data.get("exclude_patterns"),
+            force=bool(options.get("force", False)),
         )
     if mode == "file":
         return service.ingest_file(input_data["path"])

@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 
-from memory_substrate.adapters.repo.models import RepoIngestOutput
+from memory_substrate.adapters.repo.models import RepoIngestOutput, RepoPreflightOutput
 from memory_substrate.adapters.repo.tree_sitter_parser import TreeSitterParser
 from memory_substrate.domain.objects.activity import Activity
 from memory_substrate.domain.objects.knowledge import EvidenceRef, Knowledge
@@ -68,16 +68,28 @@ class RepoScanSummary:
 
 
 class RepoAdapter:
+    def preflight(
+        self,
+        repo_path: str | Path,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> RepoPreflightOutput:
+        root = self._resolve_root(repo_path)
+        include_patterns = include_patterns or []
+        exclude_patterns = exclude_patterns or []
+        suggested_exclude_patterns = self._suggested_exclude_patterns(root, include_patterns, exclude_patterns)
+        return RepoPreflightOutput(
+            warnings=self._warnings(suggested_exclude_patterns),
+            suggested_exclude_patterns=suggested_exclude_patterns,
+        )
+
     def ingest(
         self,
         repo_path: str | Path,
         include_patterns: list[str] | None = None,
         exclude_patterns: list[str] | None = None,
     ) -> RepoIngestOutput:
-        root = Path(repo_path).resolve()
-        if not root.exists() or not root.is_dir():
-            raise ValueError(f"Repo path is not a directory: {root}")
-
+        root = self._resolve_root(repo_path)
         include_patterns = include_patterns or []
         exclude_patterns = exclude_patterns or []
         parser = TreeSitterParser()
@@ -159,6 +171,12 @@ class RepoAdapter:
             warnings=self._warnings(suggested_exclude_patterns),
             suggested_exclude_patterns=suggested_exclude_patterns,
         )
+
+    def _resolve_root(self, repo_path: str | Path) -> Path:
+        root = Path(repo_path).resolve()
+        if not root.exists() or not root.is_dir():
+            raise ValueError(f"Repo path is not a directory: {root}")
+        return root
 
     def _scan(
         self,

@@ -9,6 +9,12 @@ from memory_substrate.domain.objects.source import Source
 
 
 @dataclass(slots=True)
+class RepoPreflightOutput:
+    warnings: list[str] = field(default_factory=list)
+    suggested_exclude_patterns: list[str] = field(default_factory=list)
+
+
+@dataclass(slots=True)
 class RepoIngestOutput:
     source: Source
     nodes: list[Node] = field(default_factory=list)

@@ -72,16 +72,22 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
-`repo` results include `warnings` and `suggested_exclude_patterns` when the scan sees local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees` that may not belong in shared memory. Ingest does not silently exclude these project-specific entries. Agents should inspect the warning and, when appropriate, re-run the same repo ingest with the suggested patterns:
+Before writing memory, `repo` ingest runs a preflight for local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees`. If these entries are present and not excluded, the tool returns `status: "blocked"` and does not write source, node, knowledge, activity, patch, audit, or projection data. Agents should inspect the warning and then re-run the same repo ingest with `exclude_patterns` when those entries should be skipped.
 
 ```json
 {
+  "result_type": "repo_ingest_preflight",
+  "status": "blocked",
+  "requires_decision": true,
+  "applied_operations": 0,
   "warnings": [
     "Repository contains local/agent state entries that may not belong in memory: .codex, .worktrees. Re-run memory_ingest repo with exclude_patterns to skip them."
   ],
   "suggested_exclude_patterns": [".codex", ".worktrees"]
 }
 ```
+
+Use `options.force: true` only when the local or agent state is intentionally part of the evidence and should be written.
 
 `file` and `markdown`:
 
