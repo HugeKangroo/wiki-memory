@@ -11,7 +11,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from memory_substrate.interfaces.mcp.tools import memory_maintain, resolve_root
+from memory_substrate.interfaces.mcp.tools import memory_ingest, memory_maintain, resolve_root
 
 
 class McpToolsTest(unittest.TestCase):
@@ -72,6 +72,28 @@ class McpToolsTest(unittest.TestCase):
 
             self.assertEqual(result["merged"], 1)
             maintain_service.assert_called_once_with(Path("/tmp/fake-home/memory-substrate"))
+
+    def test_memory_ingest_repo_passes_include_and_exclude_patterns(self) -> None:
+        with patch("memory_substrate.interfaces.mcp.tools.IngestService") as ingest_service:
+            service = ingest_service.return_value
+            service.ingest_repo.return_value = {"source_id": "src:x"}
+
+            result = memory_ingest(
+                ".",
+                "repo",
+                {
+                    "path": "/repo",
+                    "include_patterns": ["src/**", "README.md"],
+                    "exclude_patterns": [".codex", ".worktrees"],
+                },
+            )
+
+            self.assertEqual(result["source_id"], "src:x")
+            service.ingest_repo.assert_called_once_with(
+                "/repo",
+                include_patterns=["src/**", "README.md"],
+                exclude_patterns=[".codex", ".worktrees"],
+            )
 
     def test_memory_maintain_requires_apply_for_mutating_modes(self) -> None:
         with self.assertRaisesRegex(ValueError, "options.apply=true"):

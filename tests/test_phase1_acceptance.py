@@ -116,6 +116,53 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(module["name"], "src.index")
             self.assertIn("TypeScript module", module["summary"])
 
+    def test_repo_ingest_skips_rust_target_build_output(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "tauri-repo"
+            repo.mkdir()
+            (repo / ".codex").write_text("", encoding="utf-8")
+            (repo / ".worktrees").mkdir()
+            app_src = repo / "src"
+            app_src.mkdir()
+            (app_src / "App.tsx").write_text("export function App() { return null; }\n", encoding="utf-8")
+            target = repo / "src-tauri" / "target" / "debug"
+            target.mkdir(parents=True)
+            (target / "generated.ts").write_text("export const generated = true;\n", encoding="utf-8")
+
+            result = IngestService(root).ingest_repo(repo, exclude_patterns=[".codex", ".worktrees"])
+            source = FsObjectRepository(root).get("source", result["source_id"])
+
+            self.assertIsNotNone(source)
+            self.assertNotIn(".codex", source["payload"]["top_level_entries"])
+            self.assertNotIn(".worktrees", source["payload"]["top_level_entries"])
+            self.assertIn("src/App.tsx", source["payload"]["code_files"])
+            self.assertNotIn("src-tauri/target/debug/generated.ts", source["payload"]["code_files"])
+
+    def test_repo_ingest_suggests_excludes_for_agent_local_state(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "agent-state-repo"
+            repo.mkdir()
+            (repo / "README.md").write_text("# Agent State Repo\n", encoding="utf-8")
+            (repo / ".codex").mkdir()
+            (repo / ".codex" / "session.json").write_text("{}", encoding="utf-8")
+            (repo / ".worktrees").mkdir()
+            (repo / ".worktrees" / "scratch.txt").write_text("temporary worktree state\n", encoding="utf-8")
+
+            ingest = IngestService(root)
+            result = ingest.ingest_repo(repo)
+
+            self.assertIn(".codex", result["suggested_exclude_patterns"])
+            self.assertIn(".worktrees", result["suggested_exclude_patterns"])
+            self.assertTrue(result["warnings"])
+            self.assertIn("local/agent state", result["warnings"][0])
+
+            filtered = ingest.ingest_repo(repo, exclude_patterns=[".codex", ".worktrees"])
+
+            self.assertEqual(filtered["suggested_exclude_patterns"], [])
+            self.assertEqual(filtered["warnings"], [])
+
     def test_repo_ingest_captures_python_class_methods_as_code_interfaces(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
+from fnmatch import fnmatch
 from pathlib import Path
 
 from memory_substrate.adapters.repo.models import RepoIngestOutput
@@ -21,9 +22,17 @@ EXCLUDED_DIRS = {
     "__pycache__",
     "dist",
     "build",
+    "target",
     ".next",
     ".idea",
     ".pytest_cache",
+}
+
+AGENT_LOCAL_STATE_ENTRIES = {
+    ".claude",
+    ".codex",
+    ".cursor",
+    ".worktrees",
 }
 
 LANGUAGE_BY_SUFFIX = {
@@ -59,13 +68,21 @@ class RepoScanSummary:
 
 
 class RepoAdapter:
-    def ingest(self, repo_path: str | Path) -> RepoIngestOutput:
+    def ingest(
+        self,
+        repo_path: str | Path,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> RepoIngestOutput:
         root = Path(repo_path).resolve()
         if not root.exists() or not root.is_dir():
             raise ValueError(f"Repo path is not a directory: {root}")
 
+        include_patterns = include_patterns or []
+        exclude_patterns = exclude_patterns or []
         parser = TreeSitterParser()
-        summary = self._scan(root, parser=parser)
+        suggested_exclude_patterns = self._suggested_exclude_patterns(root, include_patterns, exclude_patterns)
+        summary = self._scan(root, parser=parser, include_patterns=include_patterns, exclude_patterns=exclude_patterns)
         timestamp = utc_now_iso()
 
         source_identity_key = f"source|repo|{root}"
@@ -139,9 +156,17 @@ class RepoAdapter:
             nodes=nodes,
             knowledge_items=knowledge_items,
             activity=activity,
+            warnings=self._warnings(suggested_exclude_patterns),
+            suggested_exclude_patterns=suggested_exclude_patterns,
         )
 
-    def _scan(self, root: Path, parser: TreeSitterParser) -> RepoScanSummary:
+    def _scan(
+        self,
+        root: Path,
+        parser: TreeSitterParser,
+        include_patterns: list[str],
+        exclude_patterns: list[str],
+    ) -> RepoScanSummary:
         file_count = 0
         dir_count = 0
         language_counter: Counter[str] = Counter()
@@ -152,14 +177,20 @@ class RepoAdapter:
         parsed_modules: list[dict] = []
 
         for child in sorted(root.iterdir()):
-            if child.name in EXCLUDED_DIRS:
+            if self._is_excluded(root, child, exclude_patterns):
+                continue
+            if not self._is_included(root, child, include_patterns):
                 continue
             top_level_entries.append(child.name)
             if child.is_dir() and child.name in {"src", "app", "lib", "packages"}:
                 source_roots.append(child.name)
 
         for path in root.rglob("*"):
-            if any(part in EXCLUDED_DIRS for part in path.parts):
+            if self._is_excluded(root, path, exclude_patterns):
+                if path.is_dir():
+                    continue
+                continue
+            if not self._is_included(root, path, include_patterns):
                 continue
             if path.is_dir():
                 dir_count += 1
@@ -202,6 +233,58 @@ class RepoAdapter:
             code_files=code_files,
             python_modules=parsed_modules[:60],
         )
+
+    def _is_excluded(self, root: Path, path: Path, exclude_patterns: list[str]) -> bool:
+        relative = self._relative_posix(root, path)
+        if any(part in EXCLUDED_DIRS for part in path.relative_to(root).parts):
+            return True
+        return any(self._matches_pattern(relative, path.name, pattern) for pattern in exclude_patterns)
+
+    def _is_included(self, root: Path, path: Path, include_patterns: list[str]) -> bool:
+        if not include_patterns:
+            return True
+        relative = self._relative_posix(root, path)
+        return any(self._matches_pattern(relative, path.name, pattern) for pattern in include_patterns)
+
+    def _matches_pattern(self, relative: str, name: str, pattern: str) -> bool:
+        normalized = pattern.strip().strip("/")
+        if not normalized:
+            return False
+        return (
+            fnmatch(relative, normalized)
+            or fnmatch(name, normalized)
+            or relative.startswith(f"{normalized}/")
+        )
+
+    def _relative_posix(self, root: Path, path: Path) -> str:
+        return path.relative_to(root).as_posix()
+
+    def _suggested_exclude_patterns(
+        self,
+        root: Path,
+        include_patterns: list[str],
+        exclude_patterns: list[str],
+    ) -> list[str]:
+        suggestions: list[str] = []
+        for entry in sorted(AGENT_LOCAL_STATE_ENTRIES):
+            path = root / entry
+            if not path.exists():
+                continue
+            if self._is_excluded(root, path, exclude_patterns):
+                continue
+            if not self._is_included(root, path, include_patterns):
+                continue
+            suggestions.append(entry)
+        return suggestions
+
+    def _warnings(self, suggested_exclude_patterns: list[str]) -> list[str]:
+        if not suggested_exclude_patterns:
+            return []
+        entries = ", ".join(suggested_exclude_patterns)
+        return [
+            "Repository contains local/agent state entries that may not belong in memory: "
+            f"{entries}. Re-run memory_ingest repo with exclude_patterns to skip them."
+        ]
 
     def _fingerprint(self, summary: RepoScanSummary) -> str:
         parts = [

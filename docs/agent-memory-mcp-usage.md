@@ -67,6 +67,10 @@ Use the four MCP tools with strict boundaries:
 - `memory_remember`: commit durable memory after the user or agent can justify it.
 - `memory_maintain`: validate, report, repair, reindex, and run lifecycle consolidation.
 
+For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
+
+Repository ingest may return `warnings` and `suggested_exclude_patterns` when it detects local or agent state that was not excluded. Treat these warnings as a decision point: inspect the entries, decide whether they belong in memory, and re-run `memory_ingest` with the suggested `exclude_patterns` when they should be skipped.
+
 ## Required Agent Workflow
 
 At task start:
@@ -78,11 +82,12 @@ At task start:
 When new material appears:
 
 1. Call `memory_ingest` to capture the material as evidence.
-2. Analyze the ingested evidence outside ingest.
-3. Decide whether anything should become durable memory.
-4. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
-5. Call `memory_remember` only for information that should survive future sessions.
-6. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
+2. Inspect returned `warnings`. If `suggested_exclude_patterns` are present and the entries are not intended evidence, re-run the ingest with those excludes before using the result.
+3. Analyze the ingested evidence outside ingest.
+4. Decide whether anything should become durable memory.
+5. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
+6. Call `memory_remember` only for information that should survive future sessions.
+7. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
 Before ending substantial work:
 

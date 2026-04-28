@@ -40,16 +40,23 @@ class IngestService:
         self.repo_adapter = RepoAdapter()
         self.projector = MarkdownProjector(self.root)
 
-    def ingest_repo(self, repo_path: str | Path) -> dict:
+    def ingest_repo(
+        self,
+        repo_path: str | Path,
+        include_patterns: list[str] | None = None,
+        exclude_patterns: list[str] | None = None,
+    ) -> dict:
         """Scan a repository and write its source, node, knowledge, and activity objects.
 
         Args:
             repo_path: Local repository path to scan.
+            include_patterns: Optional glob-like relative path patterns to include.
+            exclude_patterns: Optional glob-like relative path patterns to exclude.
 
         Returns:
             Ingest result with patch, source, node, knowledge, activity, audit, and projection metadata.
         """
-        output = self.repo_adapter.ingest(repo_path)
+        output = self.repo_adapter.ingest(repo_path, include_patterns=include_patterns, exclude_patterns=exclude_patterns)
         repo_root = str(Path(repo_path).resolve())
         operations = [
             self._upsert_operation(
@@ -161,6 +168,8 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
+            "warnings": output.warnings,
+            "suggested_exclude_patterns": output.suggested_exclude_patterns,
         }
 
     def ingest_file(self, file_path: str | Path) -> dict:

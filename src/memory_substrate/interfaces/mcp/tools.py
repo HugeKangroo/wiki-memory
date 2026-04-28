@@ -68,7 +68,11 @@ def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options:
     options = options or {}
     service = IngestService(resolve_root(root))
     if mode == "repo":
-        return service.ingest_repo(input_data["path"])
+        return service.ingest_repo(
+            input_data["path"],
+            include_patterns=input_data.get("include_patterns"),
+            exclude_patterns=input_data.get("exclude_patterns"),
+        )
     if mode == "file":
         return service.ingest_file(input_data["path"])
     if mode == "markdown":

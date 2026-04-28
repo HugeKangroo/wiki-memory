@@ -568,6 +568,8 @@ class IngestRepoInput(StrictModel):
     """Input payload for ingesting a repository."""
 
     path: str
+    include_patterns: list[str] = Field(default_factory=list, description="Optional glob-like relative path patterns to include.")
+    exclude_patterns: list[str] = Field(default_factory=list, description="Optional glob-like relative path patterns to exclude.")
 
 
 class IngestFileInput(StrictModel):

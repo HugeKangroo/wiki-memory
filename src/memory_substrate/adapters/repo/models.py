@@ -14,3 +14,5 @@ class RepoIngestOutput:
     nodes: list[Node] = field(default_factory=list)
     knowledge_items: list[Knowledge] = field(default_factory=list)
     activity: Activity | None = None
+    warnings: list[str] = field(default_factory=list)
+    suggested_exclude_patterns: list[str] = field(default_factory=list)
