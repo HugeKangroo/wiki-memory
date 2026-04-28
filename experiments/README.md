@@ -41,3 +41,15 @@ uv run --with lancedb --with FlagEmbedding --with fastembed python experiments/s
   --compare minilm \
   --eval-cases experiments/semantic_retrieval_eval_cases.json
 ```
+
+## MCP Semantic Demo
+
+Run the real MCP server path after semantic or MCP schema changes:
+
+```bash
+HF_HUB_OFFLINE=1 uv run --extra semantic python experiments/mcp_semantic_demo.py --offline
+```
+
+The demo uses a temporary `MEMORY_SUBSTRATE_ROOT`, intentionally does not pass `root` in normal tool calls, verifies that rogue `root` arguments are rejected, writes one knowledge object, rebuilds the LanceDB semantic index, and confirms semantic search retrieves the object.
+
+Omit `HF_HUB_OFFLINE=1` and `--offline` the first time if BGE-M3 has not been warmed locally.
