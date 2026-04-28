@@ -71,6 +71,8 @@ For repository ingest, pass `exclude_patterns` for project-local or agent-local 
 
 Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it returns `status: "blocked"`, `requires_decision: true`, `warnings`, and `suggested_exclude_patterns` without writing canonical objects. Treat this as a decision point: inspect the entries, decide whether they belong in memory, and re-run `memory_ingest` with the suggested `exclude_patterns` when they should be skipped. Use `options.force: true` only when those entries are intentionally part of the evidence.
 
+If a repo was already ingested and its computed fingerprint is unchanged, repository ingest returns `status: "noop"` and `applied_operations: 0` without writing patch, audit, or projection data. Treat `noop` as a clean result, not a failure.
+
 ## Required Agent Workflow
 
 At task start:
@@ -83,11 +85,12 @@ When new material appears:
 
 1. Call `memory_ingest` to capture the material as evidence.
 2. Inspect returned `status` and `warnings`. If `status` is `blocked`, decide whether to re-run with `suggested_exclude_patterns` or, rarely, `options.force: true`.
-3. Analyze the ingested evidence outside ingest.
-4. Decide whether anything should become durable memory.
-5. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
-6. Call `memory_remember` only for information that should survive future sessions.
-7. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
+3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
+4. Analyze the ingested evidence outside ingest.
+5. Decide whether anything should become durable memory.
+6. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
+7. Call `memory_remember` only for information that should survive future sessions.
+8. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
 Before ending substantial work:
 

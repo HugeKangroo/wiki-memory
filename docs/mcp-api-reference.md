@@ -89,6 +89,22 @@ Before writing memory, `repo` ingest runs a preflight for local or agent state s
 
 Use `options.force: true` only when the local or agent state is intentionally part of the evidence and should be written.
 
+When repo preflight passes but the computed repo fingerprint is unchanged from the active stored source, the tool returns `status: "noop"` without writing patch, audit, or projection data:
+
+```json
+{
+  "result_type": "repo_ingest_result",
+  "status": "noop",
+  "requires_decision": false,
+  "patch_id": null,
+  "source_id": "src:...",
+  "applied_operations": 0,
+  "audit_event_ids": [],
+  "projection_count": 0,
+  "reason": "repo_fingerprint_unchanged"
+}
+```
+
 `file` and `markdown`:
 
 ```json

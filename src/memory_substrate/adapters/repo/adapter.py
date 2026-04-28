@@ -121,7 +121,13 @@ class RepoAdapter:
                 "parser_backend": parser.backend,
             },
             segments=self._segments(root, summary),
-            metadata={"scanned_at": timestamp},
+            metadata={
+                "scanned_at": timestamp,
+                "repo_ingest": {
+                    "include_patterns": list(include_patterns),
+                    "exclude_patterns": list(exclude_patterns),
+                },
+            },
             status="active",
             created_at=timestamp,
             updated_at=timestamp,

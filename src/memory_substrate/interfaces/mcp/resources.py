@@ -42,8 +42,10 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 ## New Evidence
 
 1. Use `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as evidence.
-2. Analyze outside ingest.
-3. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
+2. For repo ingest, handle `status: "blocked"` by deciding whether to re-run with suggested excludes or `options.force: true`.
+3. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
+4. Analyze outside ingest.
+5. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
 ## Durable Writes
 
@@ -79,6 +81,12 @@ All tool calls use:
 ```
 
 The server root is configured outside tool calls and defaults to `~/memory-substrate` unless `MEMORY_SUBSTRATE_ROOT` is set. `input_data` is required even when empty. Mutating maintain modes require `options.apply=true`.
+
+Repo ingest statuses:
+
+- `blocked`: preflight found local or agent state that needs an explicit exclude or force decision; no canonical objects are written.
+- `noop`: repo fingerprint is unchanged from the active stored source; no patch, audit, or projection data is written.
+- `completed`: source material was written or updated.
 """
 
 

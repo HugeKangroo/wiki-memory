@@ -116,6 +116,46 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(module["name"], "src.index")
             self.assertIn("TypeScript module", module["summary"])
 
+    def test_repo_ingest_noops_when_repo_fingerprint_is_unchanged(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = self._make_repo(root)
+            paths = StoragePaths(root)
+            ingest = IngestService(root)
+            objects = FsObjectRepository(root)
+            audit = FsAuditRepository(root)
+
+            first = ingest.ingest_repo(repo)
+            first_source = objects.get("source", first["source_id"])
+            first_patch_count = len(list(paths.patches_root.glob("*.json")))
+            first_audit_count = len(audit.list())
+
+            second = ingest.ingest_repo(repo)
+            second_source = objects.get("source", first["source_id"])
+
+            self.assertEqual(second["status"], "noop")
+            self.assertEqual(second["applied_operations"], 0)
+            self.assertIsNone(second["patch_id"])
+            self.assertEqual(second["audit_event_ids"], [])
+            self.assertEqual(second["projection_count"], 0)
+            self.assertEqual(len(list(paths.patches_root.glob("*.json"))), first_patch_count)
+            self.assertEqual(len(audit.list()), first_audit_count)
+            self.assertEqual(second_source, first_source)
+
+    def test_repo_ingest_rewrites_when_repo_fingerprint_changes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = self._make_repo(root)
+            ingest = IngestService(root)
+
+            first = ingest.ingest_repo(repo)
+            (repo / "src" / "extra.py").write_text("def extra():\n    return True\n", encoding="utf-8")
+            second = ingest.ingest_repo(repo)
+
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "completed")
+            self.assertGreater(second["applied_operations"], 0)
+
     def test_repo_ingest_skips_rust_target_build_output(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

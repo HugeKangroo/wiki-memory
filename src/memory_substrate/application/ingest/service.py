@@ -68,6 +68,9 @@ class IngestService:
             return self._blocked_repo_ingest_result(preflight)
 
         output = self.repo_adapter.ingest(repo_path, include_patterns=include_patterns, exclude_patterns=exclude_patterns)
+        if self._repo_ingest_is_noop(output):
+            return self._noop_repo_ingest_result(output)
+
         repo_root = str(Path(repo_path).resolve())
         operations = [
             self._upsert_operation(
@@ -184,6 +187,35 @@ class IngestService:
             "projection_count": projection_result["count"],
             "warnings": output.warnings,
             "suggested_exclude_patterns": output.suggested_exclude_patterns,
+        }
+
+    def _repo_ingest_is_noop(self, output) -> bool:
+        existing_source = self.object_repository.get("source", output.source.id)
+        if existing_source is None:
+            return False
+        return (
+            existing_source.get("kind") == output.source.kind
+            and existing_source.get("identity_key") == output.source.identity_key
+            and existing_source.get("status") == "active"
+            and existing_source.get("fingerprint") == output.source.fingerprint
+        )
+
+    def _noop_repo_ingest_result(self, output) -> dict:
+        return {
+            "result_type": "repo_ingest_result",
+            "status": "noop",
+            "requires_decision": False,
+            "patch_id": None,
+            "source_id": output.source.id,
+            "node_ids": [node.id for node in output.nodes],
+            "knowledge_ids": [item.id for item in output.knowledge_items],
+            "activity_id": output.activity.id if output.activity else None,
+            "applied_operations": 0,
+            "audit_event_ids": [],
+            "projection_count": 0,
+            "warnings": output.warnings,
+            "suggested_exclude_patterns": output.suggested_exclude_patterns,
+            "reason": "repo_fingerprint_unchanged",
         }
 
     def _blocked_repo_ingest_result(self, preflight: RepoPreflightOutput) -> dict:

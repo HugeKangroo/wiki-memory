@@ -108,6 +108,12 @@ class McpServerTest(unittest.TestCase):
             playbook = await server.read_resource("memory://agent-playbook")
             self.assertIn("query expansion", playbook[0].content)
             self.assertIn("possible_duplicates", playbook[0].content)
+            self.assertIn('status: "blocked"', playbook[0].content)
+            self.assertIn('status: "noop"', playbook[0].content)
+
+            api_summary = await server.read_resource("memory://mcp-api-summary")
+            self.assertIn("Repo ingest statuses", api_summary[0].content)
+            self.assertIn("noop", api_summary[0].content)
 
         asyncio.run(run_smoke())
 
