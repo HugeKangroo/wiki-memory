@@ -107,6 +107,21 @@ class RememberService:
         }
         return governed_payload
 
+    def _validate_evidence_refs(self, evidence_refs: list[dict]) -> None:
+        for evidence in evidence_refs:
+            source_id = str(evidence.get("source_id") or "")
+            segment_id = str(evidence.get("segment_id") or "")
+            if not source_id:
+                raise ValueError("evidence_refs source_id is required")
+            if not segment_id:
+                raise ValueError(f"evidence_refs segment_id is required for {source_id}")
+            source = self.object_repository.get("source", source_id)
+            if source is None:
+                raise ValueError(f"evidence_refs source not found: {source_id}")
+            segment_ids = {str(segment.get("segment_id")) for segment in source.get("segments", [])}
+            if segment_id not in segment_ids:
+                raise ValueError(f"evidence_refs segment not found: {source_id}#{segment_id}")
+
     def _normalize_json(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
@@ -260,6 +275,7 @@ class RememberService:
             "status": request.status if request else data.get("status", "candidate"),
         }
         if request is not None:
+            self._validate_evidence_refs(evidence_refs)
             duplicate_ids = self._duplicate_knowledge_ids(candidate)
             if duplicate_ids and not data.get("allow_duplicate", False):
                 raise ValueError(f"duplicate knowledge exists: {', '.join(duplicate_ids)}")

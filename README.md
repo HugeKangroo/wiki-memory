@@ -422,7 +422,7 @@ Create modes (`activity`, `knowledge`, `work_item`, and create entries inside `b
 - `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`
 - `scope_refs`: at least one durable scope id, such as a project, user, repo, or topic scope
 
-Governed `knowledge` writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate facts by default, and store same-subject/same-predicate conflicting facts as `contested`.
+Governed `knowledge` writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate facts by default, store same-subject/same-predicate conflicting facts as `contested`, and require provided `evidence_refs` to point to existing source segments.
 
 Examples:
 
