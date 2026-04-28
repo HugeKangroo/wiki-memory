@@ -49,6 +49,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             set(maintain_args_schema["discriminator"]["mapping"].keys()),
             {
+                "configure",
                 "structure",
                 "audit",
                 "reindex",
@@ -124,6 +125,17 @@ class McpServerTest(unittest.TestCase):
                     await server.call_tool(
                         "memory_maintain",
                         {"args": {"root": tmpdir, "mode": "merge_duplicates", "input_data": {}}},
+                    )
+                with self.assertRaisesRegex(Exception, "apply"):
+                    await server.call_tool(
+                        "memory_maintain",
+                        {
+                            "args": {
+                                "root": tmpdir,
+                                "mode": "configure",
+                                "input_data": {"graph_backend": "file"},
+                            }
+                        },
                     )
 
                 result = await server.call_tool(

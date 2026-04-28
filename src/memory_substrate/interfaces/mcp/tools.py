@@ -6,10 +6,11 @@ from memory_substrate.application.remember.service import RememberService
 from memory_substrate.application.ingest.service import IngestService
 from memory_substrate.application.maintain.service import MaintainService
 from memory_substrate.application.query.service import QueryService
+from memory_substrate.infrastructure.config.repository import MemoryConfigRepository
 from memory_substrate.infrastructure.graph.factory import create_graph_backend
 
 
-MUTATING_MAINTAIN_MODES = {"repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
+MUTATING_MAINTAIN_MODES = {"configure", "repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
 
 
 def resolve_root(root: str | Path | None) -> Path:
@@ -33,10 +34,10 @@ def _require_apply(mode: str, options: dict | None) -> None:
         raise ValueError(f"memory_maintain mode '{mode}' mutates memory and requires options.apply=true")
 
 
-def _requested_graph_backend(options: dict | None) -> str | None:
-    if not options:
-        return None
-    return options.get("graph_backend")
+def _requested_graph_backend(root: Path, options: dict | None) -> str | None:
+    if options and options.get("graph_backend"):
+        return options["graph_backend"]
+    return MemoryConfigRepository(root).graph_backend()
 
 
 def _close_graph_backend(graph_backend) -> None:
@@ -92,7 +93,7 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
     """
     options = options or {}
     resolved_root = resolve_root(root)
-    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
     service = (
         QueryService(resolved_root, graph_backend=graph_backend)
         if graph_backend is not None
@@ -137,7 +138,7 @@ def memory_remember(root: str | Path | None, mode: str, input_data: dict, option
     """
     options = options or {}
     resolved_root = resolve_root(root)
-    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
     service = (
         RememberService(resolved_root, graph_backend=graph_backend)
         if graph_backend is not None
@@ -196,7 +197,14 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
     options = options or {}
     _require_apply(mode, options)
     resolved_root = resolve_root(root)
-    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(options))
+    if mode == "configure":
+        config = MemoryConfigRepository(resolved_root).set_graph_backend(input_data["graph_backend"])
+        return {
+            "result_type": "maintain_configure_result",
+            "data": {"config": config},
+            "warnings": [],
+        }
+    graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
     service = (
         MaintainService(resolved_root, graph_backend=graph_backend)
         if graph_backend is not None

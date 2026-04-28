@@ -25,6 +25,7 @@ class StoragePaths:
         self.audit_root = self.memory_root / "audit"
         self.projections_root = self.memory_root / "projections"
         self.indexes_root = self.memory_root / "indexes"
+        self.config_path = self.memory_root / "config.json"
 
     def object_dir(self, object_type: str) -> Path:
         directory = OBJECT_DIRS[object_type]

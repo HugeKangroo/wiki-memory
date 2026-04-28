@@ -84,13 +84,13 @@ class QueryOptions(StrictModel):
 
     max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
-    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend for context, search, and graph modes.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override for context, search, and graph modes.")
 
 
 class RememberOptions(StrictModel):
     """Optional controls shared by memory_remember modes."""
 
-    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend to sync after durable writes.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override to sync after durable writes.")
 
 
 class AuditOptions(StrictModel):
@@ -102,7 +102,7 @@ class AuditOptions(StrictModel):
 class ReindexOptions(StrictModel):
     """Options for rebuilding projections and optional graph indexes."""
 
-    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend to rebuild from canonical objects.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override to rebuild from canonical objects.")
 
 
 class ApplyOptions(StrictModel):
@@ -423,10 +423,23 @@ class MaintainLifecycleReportInput(StrictModel):
     stale_after_days: int | None = None
 
 
+class MaintainConfigureInput(StrictModel):
+    """Input payload for setting root-level memory defaults."""
+
+    graph_backend: GraphBackendName = Field(description="Default graph backend used when tool options omit graph_backend.")
+
+
 class MaintainApplyArgs(BaseToolArgs):
     """Base MCP arguments for memory_maintain modes that mutate memory."""
 
     options: ApplyOptions | None = None
+
+
+class MaintainConfigureArgs(MaintainApplyArgs):
+    """MCP arguments for memory_maintain configure mode."""
+
+    mode: Literal["configure"]
+    input_data: MaintainConfigureInput
 
 
 class MaintainLifecyclePromoteCandidatesArgs(MaintainApplyArgs):
@@ -519,7 +532,8 @@ class MaintainStructureRepairArgs(MaintainApplyArgs):
 
 
 MaintainToolArgs = Annotated[
-    MaintainStructureArgs
+    MaintainConfigureArgs
+    | MaintainStructureArgs
     | MaintainStructureAuditArgs
     | MaintainStructureReindexArgs
     | MaintainStructureRepairArgs

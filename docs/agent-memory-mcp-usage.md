@@ -28,7 +28,7 @@ The current schema is already suitable for an early memory substrate. It should 
 
 The memory server should not require agents to configure a separate LLM API key. Agents or humans may perform analysis and extraction, then call `memory_remember` with structured candidates. Backends such as Kuzu, Neo4j, Graphiti, Cognee, or LlamaIndex must remain behind Memory Substrate contracts.
 
-Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to rebuild, sync, or query a graph index. When used, allowed values are `file` and `kuzu`.
+Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to override the root default for a specific call. Configure a root default with `memory_maintain` `configure` when the memory root should consistently sync, query, report, and reindex through a graph backend. Allowed values are `file` and `kuzu`.
 
 When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
 
@@ -237,6 +237,24 @@ Run a read-only maintenance report:
   }
 }
 ```
+
+Configure a default graph backend for the memory root:
+
+```json
+{
+  "args": {
+    "mode": "configure",
+    "input_data": {
+      "graph_backend": "file"
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+After configuration, omit `options.graph_backend` for normal `memory_remember`, `memory_query`, `memory_maintain report`, and `memory_maintain reindex` calls. Use per-call `options.graph_backend` only when intentionally overriding the root default.
 
 Run a graph-aware maintenance report:
 

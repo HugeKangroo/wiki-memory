@@ -20,6 +20,7 @@ SERVER_INSTRUCTIONS = (
     "as citable evidence. Then analyze evidence outside ingest and call memory_remember only when "
     "the user or agent decides the extracted information should survive future sessions. "
     "Use memory_query before memory_remember to check related context, duplicates, and conflicts. "
+    "Use memory_maintain configure to set root-level defaults such as graph_backend. "
     "Use memory_maintain report/structure for read-only checks before mutating maintenance. "
     "Mutating memory_maintain modes require options.apply=true."
 )

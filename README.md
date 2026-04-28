@@ -122,7 +122,7 @@ uv sync --extra kuzu
 
 `KuzuGraphBackend` stores Memory Substrate objects directly in local Kuzu tables under `memory/indexes/kuzu_graph`. It is an adapter behind the project-owned graph contract, not a replacement for `memory_ingest`, `memory_remember`, `memory_query`, or `memory_maintain`.
 
-Graph backends are explicit opt-in per MCP call:
+Graph backends are explicit opt-in. You can select a backend per MCP call:
 
 ```json
 {
@@ -136,7 +136,25 @@ Graph backends are explicit opt-in per MCP call:
 }
 ```
 
-Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` with `graph_backend` to rebuild the graph index from canonical objects, `memory_remember` with `graph_backend` to sync new writes, and `memory_query` `context`, `search`, or `graph` with `graph_backend` to read from the selected backend.
+Or persist a root-level default in `memory/config.json`:
+
+```json
+{
+  "args": {
+    "mode": "configure",
+    "input_data": {
+      "graph_backend": "kuzu"
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+After a default is configured, `memory_remember`, `memory_query`, `memory_maintain report`, and `memory_maintain reindex` use it when `options.graph_backend` is omitted. Per-call `options.graph_backend` still overrides the root default.
+
+Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` to rebuild the graph index from canonical objects, `memory_remember` to sync new writes, and `memory_query` `context`, `search`, or `graph` to read from the selected backend.
 
 When syncing knowledge, structured payloads can create semantic graph edges. If a knowledge payload contains `subject`, `predicate`, and an object-id-like `object`, the graph sync layer creates a `predicate` relation from `subject` to `object`, while keeping the knowledge object and evidence refs as provenance.
 
@@ -167,7 +185,7 @@ For the full agent protocol, current data model, memory review gate, and call ex
 - `memory_ingest`: `repo`, `file`, `markdown`, `web`, `pdf`, `conversation`
 - `memory_query`: `context`, `expand`, `page`, `recent`, `search`, `graph`
 - `memory_remember`: `activity`, `knowledge`, `work_item`, `promote`, `supersede`, `contest`, `batch`
-- `memory_maintain`: `structure`, `audit`, `reindex`, `repair`, `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
+- `memory_maintain`: `configure`, `structure`, `audit`, `reindex`, `repair`, `promote_candidates`, `merge_duplicates`, `decay_stale`, `cycle`, `report`
 
 ### Required MCP Call Shape
 
@@ -556,12 +574,29 @@ Examples:
 
 Allowed modes:
 
+- `configure`
 - `structure`
 - `audit`
 - `reindex`
 - `repair`
 
 Examples:
+
+`configure`
+
+```json
+{
+  "args": {
+    "mode": "configure",
+    "input_data": {
+      "graph_backend": "file"
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
 
 `structure`
 
