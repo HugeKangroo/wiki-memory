@@ -121,7 +121,46 @@ class GraphSyncService:
                 str(evidence["source_id"]),
                 [evidence],
             )
+        synced += self._sync_payload_relation(object_type, obj)
         return synced
+
+    def _sync_payload_relation(self, object_type: str, obj: dict[str, Any]) -> int:
+        if object_type != "knowledge":
+            return 0
+        payload = obj.get("payload", {})
+        if not isinstance(payload, dict):
+            return 0
+        subject_id = str(payload.get("subject") or "")
+        predicate = str(payload.get("predicate") or "")
+        target_id = payload.get("object")
+        if not subject_id or not predicate or not isinstance(target_id, str):
+            return 0
+        if not self._looks_like_object_id(target_id):
+            return 0
+        self._ensure_target(subject_id)
+        self._ensure_target(target_id)
+        self.graph_backend.upsert_relation(
+            {
+                "id": self._relation_id(subject_id, predicate, target_id),
+                "source_id": subject_id,
+                "target_id": target_id,
+                "relation_type": predicate,
+                "kind": predicate,
+                "status": obj.get("status", "active"),
+                "confidence": obj.get("confidence"),
+                "scope_refs": obj.get("scope_refs", []),
+                "evidence_refs": obj.get("evidence_refs", []),
+                "payload": {
+                    "knowledge_id": obj["id"],
+                    "value": payload.get("value"),
+                },
+                "valid_from": obj.get("valid_from"),
+                "valid_until": obj.get("valid_until"),
+                "created_at": obj.get("created_at"),
+                "updated_at": obj.get("updated_at"),
+            }
+        )
+        return 1
 
     def _sync_reference_relation(
         self,
@@ -235,3 +274,6 @@ class GraphSyncService:
         if object_id.startswith("rel:"):
             return "relation"
         return "entity"
+
+    def _looks_like_object_id(self, value: str) -> bool:
+        return ":" in value

@@ -244,11 +244,13 @@ class KuzuGraphBackend:
     def export_scope(self, scope_ref: str) -> dict[str, Any]:
         exported = {bucket: [] for bucket in GRAPH_BUCKETS}
         for record in self._all_objects():
-            if scope_ref not in record.get("scope_refs", []):
+            if scope_ref != "*" and scope_ref not in record.get("scope_refs", []):
                 continue
             exported[OBJECT_TYPE_TO_BUCKET[record["object_type"]]].append(record)
         exported["relations"] = [
-            relation for relation in self._all_relations() if scope_ref in relation.get("scope_refs", [])
+            relation
+            for relation in self._all_relations()
+            if scope_ref == "*" or scope_ref in relation.get("scope_refs", [])
         ]
         return exported
 

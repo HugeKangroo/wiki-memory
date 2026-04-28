@@ -79,6 +79,58 @@ class GraphSyncServiceTest(unittest.TestCase):
                 {"subject", "evidence"},
             )
 
+    def test_sync_knowledge_payload_object_relation_uses_predicate_as_edge_type(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = FsObjectRepository(root)
+            backend = FileGraphBackend(root)
+            for node_id, name in (("node:memory", "memory-substrate"), ("node:kuzu", "Kuzu")):
+                objects.save(
+                    "node",
+                    {
+                        "id": node_id,
+                        "kind": "concept",
+                        "name": name,
+                        "summary": name,
+                        "created_at": "2026-04-28T00:00:00+00:00",
+                        "updated_at": "2026-04-28T00:00:00+00:00",
+                    },
+                )
+            objects.save(
+                "knowledge",
+                {
+                    "id": "know:uses-kuzu",
+                    "kind": "fact",
+                    "title": "Memory substrate uses Kuzu",
+                    "summary": "Kuzu is the optional local graph backend.",
+                    "subject_refs": ["node:memory"],
+                    "payload": {
+                        "subject": "node:memory",
+                        "predicate": "uses",
+                        "object": "node:kuzu",
+                        "value": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.9,
+                    "created_at": "2026-04-28T00:00:00+00:00",
+                    "updated_at": "2026-04-28T00:00:00+00:00",
+                },
+            )
+
+            result = GraphSyncService(root, backend).sync_all()
+            neighborhood = backend.neighborhood("node:memory")
+            predicate_edges = [
+                relation
+                for relation in neighborhood["relations"]
+                if relation["source_id"] == "node:memory"
+                and relation["target_id"] == "node:kuzu"
+                and relation["relation_type"] == "uses"
+            ]
+
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(len(predicate_edges), 1)
+            self.assertEqual(predicate_edges[0]["payload"]["knowledge_id"], "know:uses-kuzu")
+
 
 if __name__ == "__main__":
     unittest.main()

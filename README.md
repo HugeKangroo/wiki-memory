@@ -138,6 +138,10 @@ Graph backends are explicit opt-in per MCP call:
 
 Supported values are `file` and `kuzu`. Use `memory_maintain` `reindex` with `graph_backend` to rebuild the graph index from canonical objects, `memory_remember` with `graph_backend` to sync new writes, and `memory_query` `context`, `search`, or `graph` with `graph_backend` to read from the selected backend.
 
+When syncing knowledge, structured payloads can create semantic graph edges. If a knowledge payload contains `subject`, `predicate`, and an object-id-like `object`, the graph sync layer creates a `predicate` relation from `subject` to `object`, while keeping the knowledge object and evidence refs as provenance.
+
+`memory_maintain` `report` with `graph_backend` includes graph health: backend status, canonical object counts, backend counts, missing backend objects, and stub node count.
+
 ## MCP Server
 
 The MCP server exposes exactly four tools:

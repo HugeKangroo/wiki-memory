@@ -147,6 +147,11 @@ class FileGraphBackend:
 
     def export_scope(self, scope_ref: str) -> dict[str, Any]:
         graph = self._read()
+        if scope_ref == "*":
+            return {
+                bucket: list(graph[bucket].values())
+                for bucket in GRAPH_BUCKETS
+            }
         return {
             bucket: [record for record in graph[bucket].values() if scope_ref in record.get("scope_refs", [])]
             for bucket in GRAPH_BUCKETS

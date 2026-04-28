@@ -143,6 +143,15 @@ class FileGraphBackendTest(unittest.TestCase):
             self.assertEqual(health["counts"]["knowledge"], 1)
             self.assertEqual(rebuild["status"], "noop")
 
+    def test_export_scope_star_returns_all_graph_records(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FileGraphBackend(tmp)
+            backend.upsert_entity({"id": "ent:stub", "kind": "stub", "name": "stub", "status": "stub"})
+
+            exported = backend.export_scope("*")
+
+            self.assertEqual(exported["entities"][0]["id"], "ent:stub")
+
 
 if __name__ == "__main__":
     unittest.main()

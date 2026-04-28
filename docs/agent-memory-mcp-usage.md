@@ -30,6 +30,8 @@ The memory server should not require agents to configure a separate LLM API key.
 
 Graph backend usage is explicit. Agents should omit `options.graph_backend` unless they need to rebuild, sync, or query a graph index. When used, allowed values are `file` and `kuzu`.
 
+When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
+
 Recommended near-term data upgrades:
 
 - Require a durable write reason for `memory_remember` create operations.
@@ -231,6 +233,20 @@ Run a read-only maintenance report:
     "input_data": {
       "min_confidence": 0.75,
       "min_evidence": 1
+    }
+  }
+}
+```
+
+Run a graph-aware maintenance report:
+
+```json
+{
+  "args": {
+    "mode": "report",
+    "input_data": {},
+    "options": {
+      "graph_backend": "kuzu"
     }
   }
 }

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from memory_substrate.application.graph.health import GraphHealthReporter
 from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.application.maintain.lifecycle import MaintenanceLifecycle
 from memory_substrate.domain.services.repair_engine import RepairEngine
@@ -27,6 +28,7 @@ class MaintainService:
         self.projector = MarkdownProjector(self.root)
         self.lifecycle = MaintenanceLifecycle(self.root)
         self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
+        self.graph_health = GraphHealthReporter(self.root, graph_backend) if graph_backend is not None else None
 
     def structure(self) -> dict:
         """Validate memory object structure and projection consistency.
@@ -135,12 +137,15 @@ class MaintainService:
         Returns:
             Maintenance report containing promotable, low-evidence, stale, and duplicate knowledge identifiers.
         """
-        return self.lifecycle.report(
+        report = self.lifecycle.report(
             min_confidence=min_confidence,
             min_evidence=min_evidence,
             reference_time=reference_time,
             stale_after_days=stale_after_days,
         )
+        if self.graph_health is not None:
+            report["data"]["graph"] = self.graph_health.report()
+        return report
 
     def cycle(
         self,
