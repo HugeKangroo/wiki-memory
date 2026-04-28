@@ -8,6 +8,7 @@ from memory_substrate.domain.protocols.memory_patch import PatchOperation, Memor
 from memory_substrate.domain.protocols.remember_request import RememberRequest
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
+from memory_substrate.domain.services.soft_duplicates import KnowledgeSoftDuplicateDetector
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from memory_substrate.infrastructure.repositories.fs_patch_repository import FsPatchRepository
@@ -35,6 +36,7 @@ class RememberService:
         )
         self.projector = MarkdownProjector(self.root)
         self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
+        self.soft_duplicates = KnowledgeSoftDuplicateDetector()
 
     def _apply_and_project(self, patch: MemoryPatch) -> dict:
         result = self.patch_applier.apply(patch)
@@ -208,6 +210,9 @@ class RememberService:
                 conflicts.append(item["id"])
         return conflicts
 
+    def _possible_duplicate_knowledge(self, data: dict) -> list[dict]:
+        return self.soft_duplicates.possible_duplicates(data, self._active_knowledge_items())
+
     def create_activity(self, data: dict, actor: dict | None = None) -> dict:
         """Create a finalized activity object from explicit structured input.
 
@@ -303,6 +308,7 @@ class RememberService:
             "evidence_refs": evidence_refs,
             "status": request.status if request else data.get("status", "candidate"),
         }
+        possible_duplicates = self._possible_duplicate_knowledge(candidate)
         if request is not None:
             self._validate_evidence_refs(evidence_refs)
             duplicate_ids = self._duplicate_knowledge_ids(candidate)
@@ -363,6 +369,7 @@ class RememberService:
             "applied_operations": result["applied_operations"],
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
+            "possible_duplicates": possible_duplicates,
         }
         if "graph_sync" in result:
             output["graph_sync"] = result["graph_sync"]

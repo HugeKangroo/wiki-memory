@@ -86,6 +86,47 @@ class McpServerTest(unittest.TestCase):
         self.assertIn("before durable writes", descriptions["memory_query"])
         self.assertIn("requires options.apply=true", descriptions["memory_maintain"])
 
+    def test_server_exposes_agent_policy_resources(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            resources = await server.list_resources()
+            resource_uris = sorted(str(resource.uri) for resource in resources)
+
+            self.assertEqual(
+                resource_uris,
+                ["memory://agent-playbook", "memory://mcp-api-summary", "memory://policy"],
+            )
+
+            policy = await server.read_resource("memory://policy")
+            self.assertEqual(policy[0].mime_type, "text/markdown")
+            self.assertIn("Structured Hard Governance", policy[0].content)
+            self.assertIn("Unstructured Soft Governance", policy[0].content)
+            self.assertIn("Query Policy", policy[0].content)
+
+            playbook = await server.read_resource("memory://agent-playbook")
+            self.assertIn("query expansion", playbook[0].content)
+            self.assertIn("possible_duplicates", playbook[0].content)
+
+        asyncio.run(run_smoke())
+
+    def test_server_exposes_agent_workflow_prompts(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            prompts = await server.list_prompts()
+            prompt_names = sorted(prompt.name for prompt in prompts)
+
+            self.assertEqual(prompt_names, ["memory_review", "memory_task_start"])
+
+            task_start = await server.get_prompt("memory_task_start", {"task": "查待办项"})
+            self.assertIn("memory_query", task_start.messages[0].content.text)
+            self.assertIn("query expansion", task_start.messages[0].content.text)
+
+            review = await server.get_prompt("memory_review", {"outcome": "Kuzu remains local backend"})
+            self.assertIn("memory_remember", review.messages[0].content.text)
+            self.assertIn("possible_duplicates", review.messages[0].content.text)
+
+        asyncio.run(run_smoke())
+
     def test_agent_facing_schema_uses_structured_nested_models(self) -> None:
         server = create_server()
         tools = {tool.name: tool for tool in server._tool_manager.list_tools()}

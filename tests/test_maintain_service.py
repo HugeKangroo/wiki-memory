@@ -472,6 +472,86 @@ class MaintenanceLifecycleTest(unittest.TestCase):
                 {(duplicate_one["knowledge_id"], duplicate_two["knowledge_id"])},
             )
 
+    def test_report_surfaces_unstructured_soft_duplicate_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            maintain = MaintenanceLifecycle(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu as the local graph backend",
+                    "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                    "reason": "This decision should guide backend work.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu remains the local graph backend",
+                    "summary": "The local prototype graph backend should stay on Kuzu.",
+                    "reason": "This may duplicate an existing backend decision.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "candidate",
+                    "confidence": 0.7,
+                }
+            )
+
+            report = maintain.report()
+
+            self.assertEqual(report["data"]["counts"]["soft_duplicate_candidates"], 1)
+            self.assertEqual(
+                set(report["data"]["soft_duplicate_candidates"][0]["object_ids"]),
+                {first["knowledge_id"], second["knowledge_id"]},
+            )
+            self.assertIn("title_overlap", report["data"]["soft_duplicate_candidates"][0]["reasons"])
+
+    def test_merge_duplicates_does_not_merge_unstructured_soft_duplicates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            maintain = MaintenanceLifecycle(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu as the local graph backend",
+                    "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                    "reason": "This decision should guide backend work.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu remains the local graph backend",
+                    "summary": "The local prototype graph backend should stay on Kuzu.",
+                    "reason": "This may duplicate an existing backend decision.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "candidate",
+                    "confidence": 0.7,
+                }
+            )
+
+            result = maintain.merge_duplicates()
+            repository = FsObjectRepository(root)
+
+            self.assertEqual(result["merged"], 0)
+            self.assertEqual(repository.get("knowledge", first["knowledge_id"])["status"], "active")
+            self.assertEqual(repository.get("knowledge", second["knowledge_id"])["status"], "candidate")
+
     def test_cycle_runs_all_maintain_steps_and_rebuilds_projection(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

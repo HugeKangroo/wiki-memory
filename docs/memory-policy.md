@@ -1,0 +1,149 @@
+# Memory Policy
+
+This is the canonical cross-project policy for Memory Substrate behavior. It applies to every MCP host and every project that uses this server.
+
+## Product Boundary
+
+Memory Substrate is a governed memory core. Agents, humans, scripts, and MCP hosts are callers.
+
+The core owns:
+
+- canonical memory objects
+- evidence refs and source segments
+- scopes
+- governed durable writes
+- duplicate and conflict rules
+- lifecycle state
+- audit and patches
+- rebuildable projections and indexes
+
+The caller owns:
+
+- natural-language understanding
+- task-specific judgment
+- query planning
+- extraction from ambiguous material
+- final answer generation
+
+LLM capability may help callers plan queries, extract candidates, and judge soft duplicate candidates. It must not be a mandatory dependency of the memory core.
+
+## Canonical Data
+
+Canonical data lives under `memory/objects/`. Markdown, wiki pages, debug mirrors, Doxygen output, graph tables, and search indexes are derived projections or indexes.
+
+Durable writes should go through `memory_remember` or controlled `memory_maintain` modes. Direct file edits are only for recovery and must be followed by structure validation, repair when needed, and reindexing.
+
+## Tool Boundaries
+
+- `memory_ingest` captures source material as evidence. It does not decide what should become durable memory.
+- `memory_query` retrieves existing context, related records, candidate duplicates, and graph neighborhoods.
+- `memory_remember` is the governed durable write path.
+- `memory_maintain` validates, repairs, reindexes, reports, and performs lifecycle consolidation.
+
+## Governance Fields
+
+Governed create operations require:
+
+- `reason`: why this memory should survive future sessions.
+- `memory_source`: one of `user_declared`, `human_curated`, `agent_inferred`, `system_generated`, or `imported`.
+- `scope_refs`: at least one durable scope id.
+
+Agent-inferred active knowledge is normalized to `candidate`. Active inferred knowledge must be promoted only after evidence and lifecycle checks justify it.
+
+## Evidence Rules
+
+Evidence refs must point to existing source segments. Optional `locator` and `hash` fields must match the referenced segment when provided.
+
+Active knowledge should have evidence unless it is explicit `user_declared` or `human_curated` memory. Evidence-less inferred claims should remain `candidate` or be rejected by policy.
+
+## Scope Rules
+
+Every durable memory item should declare where it applies. Scope controls retrieval, maintenance, export, and future access policy.
+
+Missing scope is treated as broad/global for duplicate and conflict checks. Prefer explicit scopes such as project, repo, user, workspace, or topic.
+
+## Structured Hard Governance
+
+Structured knowledge can be governed strictly when it has clear semantics:
+
+- exact duplicate structured claims may be rejected
+- same-kind, same-scope subject/predicate conflicts may be marked `contested`
+- superseded knowledge should remain auditable
+- duplicate merge should preserve evidence and lineage
+
+Structured duplicate and conflict checks should consider `kind`, overlapping scopes, subject, predicate, value, and object.
+
+## Unstructured Soft Governance
+
+Title/summary-only knowledge must not be hard-rejected by semantic similarity alone.
+
+For unstructured knowledge:
+
+- detect possible duplicates
+- return candidate duplicate ids and reasons
+- allow the write unless another hard rule fails
+- prefer `candidate` status when confidence or evidence is weak
+- let `memory_maintain` or a caller review merge/supersession later
+
+This avoids corrupting memory when two similar descriptions are actually a decision, a background fact, a narrower rule, or a newer conclusion.
+
+Soft duplicate candidates are advisory response data. They should be recomputable by maintenance flows instead of treated as permanent truth.
+
+Maintenance may report soft duplicate candidates, but automatic merge must stay limited to deterministic structured duplicates until an explicit review/resolve mode exists. A safe resolve flow should require one of these explicit outcomes:
+
+- mark one item superseded by another
+- keep both with clarified scopes or summaries
+- contest one or both items
+- promote a curated replacement and supersede the originals
+
+## Query Policy
+
+Query should return work-ready context, not just raw string matches.
+
+Near-term deterministic query behavior should include:
+
+- query normalization for domain terms
+- type and status aware retrieval
+- scope-aware filtering
+- graph expansion when configured
+- clear no-match diagnostics and retry hints
+
+Required domain mappings include:
+
+- `待办`, `待办项`, `todo`, `task`, `任务` -> `work_item`
+- `决策`, `decision` -> `knowledge` with decision-like kinds
+- `偏好`, `preference` -> preference knowledge
+- `流程`, `procedure` -> procedure knowledge
+- `证据`, `source`, `evidence` -> source and evidence records
+
+When a query returns no useful results, callers should expand terms and retry before concluding that memory has no answer.
+
+## LLM And Embedding Policy
+
+Embedding, rerankers, hosted LLMs, local LLMs, Graphiti, Cognee, LlamaIndex, Neo4j, or vector databases may be adapters. They must stay behind project-owned contracts.
+
+Do not make the core require a second API key. Codex, Claude Code, humans, scripts, or optional reasoner adapters may supply LLM judgment from outside the core.
+
+The preferred progression is:
+
+1. deterministic query normalization
+2. deterministic soft duplicate candidates
+3. graph-backed retrieval
+4. optional embedding/vector/hybrid retrieval
+5. optional reasoner adapter
+
+## Tool Response Guidance
+
+Tool responses should guide callers even if they have not read the docs. Prefer fields such as:
+
+- `normalized_terms`
+- `applied_filters`
+- `possible_duplicates`
+- `conflicts_with`
+- `suggested_retry_terms`
+- `warnings`
+- `next_actions`
+
+These fields should be test-covered when added.
+
+The MCP server should also expose compact policy and playbook resources for hosts that can read MCP resources directly. Repository-local `AGENTS.md` or `CLAUDE.md` files are adapters, not the policy source of truth.

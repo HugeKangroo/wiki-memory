@@ -34,6 +34,24 @@ class QueryGraphBackendTest(unittest.TestCase):
             self.assertEqual([item["id"] for item in result["data"]["items"]], ["know:graph-search"])
             self.assertEqual(result["data"]["items"][0]["object_type"], "knowledge")
 
+    def test_search_normalization_reads_configured_graph_backend_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            backend = FileGraphBackend(tmp)
+            backend.upsert_knowledge(
+                {
+                    "id": "know:backend-choice",
+                    "kind": "decision",
+                    "title": "Use Kuzu locally",
+                    "summary": "Kuzu remains the local graph backend.",
+                    "status": "active",
+                }
+            )
+
+            result = QueryService(tmp, graph_backend=backend).search("决策")
+
+            self.assertEqual([item["id"] for item in result["data"]["items"]], ["know:backend-choice"])
+            self.assertEqual(result["data"]["applied_filters"]["kinds"], ["decision"])
+
     def test_context_can_start_from_configured_graph_backend_results(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             backend = FileGraphBackend(tmp)

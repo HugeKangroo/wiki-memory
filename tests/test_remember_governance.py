@@ -282,6 +282,79 @@ class RememberGovernanceTest(unittest.TestCase):
             self.assertEqual(stored["status"], "contested")
             self.assertEqual(stored["conflicts_with"], [first["knowledge_id"]])
 
+    def test_create_unstructured_knowledge_returns_possible_duplicate_without_rejecting(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+            first = service.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu as the local graph backend",
+                    "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                    "reason": "This decision should guide backend work.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            second = service.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu remains the local graph backend",
+                    "summary": "The local prototype graph backend should stay on Kuzu.",
+                    "reason": "This may duplicate an existing backend decision.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "candidate",
+                    "confidence": 0.7,
+                }
+            )
+            stored = FsObjectRepository(root).get("knowledge", second["knowledge_id"])
+
+            self.assertEqual(stored["status"], "candidate")
+            self.assertEqual(second["possible_duplicates"][0]["object_id"], first["knowledge_id"])
+            self.assertGreaterEqual(second["possible_duplicates"][0]["score"], 0.5)
+            self.assertIn("title_overlap", second["possible_duplicates"][0]["reasons"])
+            self.assertIn("summary_overlap", second["possible_duplicates"][0]["reasons"])
+
+    def test_unstructured_possible_duplicates_respect_scope_overlap(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+            service.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu as the local graph backend",
+                    "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                    "reason": "This decision applies only to project A.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:project-a"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            second = service.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu remains the local graph backend",
+                    "summary": "The local prototype graph backend should stay on Kuzu.",
+                    "reason": "This similar decision applies to project B.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:project-b"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+
+            self.assertEqual(second["possible_duplicates"], [])
+
     def test_create_knowledge_accepts_active_with_valid_evidence_reference(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

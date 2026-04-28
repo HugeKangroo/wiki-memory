@@ -152,7 +152,8 @@ class KuzuGraphBackend:
             title = str(record.get("title") or record.get("name") or record["id"])
             summary = str(record.get("summary", ""))
             payload = self._dump_json(record.get("payload", {}))
-            haystack = f"{title}\n{summary}\n{payload}".lower()
+            metadata = self._metadata_text(record)
+            haystack = f"{title}\n{summary}\n{payload}\n{metadata}".lower()
             if q not in haystack:
                 continue
             results.append(
@@ -164,7 +165,7 @@ class KuzuGraphBackend:
                     "status": record.get("status", "active"),
                     "summary": summary,
                     "evidence_refs": record.get("evidence_refs", []),
-                    "score": self._score(q, title.lower(), summary.lower(), payload.lower()),
+                    "score": self._score(q, title.lower(), summary.lower(), payload.lower(), metadata.lower()),
                 }
             )
         results.sort(key=lambda item: (-item["score"], item["title"], item["id"]))
@@ -491,7 +492,20 @@ class KuzuGraphBackend:
             return True
         return bool(set(record.get("scope_refs", [])).intersection(scope_refs))
 
-    def _score(self, query: str, title: str, summary: str, payload: str) -> int:
+    def _metadata_text(self, record: dict[str, Any]) -> str:
+        parts = [
+            str(record.get("object_type", "")),
+            str(record.get("kind", record.get("object_type", ""))),
+            str(record.get("status") or ""),
+            str(record.get("lifecycle_state") or ""),
+        ]
+        for evidence in record.get("evidence_refs", []):
+            if isinstance(evidence, dict):
+                parts.append(str(evidence.get("source_id", "")))
+                parts.append(str(evidence.get("segment_id", "")))
+        return "\n".join(part for part in parts if part)
+
+    def _score(self, query: str, title: str, summary: str, payload: str, metadata: str = "") -> int:
         score = 0
         if query == title:
             score += 100
@@ -501,6 +515,8 @@ class KuzuGraphBackend:
             score += 10
         if query in payload:
             score += 5
+        if query in metadata:
+            score += 8
         return score
 
     def _valid_at(self, record: dict[str, Any], reference: datetime | None) -> bool:

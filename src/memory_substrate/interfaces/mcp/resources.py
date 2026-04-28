@@ -1,0 +1,135 @@
+from __future__ import annotations
+
+from mcp.server.fastmcp import FastMCP
+
+
+MEMORY_POLICY = """# Memory Substrate Policy
+
+## Product Boundary
+
+Memory Substrate owns canonical objects, evidence, scopes, governed writes, lifecycle state, audit, projections, and rebuildable indexes. Agents and humans own natural-language judgment, extraction, query planning, and answer generation.
+
+The memory core must not require a second LLM API key. Hosted LLMs, local LLMs, Graphiti, Cognee, LlamaIndex, vector indexes, and reasoner adapters are optional adapters behind project-owned contracts.
+
+## Structured Hard Governance
+
+Structured knowledge may be governed strictly. Exact duplicate structured claims can be rejected, same-scope subject/predicate conflicts can be marked contested, and supersession must preserve audit history.
+
+## Unstructured Soft Governance
+
+Title/summary-only knowledge uses soft duplicate detection. Similar text returns advisory `possible_duplicates`; it must not be hard-rejected or automatically merged by semantic similarity alone.
+
+## Query Policy
+
+Callers should use `memory_query` at task start and before durable writes. If a result is empty or weak, perform query expansion and retry before concluding that memory has no answer.
+
+Required domain mappings include todo/work item, decision, preference, procedure, source, and evidence terms.
+
+## Maintenance Policy
+
+`memory_maintain report` may surface soft duplicate candidates. `merge_duplicates` is limited to deterministic structured duplicates until an explicit review/resolve mode exists.
+"""
+
+
+AGENT_PLAYBOOK = """# Agent Memory Playbook
+
+## Task Start
+
+1. Call `memory_query` with `mode: "context"` or `mode: "search"`.
+2. If results are weak, apply query expansion. Examples: `待办项` -> `work_item`, `todo`, `task`; `决策` -> decision knowledge.
+3. Use returned citations, open work, decisions, procedures, conflicts, and missing context to plan the task.
+
+## New Evidence
+
+1. Use `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as evidence.
+2. Analyze outside ingest.
+3. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
+
+## Durable Writes
+
+Use `memory_remember` only when the item should survive future sessions. Create writes need `reason`, `memory_source`, and `scope_refs`.
+
+Inspect `possible_duplicates` after knowledge writes. Similar unstructured items are advisory candidates, not automatic merge decisions.
+
+## Maintenance
+
+Use `memory_maintain report` for read-only review. Mutating maintenance requires `options.apply=true`.
+"""
+
+
+MCP_API_SUMMARY = """# Memory Substrate MCP API Summary
+
+The server exposes four tools:
+
+- `memory_ingest`: capture source material as citable evidence.
+- `memory_query`: retrieve context, search memory, expand objects, and inspect graph neighborhoods.
+- `memory_remember`: commit governed durable activities, knowledge, and work items.
+- `memory_maintain`: validate, repair, reindex, report, and consolidate memory.
+
+All tool calls use:
+
+```json
+{
+  "args": {
+    "root": "/optional/memory/root",
+    "mode": "...",
+    "input_data": {},
+    "options": {}
+  }
+}
+```
+
+`root` defaults to `~/memory-substrate`. `input_data` is required even when empty. Mutating maintain modes require `options.apply=true`.
+"""
+
+
+def register_agent_resources(mcp: FastMCP) -> None:
+    @mcp.resource(
+        "memory://policy",
+        name="memory_policy",
+        description="Canonical Memory Substrate policy for MCP callers.",
+        mime_type="text/markdown",
+    )
+    def memory_policy() -> str:
+        return MEMORY_POLICY
+
+    @mcp.resource(
+        "memory://agent-playbook",
+        name="memory_agent_playbook",
+        description="Agent workflow for querying, ingesting, remembering, and maintaining memory.",
+        mime_type="text/markdown",
+    )
+    def memory_agent_playbook() -> str:
+        return AGENT_PLAYBOOK
+
+    @mcp.resource(
+        "memory://mcp-api-summary",
+        name="memory_mcp_api_summary",
+        description="Short summary of Memory Substrate MCP tools and call envelope.",
+        mime_type="text/markdown",
+    )
+    def memory_mcp_api_summary() -> str:
+        return MCP_API_SUMMARY
+
+    @mcp.prompt(
+        name="memory_task_start",
+        description="Plan the required memory query workflow before starting a task.",
+    )
+    def memory_task_start(task: str = "") -> str:
+        return (
+            "Start by calling memory_query with mode=context or mode=search. "
+            "If the result is empty or weak, perform query expansion and retry before concluding "
+            f"there is no memory. Task: {task}"
+        )
+
+    @mcp.prompt(
+        name="memory_review",
+        description="Review whether completed work should be committed to durable memory.",
+    )
+    def memory_review(outcome: str = "") -> str:
+        return (
+            "Before ending substantial work, decide whether any result should survive future sessions. "
+            "If yes, use memory_remember with reason, memory_source, scope_refs, and evidence refs when available. "
+            "Inspect possible_duplicates before relying on a new unstructured knowledge item as distinct. "
+            f"Outcome to review: {outcome}"
+        )

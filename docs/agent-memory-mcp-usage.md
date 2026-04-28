@@ -2,6 +2,16 @@
 
 This document defines how agents should use the Memory Substrate MCP tools. It is a protocol for agent behavior, not just a set of examples.
 
+For cross-project rules, read [Memory Policy](memory-policy.md). This document is the caller workflow and examples layer; it should not duplicate every policy rule.
+
+MCP hosts can also read the built-in resources:
+
+- `memory://policy`
+- `memory://agent-playbook`
+- `memory://mcp-api-summary`
+
+The server provides two prompts, `memory_task_start` and `memory_review`, for hosts that support MCP prompts.
+
 ## Current Data Model
 
 The canonical data is a structured object store under `memory/objects/`. Markdown files under `memory/projections/` are derived views and are not the source of truth.
@@ -42,6 +52,7 @@ Governed knowledge writes normalize `agent_inferred` active claims to `candidate
 
 Recommended near-term data upgrades:
 
+- Add deterministic query normalization for domain terms such as `待办项`, `todo`, `task`, and `work_item`.
 - Add stronger semantic matching for unstructured title/summary-only knowledge.
 - Keep Graphiti/Neo4j behind backend interfaces when graph scale, temporal relation queries, or hybrid retrieval become core requirements.
 
@@ -60,6 +71,7 @@ At task start:
 
 1. Call `memory_query` with `mode: "context"` or `mode: "search"` to load existing context.
 2. Use the returned context to avoid repeating known work and to identify relevant memory IDs.
+3. If the result is empty or weak, expand the query terms and retry before concluding that memory has no useful answer.
 
 When new material appears:
 
@@ -68,12 +80,44 @@ When new material appears:
 3. Decide whether anything should become durable memory.
 4. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
 5. Call `memory_remember` only for information that should survive future sessions.
+6. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
 Before ending substantial work:
 
 1. Perform a memory review.
 2. If there is durable information, call `memory_remember`.
 3. If there is nothing durable, state that nothing should be remembered and why.
+
+## Query Retry Discipline
+
+Current search behavior includes deterministic query normalization, but it is still primarily lexical with graph-backed retrieval when configured. Agents should compensate with query planning:
+
+- map user vocabulary to memory object types, kinds, statuses, and scopes
+- expand common domain terms before retrying
+- search for both natural-language terms and canonical memory terms
+- prefer `context` when answering a task and `search` when checking existence
+
+Examples:
+
+- `待办项`, `todo`, `task`, `任务` -> search `work_item` records and open/pending statuses
+- `决策`, `decision` -> search decision-like knowledge
+- `偏好`, `preference` -> search preference knowledge
+- `流程`, `procedure` -> search procedure knowledge
+- `证据`, `source`, `evidence` -> search sources and evidence-linked knowledge
+
+Do not answer "there is no memory" from a single failed keyword query when a reasonable expansion exists.
+
+## Duplicate Handling
+
+Structured fact-like knowledge has hard duplicate and conflict checks. If the same structured claim already exists in an overlapping scope, `memory_remember` may reject it. If the same subject and predicate conflict in the same scope, the new knowledge may become `contested`.
+
+Unstructured title/summary-only knowledge uses soft duplicate detection. `memory_remember` returns `possible_duplicates` with scores and reasons, but it does not reject the write just because the text is similar. Agents should treat those candidates as review material:
+
+- if it is the same memory, avoid relying on the new item as a separate fact
+- if it is a refinement, consider superseding or updating in a later maintenance step
+- if it is genuinely distinct, keep it and preserve the scope/reason that explains why
+
+`memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically; use explicit review, supersession, or contesting once the relationship is clear.
 
 ## Memory Review Gate
 

@@ -7,6 +7,7 @@ from pathlib import Path
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
+from memory_substrate.domain.services.soft_duplicates import KnowledgeSoftDuplicateDetector
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from memory_substrate.infrastructure.repositories.fs_patch_repository import FsPatchRepository
@@ -33,6 +34,7 @@ class MaintenanceLifecycle:
             audit_repository=self.audit_repository,
         )
         self.projector = MarkdownProjector(self.root)
+        self.soft_duplicates = KnowledgeSoftDuplicateDetector()
 
     def promote_candidates(self, min_confidence: float = 0.75, min_evidence: int = 1) -> dict:
         """Promote eligible candidate knowledge items to active status.
@@ -204,6 +206,7 @@ class MaintenanceLifecycle:
             if len(group) > 1
         ]
         duplicate_groups.sort(key=lambda group: group[0])
+        soft_duplicate_candidates = self.soft_duplicates.groups(self.object_repository.list("knowledge"))
 
         return {
             "result_type": "maintain_report",
@@ -212,12 +215,14 @@ class MaintenanceLifecycle:
                 "low_evidence_candidate_ids": sorted(low_evidence_candidate_ids),
                 "stale_candidate_ids": sorted(stale_candidate_ids),
                 "duplicate_groups": duplicate_groups,
+                "soft_duplicate_candidates": soft_duplicate_candidates,
                 "governance_violations": sorted(governance_violations, key=lambda item: item["object_id"]),
                 "counts": {
                     "promote_candidates": len(promote_candidate_ids),
                     "low_evidence_candidates": len(low_evidence_candidate_ids),
                     "stale_candidates": len(stale_candidate_ids),
                     "duplicate_groups": len(duplicate_groups),
+                    "soft_duplicate_candidates": len(soft_duplicate_candidates),
                     "governance_violations": len(governance_violations),
                 },
             },

@@ -4,7 +4,7 @@
 
 Build an llmwiki-style compounding memory core: a local-first context substrate that turns useful work into durable context assets that can be inspected, corrected, reused, and improved over time.
 
-This system should learn from the second category identified in `argue.md`: context substrates. It should not become a hidden fact database, a chat-history store, a Zep clone, or a raw graph database wrapper.
+This system should learn from the second category identified in `docs/research/source-notes/argue.md`: context substrates. It should not become a hidden fact database, a chat-history store, a Zep clone, or a raw graph database wrapper.
 
 The product center is:
 

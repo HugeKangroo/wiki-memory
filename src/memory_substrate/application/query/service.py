@@ -10,6 +10,35 @@ from memory_substrate.domain.services.patch_applier import utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
 
+QUERY_NORMALIZATION_RULES = (
+    {
+        "triggers": ("待办", "待办项", "todo", "to-do", "task", "tasks", "任务"),
+        "terms": ("待办", "待办项", "todo", "to-do", "task", "tasks", "任务", "work_item", "open", "pending"),
+        "filters": {"object_types": ("work_item",), "statuses": ("open", "in_progress", "blocked", "pending")},
+    },
+    {
+        "triggers": ("决策", "decision", "decisions"),
+        "terms": ("决策", "decision", "decisions"),
+        "filters": {"object_types": ("knowledge",), "kinds": ("decision",)},
+    },
+    {
+        "triggers": ("偏好", "preference", "preferences"),
+        "terms": ("偏好", "preference", "preferences"),
+        "filters": {"object_types": ("knowledge",), "kinds": ("preference",)},
+    },
+    {
+        "triggers": ("流程", "procedure", "procedures"),
+        "terms": ("流程", "procedure", "procedures"),
+        "filters": {"object_types": ("knowledge",), "kinds": ("procedure",)},
+    },
+    {
+        "triggers": ("证据", "evidence", "source", "sources"),
+        "terms": ("证据", "evidence", "source", "sources"),
+        "filters": {"object_types": ("source", "knowledge")},
+    },
+)
+
+
 class QueryService:
     def __init__(self, root: str | Path, graph_backend=None) -> None:
         """Create a query service bound to one memory-substrate root.
@@ -35,10 +64,12 @@ class QueryService:
         Returns:
             Context pack with ranked items, conflicts, missing context, citations, and expiry metadata.
         """
+        plan = self._query_plan(task)
+        scoped = self._scope_with_query_plan(scope or {}, plan)
         if self.graph_backend is not None:
-            return self._graph_context(task=task, scope=scope, max_items=max_items)
+            return self._graph_context(task=task, scope=scoped, max_items=max_items, plan=plan)
 
-        pack = self.builder.build(task=task, scope=scope, max_items=max_items)
+        pack = self.builder.build(task=task, scope=scoped, max_items=max_items)
         return {
             "result_type": "context_pack",
             "data": {
@@ -58,6 +89,8 @@ class QueryService:
                 "freshness": pack.freshness,
                 "generated_at": pack.generated_at,
                 "expires_at": pack.expires_at,
+                "normalized_terms": plan["terms"],
+                "inferred_filters": plan["inferred_filters"],
             },
             "warnings": [],
         }
@@ -210,43 +243,64 @@ class QueryService:
         Returns:
             Search result containing scored object summaries.
         """
-        q = query.strip().lower()
+        plan = self._query_plan(query)
+        terms = plan["terms"]
         filters = filters or {}
+        applied_filters = self._scope_with_query_plan(filters, plan)
         items: list[dict] = []
-        if not q:
+        if not terms:
             return {
                 "result_type": "search_results",
-                "data": {"query": query, "items": []},
+                "data": {
+                    "query": query,
+                    "items": [],
+                    "normalized_terms": [],
+                    "applied_filters": applied_filters,
+                    "inferred_filters": {},
+                    "suggested_retry_terms": [],
+                },
                 "warnings": [],
             }
 
         if self.graph_backend is not None:
-            graph_items = [
-                item
-                for item in self.graph_backend.search(query=query, max_items=max_items)
-                if self._matches_filters(item.get("object_type", ""), item, filters)
-            ]
+            graph_items = self._graph_search_terms(terms, max_items=max_items, filters=applied_filters)
             return {
                 "result_type": "search_results",
                 "data": {
                     "query": query,
                     "items": graph_items[:max_items],
+                    "normalized_terms": terms,
+                    "applied_filters": applied_filters,
+                    "inferred_filters": plan["inferred_filters"],
+                    "suggested_retry_terms": [] if graph_items else terms[1:],
                 },
                 "warnings": [],
             }
 
         for object_type in ("node", "knowledge", "activity", "work_item", "source"):
             for obj in self.repository.list(object_type):
-                if not self._matches_filters(object_type, obj, filters):
+                if not self._matches_filters(object_type, obj, applied_filters):
                     continue
                 title = str(obj.get("title") or obj.get("name") or obj["id"])
                 summary = str(obj.get("summary", ""))
                 payload = str(obj.get("payload", ""))
                 segments = self._segment_text(obj)
-                haystack = f"{title}\n{summary}\n{payload}\n{segments}".lower()
-                if q not in haystack:
+                metadata = self._metadata_text(object_type, obj)
+                haystack = f"{title}\n{summary}\n{payload}\n{segments}\n{metadata}".lower()
+                matching_terms = [term for term in terms if term in haystack]
+                if not matching_terms:
                     continue
-                score = self._score(q, title.lower(), summary.lower(), payload.lower(), segments.lower())
+                score = max(
+                    self._score(
+                        term,
+                        title.lower(),
+                        summary.lower(),
+                        payload.lower(),
+                        segments.lower(),
+                        metadata.lower(),
+                    )
+                    for term in matching_terms
+                )
                 items.append(
                     {
                         "object_type": object_type,
@@ -264,16 +318,23 @@ class QueryService:
             "data": {
                 "query": query,
                 "items": items[:max_items],
+                "normalized_terms": terms,
+                "applied_filters": applied_filters,
+                "inferred_filters": plan["inferred_filters"],
+                "suggested_retry_terms": [] if items else terms[1:],
             },
             "warnings": [],
         }
 
-    def _graph_context(self, task: str, scope: dict | None = None, max_items: int = 12) -> dict:
+    def _graph_context(
+        self, task: str, scope: dict | None = None, max_items: int = 12, plan: dict | None = None
+    ) -> dict:
         scope = scope or {}
+        plan = plan or self._query_plan(task)
         filters = scope if isinstance(scope, dict) else {}
         items = [
             self._graph_context_item(item)
-            for item in self.graph_backend.search(query=task, max_items=max_items)
+            for item in self._graph_search_terms(plan["terms"], max_items=max_items, filters=filters)
             if self._matches_filters(item.get("object_type", ""), item, filters)
         ][:max_items]
         generated_at = utc_now_iso()
@@ -305,6 +366,8 @@ class QueryService:
                 "freshness": {"generated_at": generated_at, "expires_at": None},
                 "generated_at": generated_at,
                 "expires_at": None,
+                "normalized_terms": plan["terms"],
+                "inferred_filters": plan["inferred_filters"],
             },
             "warnings": [],
         }
@@ -355,7 +418,25 @@ class QueryService:
         except ValueError:
             return datetime.min.replace(tzinfo=timezone.utc)
 
-    def _score(self, query: str, title: str, summary: str, payload: str, segments: str = "") -> int:
+    def _graph_search_terms(self, terms: list[str], max_items: int, filters: dict) -> list[dict]:
+        graph_items: list[dict] = []
+        seen: set[str] = set()
+        for term in terms:
+            for item in self.graph_backend.search(query=term, max_items=max_items):
+                item_id = str(item.get("id", ""))
+                if not item_id or item_id in seen:
+                    continue
+                if not self._matches_filters(item.get("object_type", ""), item, filters):
+                    continue
+                seen.add(item_id)
+                graph_items.append(item)
+                if len(graph_items) >= max_items:
+                    return graph_items
+        return graph_items
+
+    def _score(
+        self, query: str, title: str, summary: str, payload: str, segments: str = "", metadata: str = ""
+    ) -> int:
         score = 0
         if query == title:
             score += 100
@@ -367,6 +448,8 @@ class QueryService:
             score += 5
         if query in segments:
             score += 3
+        if query in metadata:
+            score += 8
         return score
 
     def _segment_text(self, obj: dict) -> str:
@@ -382,6 +465,74 @@ class QueryService:
             if isinstance(locator, dict):
                 parts.append(str(locator.get("path", "")))
         return "\n".join(parts)
+
+    def _metadata_text(self, object_type: str, obj: dict) -> str:
+        parts: list[str] = [
+            object_type,
+            str(obj.get("kind", object_type)),
+            str(obj.get("status") or ""),
+            str(obj.get("lifecycle_state") or ""),
+        ]
+        for field in (
+            "subject_refs",
+            "related_node_refs",
+            "related_work_item_refs",
+            "source_refs",
+            "related_knowledge_refs",
+        ):
+            value = obj.get(field, [])
+            if isinstance(value, list):
+                parts.extend(str(item) for item in value)
+        for evidence in obj.get("evidence_refs", []):
+            if isinstance(evidence, dict):
+                parts.append(str(evidence.get("source_id", "")))
+                parts.append(str(evidence.get("segment_id", "")))
+        return "\n".join(part for part in parts if part)
+
+    def _query_plan(self, query: str) -> dict:
+        normalized_query = query.strip().lower()
+        terms: list[str] = []
+        inferred_filters: dict[str, list[str]] = {}
+        self._append_unique(terms, normalized_query)
+        for rule in QUERY_NORMALIZATION_RULES:
+            if not self._rule_matches(normalized_query, rule["triggers"]):
+                continue
+            for term in rule["terms"]:
+                self._append_unique(terms, str(term).lower())
+            for key, values in rule.get("filters", {}).items():
+                bucket = inferred_filters.setdefault(key, [])
+                for value in values:
+                    self._append_unique(bucket, str(value))
+        return {"terms": terms, "inferred_filters": inferred_filters}
+
+    def _rule_matches(self, query: str, triggers: tuple[str, ...]) -> bool:
+        if not query:
+            return False
+        return any(trigger == query or trigger in query for trigger in triggers)
+
+    def _scope_with_query_plan(self, scope: dict, plan: dict) -> dict:
+        if not plan["inferred_filters"]:
+            return scope
+        scoped = dict(scope)
+        for key, values in plan["inferred_filters"].items():
+            singular = self._singular_filter_key(key)
+            if key in scoped or singular in scoped:
+                continue
+            scoped[key] = list(values)
+        return scoped
+
+    def _singular_filter_key(self, key: str) -> str:
+        return {
+            "object_types": "object_type",
+            "kinds": "kind",
+            "statuses": "status",
+            "source_ids": "source_id",
+            "node_ids": "node_id",
+        }.get(key, key[:-1] if key.endswith("s") else key)
+
+    def _append_unique(self, values: list[str], value: str) -> None:
+        if value and value not in values:
+            values.append(value)
 
     def _find_object(self, object_id: str) -> tuple[str | None, dict | None]:
         for object_type in ("source", "node", "knowledge", "activity", "work_item"):

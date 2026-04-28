@@ -16,9 +16,9 @@ The intended product direction is an llmwiki-style compounding memory system:
 - maintainable over time
 - able to make each useful session improve future work
 
-## Local Source: `argue.md`
+## Local Source: `docs/research/source-notes/argue.md`
 
-The local `argue.md` frames the current memory-tool landscape as two different camps:
+The local source note `docs/research/source-notes/argue.md` frames the current memory-tool landscape as two different camps:
 
 - Camp 1: memory backends.
 - Camp 2: context substrates.
