@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from functools import lru_cache
+from pathlib import Path
 
 
 DEFAULT_SEMANTIC_MODEL = "BAAI/bge-m3"
+IGNORED_MODEL_FILES = ["flax_model.msgpack", "rust_model.ot", "tf_model.h5"]
 
 
 class FlagEmbeddingProvider:
@@ -16,7 +18,8 @@ class FlagEmbeddingProvider:
                 "uv sync --extra semantic"
             ) from exc
         self.model_name = model_name
-        self.model = BGEM3FlagModel(model_name, use_fp16=True)
+        self.model_path = cached_model_path_or_name(model_name)
+        self.model = BGEM3FlagModel(self.model_path, use_fp16=True)
 
     def embed_passages(self, texts: list[str], batch_size: int = 8) -> list[list[float]]:
         output = self.model.encode(
@@ -48,3 +51,20 @@ def get_flag_embedding_provider(model_name: str = DEFAULT_SEMANTIC_MODEL) -> Fla
 
 def clear_flag_embedding_provider_cache() -> None:
     get_flag_embedding_provider.cache_clear()
+
+
+def cached_model_path_or_name(model_name: str) -> str:
+    if Path(model_name).exists():
+        return model_name
+    try:
+        from huggingface_hub import snapshot_download
+    except ImportError:
+        return model_name
+    try:
+        return snapshot_download(
+            repo_id=model_name,
+            local_files_only=True,
+            ignore_patterns=IGNORED_MODEL_FILES,
+        )
+    except Exception:
+        return model_name

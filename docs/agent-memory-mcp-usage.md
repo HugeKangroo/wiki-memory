@@ -305,8 +305,7 @@ After configuration, omit `options.graph_backend` for normal `memory_remember`, 
 
 Semantic retrieval is configured the same way, but it only affects query/reindex paths. Configure it with `memory_maintain configure` and `semantic_backend: "lancedb"`, then run `memory_maintain reindex` to build `memory/indexes/semantic_lancedb` from canonical objects. When graph and semantic backends are both configured, `memory_query search` merges their results. Agents may use per-call `options.semantic_backend` when intentionally testing or overriding the root default.
 
-Semantic model loading is lazy. Starting the MCP server only registers tools; the first semantic `reindex` or `search` warms the embedding model cache in that MCP process, and later calls with the same model reuse it.
-After the model has been warmed once, MCP hosts can set `HF_HUB_OFFLINE=1` so semantic calls use cached BGE-M3 files without remote metadata checks.
+Semantic model loading is lazy. Starting the MCP server only registers tools; the first semantic `reindex` or `search` tries cached BGE-M3 files first, falls back to download when missing, warms the embedding model cache in that MCP process, and later calls with the same model reuse it. Hosts should set `HF_HUB_OFFLINE=1` only when they intentionally want hard offline mode.
 
 Run a graph-aware maintenance report:
 

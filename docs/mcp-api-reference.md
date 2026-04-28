@@ -540,8 +540,7 @@ Both fields are optional, but at least one should be supplied for a meaningful c
 
 `reindex` rebuilds derived projections. When configured or requested, it also rebuilds graph and semantic indexes from canonical memory objects.
 When both graph and semantic backends are enabled, `memory_query search` merges graph/lexical results with semantic hits before ranking the final list.
-Semantic model loading is lazy and process-local. MCP startup does not load BGE-M3; the first semantic `reindex` or `search` warms the provider cache for the running server process.
-After the model has been warmed once, hosts may set `HF_HUB_OFFLINE=1` to force cached-only model loads.
+Semantic model loading is lazy and process-local. MCP startup does not load BGE-M3; the first semantic `reindex` or `search` tries cached model files before downloading, then warms the provider cache for the running server process. Hosts may set `HF_HUB_OFFLINE=1` only for hard offline mode.
 
 `report`:
 

@@ -150,8 +150,7 @@ Then rebuild the semantic index from canonical objects:
 
 The semantic index is not canonical storage. If it is deleted or the embedding model changes, run `memory_maintain reindex` to rebuild it.
 If a graph backend is also configured, `memory_query search` merges graph/lexical results with semantic hits and keeps canonical objects as the source of truth.
-The MCP server does not load the embedding model during startup. The first semantic `reindex` or `search` loads the model lazily, then reuses the same in-process provider for later calls with the same model.
-After the first model warmup, set `HF_HUB_OFFLINE=1` in the MCP host environment to force cached-only BGE-M3 loads without Hugging Face metadata checks.
+The MCP server does not load the embedding model during startup. The first semantic `reindex` or `search` loads the model lazily, tries the local Hugging Face cache first, falls back to download when the cache is missing, then reuses the same in-process provider for later calls with the same model.
 
 ## Host Configuration
 
@@ -163,15 +162,14 @@ Most MCP hosts can run the server with this stdio command:
     "command": "uv",
     "args": ["run", "--directory", "/absolute/path/to/memory-substrate", "memory-substrate-mcp"],
     "env": {
-      "MEMORY_SUBSTRATE_ROOT": "/absolute/path/to/memory-root",
-      "HF_HUB_OFFLINE": "1"
+      "MEMORY_SUBSTRATE_ROOT": "/absolute/path/to/memory-root"
     }
   }
 }
 ```
 
 Omit `MEMORY_SUBSTRATE_ROOT` to use the default `~/memory-substrate` root.
-Omit `HF_HUB_OFFLINE` until the semantic model has been downloaded or warmed once.
+Set `HF_HUB_OFFLINE=1` only when you intentionally want hard offline mode; the default semantic loader already tries cached files before downloading.
 
 Codex CLI:
 
