@@ -29,7 +29,6 @@ Every tool call uses this shape:
 ```json
 {
   "args": {
-    "root": "/absolute/path/to/memory-substrate",
     "mode": "...",
     "input_data": {},
     "options": {}
@@ -40,7 +39,7 @@ Every tool call uses this shape:
 Rules:
 
 - `args` is required.
-- `root` is optional and defaults to `~/memory-substrate`.
+- `root` is not accepted in tool calls. The server root is configured outside the tool schema, defaulting to `~/memory-substrate` or `MEMORY_SUBSTRATE_ROOT`.
 - `mode` is required.
 - `input_data` is required even when empty.
 - `options` is optional.
@@ -485,7 +484,8 @@ Mutating modes require `options.apply=true`. `report` is read-only.
   "args": {
     "mode": "configure",
     "input_data": {
-      "graph_backend": "file"
+      "graph_backend": "file",
+      "semantic_backend": "lancedb"
     },
     "options": {
       "apply": true
@@ -495,6 +495,8 @@ Mutating modes require `options.apply=true`. `report` is read-only.
 ```
 
 Supported `graph_backend` values are `file` and `kuzu`.
+Supported `semantic_backend` values are `lancedb`.
+Both fields are optional, but at least one should be supplied for a meaningful configure call.
 
 `structure`:
 
@@ -530,11 +532,16 @@ Supported `graph_backend` values are `file` and `kuzu`.
     "input_data": {},
     "options": {
       "graph_backend": "kuzu",
-      "apply": true
+      "semantic_backend": "lancedb"
     }
   }
 }
 ```
+
+`reindex` rebuilds derived projections. When configured or requested, it also rebuilds graph and semantic indexes from canonical memory objects.
+When both graph and semantic backends are enabled, `memory_query search` merges graph/lexical results with semantic hits before ranking the final list.
+Semantic model loading is lazy and process-local. MCP startup does not load BGE-M3; the first semantic `reindex` or `search` warms the provider cache for the running server process.
+After the model has been warmed once, hosts may set `HF_HUB_OFFLINE=1` to force cached-only model loads.
 
 `report`:
 

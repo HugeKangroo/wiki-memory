@@ -5,6 +5,7 @@
 - Renamed the public product surface to `memory-substrate` and the MCP tools to `memory_ingest`, `memory_query`, `memory_remember`, and `memory_maintain`.
 - Added governed memory write rules for reason, memory source, scope refs, duplicate detection, conflict detection, and evidence validation.
 - Added optional graph backend configuration with file and Kuzu backends behind the project-owned graph contract.
+- Added optional LanceDB semantic retrieval with BGE-M3 embeddings as a rebuildable derived index.
 - Added deterministic query normalization for domain terms such as todo/work-item and decision/preference/procedure/evidence queries, including graph backend metadata matching.
 - Added advisory `possible_duplicates` responses for similar unstructured title/summary-only knowledge.
 - Allowed MCP knowledge writes to omit `payload` for unstructured title/summary-only knowledge.

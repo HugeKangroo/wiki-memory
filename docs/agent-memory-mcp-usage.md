@@ -12,6 +12,8 @@ MCP hosts can also read the built-in resources:
 
 The server provides two prompts, `memory_task_start` and `memory_review`, for hosts that support MCP prompts.
 
+Agents must not pass a memory root in tool calls. The MCP server binds to one root per server instance, defaulting to `~/memory-substrate` unless the host sets `MEMORY_SUBSTRATE_ROOT`.
+
 ## Current Data Model
 
 The canonical data is a structured object store under `memory/objects/`. Markdown files under `memory/projections/` are derived views and are not the source of truth.
@@ -300,6 +302,11 @@ Configure a default graph backend for the memory root:
 ```
 
 After configuration, omit `options.graph_backend` for normal `memory_remember`, `memory_query`, `memory_maintain report`, and `memory_maintain reindex` calls. Use per-call `options.graph_backend` only when intentionally overriding the root default.
+
+Semantic retrieval is configured the same way, but it only affects query/reindex paths. Configure it with `memory_maintain configure` and `semantic_backend: "lancedb"`, then run `memory_maintain reindex` to build `memory/indexes/semantic_lancedb` from canonical objects. When graph and semantic backends are both configured, `memory_query search` merges their results. Agents may use per-call `options.semantic_backend` when intentionally testing or overriding the root default.
+
+Semantic model loading is lazy. Starting the MCP server only registers tools; the first semantic `reindex` or `search` warms the embedding model cache in that MCP process, and later calls with the same model reuse it.
+After the model has been warmed once, MCP hosts can set `HF_HUB_OFFLINE=1` so semantic calls use cached BGE-M3 files without remote metadata checks.
 
 Run a graph-aware maintenance report:
 

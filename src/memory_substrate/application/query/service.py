@@ -7,6 +7,7 @@ from pathlib import Path
 from memory_substrate.domain.services.context_builder import ContextBuilder
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import utc_now_iso
+from memory_substrate.application.semantic.service import SemanticIndexService
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
 
@@ -40,7 +41,7 @@ QUERY_NORMALIZATION_RULES = (
 
 
 class QueryService:
-    def __init__(self, root: str | Path, graph_backend=None) -> None:
+    def __init__(self, root: str | Path, graph_backend=None, semantic_index: SemanticIndexService | None = None) -> None:
         """Create a query service bound to one memory-substrate root.
 
         Args:
@@ -52,6 +53,7 @@ class QueryService:
         self.builder = ContextBuilder(root)
         self.repository = FsObjectRepository(root)
         self.graph_backend = graph_backend
+        self.semantic_index = semantic_index
 
     def context(self, task: str, scope: dict | None = None, max_items: int = 12) -> dict:
         """Build a task-focused context pack from relevant memory objects.
@@ -263,55 +265,47 @@ class QueryService:
             }
 
         if self.graph_backend is not None:
-            graph_items = self._graph_search_terms(terms, max_items=max_items, filters=applied_filters)
-            return {
-                "result_type": "search_results",
-                "data": {
-                    "query": query,
-                    "items": graph_items[:max_items],
-                    "normalized_terms": terms,
-                    "applied_filters": applied_filters,
-                    "inferred_filters": plan["inferred_filters"],
-                    "suggested_retry_terms": [] if graph_items else terms[1:],
-                },
-                "warnings": [],
-            }
-
-        for object_type in ("node", "knowledge", "activity", "work_item", "source"):
-            for obj in self.repository.list(object_type):
-                if not self._matches_filters(object_type, obj, applied_filters):
-                    continue
-                title = str(obj.get("title") or obj.get("name") or obj["id"])
-                summary = str(obj.get("summary", ""))
-                payload = str(obj.get("payload", ""))
-                segments = self._segment_text(obj)
-                metadata = self._metadata_text(object_type, obj)
-                haystack = f"{title}\n{summary}\n{payload}\n{segments}\n{metadata}".lower()
-                matching_terms = [term for term in terms if term in haystack]
-                if not matching_terms:
-                    continue
-                score = max(
-                    self._score(
-                        term,
-                        title.lower(),
-                        summary.lower(),
-                        payload.lower(),
-                        segments.lower(),
-                        metadata.lower(),
+            items = self._graph_search_terms(terms, max_items=max_items, filters=applied_filters)
+        else:
+            for object_type in ("node", "knowledge", "activity", "work_item", "source"):
+                for obj in self.repository.list(object_type):
+                    if not self._matches_filters(object_type, obj, applied_filters):
+                        continue
+                    title = str(obj.get("title") or obj.get("name") or obj["id"])
+                    summary = str(obj.get("summary", ""))
+                    payload = str(obj.get("payload", ""))
+                    segments = self._segment_text(obj)
+                    metadata = self._metadata_text(object_type, obj)
+                    haystack = f"{title}\n{summary}\n{payload}\n{segments}\n{metadata}".lower()
+                    matching_terms = [term for term in terms if term in haystack]
+                    if not matching_terms:
+                        continue
+                    score = max(
+                        self._score(
+                            term,
+                            title.lower(),
+                            summary.lower(),
+                            payload.lower(),
+                            segments.lower(),
+                            metadata.lower(),
+                        )
+                        for term in matching_terms
                     )
-                    for term in matching_terms
-                )
-                items.append(
-                    {
-                        "object_type": object_type,
-                        "id": obj["id"],
-                        "kind": obj.get("kind", object_type),
-                        "title": title,
-                        "status": obj.get("status") or obj.get("lifecycle_state"),
-                        "summary": summary,
-                        "score": score,
-                    }
-                )
+                    items.append(
+                        {
+                            "object_type": object_type,
+                            "id": obj["id"],
+                            "kind": obj.get("kind", object_type),
+                            "title": title,
+                            "status": obj.get("status") or obj.get("lifecycle_state"),
+                            "summary": summary,
+                            "score": score,
+                            "retrieval_sources": ["lexical"],
+                        }
+                    )
+        if self.semantic_index is not None:
+            semantic_items = self.semantic_index.search(query, max_items=max_items, filters=applied_filters)
+            items = self._merge_search_items(items, semantic_items)
         items.sort(key=lambda item: (-item["score"], item["title"]))
         return {
             "result_type": "search_results",
@@ -322,9 +316,27 @@ class QueryService:
                 "applied_filters": applied_filters,
                 "inferred_filters": plan["inferred_filters"],
                 "suggested_retry_terms": [] if items else terms[1:],
+                "semantic_backend": self.semantic_index.__class__.__name__ if self.semantic_index is not None else None,
             },
             "warnings": [],
         }
+
+    def _merge_search_items(self, lexical_items: list[dict], semantic_items: list[dict]) -> list[dict]:
+        merged: dict[str, dict] = {item["id"]: dict(item) for item in lexical_items}
+        for item in semantic_items:
+            item_id = item["id"]
+            if item_id not in merged:
+                merged[item_id] = dict(item)
+                continue
+            existing = merged[item_id]
+            existing["score"] = max(existing.get("score", 0), item.get("score", 0))
+            existing["semantic_score"] = item.get("semantic_score")
+            sources = list(existing.get("retrieval_sources", []))
+            for source in item.get("retrieval_sources", []):
+                if source not in sources:
+                    sources.append(source)
+            existing["retrieval_sources"] = sources
+        return list(merged.values())
 
     def _graph_context(
         self, task: str, scope: dict | None = None, max_items: int = 12, plan: dict | None = None
@@ -429,7 +441,7 @@ class QueryService:
                 if not self._matches_filters(item.get("object_type", ""), item, filters):
                     continue
                 seen.add(item_id)
-                graph_items.append(item)
+                graph_items.append({**item, "retrieval_sources": ["graph"]})
                 if len(graph_items) >= max_items:
                     return graph_items
         return graph_items

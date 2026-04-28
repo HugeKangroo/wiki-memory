@@ -46,3 +46,14 @@ This file tracks the active execution queue for this repository. Keep it current
 - [x] Continue Cognee and LlamaIndex spikes only if they fit behind Memory Substrate governance.
 - [x] Keep hosted LLMs, local LLMs, Graphiti, and reasoner adapters optional.
 - [x] Treat Neo4j as an optional production backend after local contracts and migrations are stable.
+
+## P1: LanceDB Semantic Retrieval
+
+- [x] Spike LanceDB + BGE-M3 semantic retrieval against Chinese/English memory queries.
+- [x] Confirm LanceDB remains a derived index, not canonical storage.
+- [x] Add optional semantic dependencies for LanceDB and FlagEmbedding.
+- [x] Project canonical memory objects into semantic chunks.
+- [x] Rebuild the semantic index from `memory_maintain reindex`.
+- [x] Merge lexical and semantic results in `memory_query search`.
+- [x] Keep semantic search active when a graph backend is also configured.
+- [x] Add regression coverage for the `Codex dogfood MCP` query miss.

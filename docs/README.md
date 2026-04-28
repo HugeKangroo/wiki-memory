@@ -15,6 +15,7 @@ This repository has three kinds of documentation. Keep them separate so the curr
 - [Context Substrate Memory Core Research](research/2026-04-28-context-substrate-memory-core-research.md)
 - [Memory Backend Library Spike](research/2026-04-28-memory-backend-library-spike.md)
 - [Semantic Retrieval And Reasoner Evaluation](research/2026-04-28-semantic-retrieval-and-reasoner-evaluation.md)
+- [Semantic Retrieval Spike](research/2026-04-28-semantic-retrieval-spike.md)
 - [Source Notes](research/source-notes/): imported source material such as `argue.md` and `llmwiki.md`.
 
 Research notes are evidence and reasoning history. They are not the current product contract unless a current canonical doc cites a decision from them.

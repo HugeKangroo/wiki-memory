@@ -8,6 +8,8 @@ from memory_substrate.infrastructure.storage.paths import StoragePaths
 
 
 VALID_GRAPH_BACKENDS = {"file", "kuzu"}
+VALID_SEMANTIC_BACKENDS = {"lancedb"}
+DEFAULT_SEMANTIC_MODEL = "BAAI/bge-m3"
 
 
 class MemoryConfigRepository:
@@ -18,9 +20,10 @@ class MemoryConfigRepository:
 
     def get(self) -> dict[str, Any]:
         if not self.paths.config_path.exists():
-            return {"graph": {}}
+            return {"graph": {}, "semantic": {}}
         config = read_json(self.paths.config_path)
         config.setdefault("graph", {})
+        config.setdefault("semantic", {})
         return config
 
     def set_graph_backend(self, backend: str) -> dict[str, Any]:
@@ -34,3 +37,20 @@ class MemoryConfigRepository:
     def graph_backend(self) -> str | None:
         backend = self.get().get("graph", {}).get("backend")
         return str(backend) if backend else None
+
+    def set_semantic_backend(self, backend: str, model: str = DEFAULT_SEMANTIC_MODEL) -> dict[str, Any]:
+        if backend not in VALID_SEMANTIC_BACKENDS:
+            raise ValueError(f"Unsupported semantic backend: {backend}")
+        config = self.get()
+        config["semantic"]["backend"] = backend
+        config["semantic"]["model"] = model
+        write_json(self.paths.config_path, config)
+        return config
+
+    def semantic_backend(self) -> str | None:
+        backend = self.get().get("semantic", {}).get("backend")
+        return str(backend) if backend else None
+
+    def semantic_model(self) -> str | None:
+        model = self.get().get("semantic", {}).get("model")
+        return str(model) if model else None

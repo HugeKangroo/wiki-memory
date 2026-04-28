@@ -30,7 +30,7 @@ uv run memory-substrate-mcp
 
 The server runs over stdio using the official Python MCP SDK.
 
-By default, MCP tools use `~/memory-substrate` as the memory root on Linux and macOS when the caller does not pass an explicit `root`.
+By default, the MCP server uses `~/memory-substrate` as the memory root on Linux and macOS. Tool calls do not expose a `root` argument to agents; set `MEMORY_SUBSTRATE_ROOT` in the MCP host environment when a server instance should use a different root.
 
 ## MCP Tools
 
@@ -46,7 +46,6 @@ Every tool call uses this envelope:
 ```json
 {
   "args": {
-    "root": "/absolute/path/to/memory-substrate",
     "mode": "...",
     "input_data": {},
     "options": {}
@@ -56,7 +55,6 @@ Every tool call uses this envelope:
 
 Notes:
 
-- `root` is optional and defaults to `~/memory-substrate`.
 - `input_data` is required at the MCP boundary even when empty.
 - unexpected extra fields inside `args` are rejected.
 - mutating `memory_maintain` modes require `options.apply=true`.
@@ -112,6 +110,49 @@ Configure a root-level default graph backend with:
 
 Supported graph backend values are `file` and `kuzu`.
 
+## Optional LanceDB Semantic Index
+
+Semantic retrieval is optional and local-first. It uses BGE-M3 through FlagEmbedding and stores derived chunks in LanceDB under `memory/indexes/semantic_lancedb`.
+
+```bash
+uv sync --extra semantic
+```
+
+Configure a root-level default semantic backend with:
+
+```json
+{
+  "args": {
+    "mode": "configure",
+    "input_data": {
+      "semantic_backend": "lancedb"
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+Then rebuild the semantic index from canonical objects:
+
+```json
+{
+  "args": {
+    "mode": "reindex",
+    "input_data": {},
+    "options": {
+      "semantic_backend": "lancedb"
+    }
+  }
+}
+```
+
+The semantic index is not canonical storage. If it is deleted or the embedding model changes, run `memory_maintain reindex` to rebuild it.
+If a graph backend is also configured, `memory_query search` merges graph/lexical results with semantic hits and keeps canonical objects as the source of truth.
+The MCP server does not load the embedding model during startup. The first semantic `reindex` or `search` loads the model lazily, then reuses the same in-process provider for later calls with the same model.
+After the first model warmup, set `HF_HUB_OFFLINE=1` in the MCP host environment to force cached-only BGE-M3 loads without Hugging Face metadata checks.
+
 ## Host Configuration
 
 Most MCP hosts can run the server with this stdio command:
@@ -120,10 +161,17 @@ Most MCP hosts can run the server with this stdio command:
 {
   "memory-substrate": {
     "command": "uv",
-    "args": ["run", "--directory", "/absolute/path/to/memory-substrate", "memory-substrate-mcp"]
+    "args": ["run", "--directory", "/absolute/path/to/memory-substrate", "memory-substrate-mcp"],
+    "env": {
+      "MEMORY_SUBSTRATE_ROOT": "/absolute/path/to/memory-root",
+      "HF_HUB_OFFLINE": "1"
+    }
   }
 }
 ```
+
+Omit `MEMORY_SUBSTRATE_ROOT` to use the default `~/memory-substrate` root.
+Omit `HF_HUB_OFFLINE` until the semantic model has been downloaded or warmed once.
 
 Codex CLI:
 

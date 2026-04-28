@@ -26,6 +26,18 @@ class MemoryConfigRepositoryTest(unittest.TestCase):
             self.assertEqual(reloaded.graph_backend(), "file")
             self.assertTrue((Path(tmp) / "memory" / "config.json").exists())
 
+    def test_persists_default_semantic_backend_under_memory_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = MemoryConfigRepository(tmp)
+
+            result = repository.set_semantic_backend("lancedb")
+            reloaded = MemoryConfigRepository(tmp)
+
+            self.assertEqual(result["semantic"]["backend"], "lancedb")
+            self.assertEqual(result["semantic"]["model"], "BAAI/bge-m3")
+            self.assertEqual(reloaded.semantic_backend(), "lancedb")
+            self.assertEqual(reloaded.semantic_model(), "BAAI/bge-m3")
+
 
 if __name__ == "__main__":
     unittest.main()

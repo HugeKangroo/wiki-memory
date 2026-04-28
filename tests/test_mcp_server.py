@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -78,6 +79,7 @@ class McpServerTest(unittest.TestCase):
         self.assertIn("analyze evidence outside ingest", server.instructions)
         self.assertIn("memory_query before memory_remember", server.instructions)
         self.assertIn("reason, memory_source, and scope_refs", server.instructions)
+        self.assertIn("Do not pass memory root paths", server.instructions)
         self.assertNotIn("memory_query before memory_ingest", server.instructions)
         self.assertIn("options.apply=true", server.instructions)
 
@@ -180,21 +182,40 @@ class McpServerTest(unittest.TestCase):
             "#/$defs/ConversationMessage",
         )
 
-    def test_maintain_mutating_modes_require_explicit_apply_option(self) -> None:
+    def test_agent_facing_schema_does_not_expose_root_parameter(self) -> None:
+        server = create_server()
+        for tool in server._tool_manager.list_tools():
+            for definition in tool.parameters.get("$defs", {}).values():
+                properties = definition.get("properties", {})
+                if "mode" not in properties:
+                    continue
+                self.assertNotIn("root", properties)
+
+    def test_server_rejects_root_field_from_agent_calls(self) -> None:
         async def run_smoke() -> None:
             server = create_server()
+            with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
+                await server.call_tool(
+                    "memory_query",
+                    {"args": {"root": "/tmp/rogue-root", "mode": "recent", "input_data": {}}},
+                )
+
+        asyncio.run(run_smoke())
+
+    def test_maintain_mutating_modes_require_explicit_apply_option(self) -> None:
+        async def run_smoke() -> None:
             with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
                 with self.assertRaisesRegex(Exception, "apply"):
                     await server.call_tool(
                         "memory_maintain",
-                        {"args": {"root": tmpdir, "mode": "merge_duplicates", "input_data": {}}},
+                        {"args": {"mode": "merge_duplicates", "input_data": {}}},
                     )
                 with self.assertRaisesRegex(Exception, "apply"):
                     await server.call_tool(
                         "memory_maintain",
                         {
                             "args": {
-                                "root": tmpdir,
                                 "mode": "configure",
                                 "input_data": {"graph_backend": "file"},
                             }
@@ -205,7 +226,6 @@ class McpServerTest(unittest.TestCase):
                     "memory_maintain",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "merge_duplicates",
                             "input_data": {},
                             "options": {"apply": True},
@@ -220,13 +240,12 @@ class McpServerTest(unittest.TestCase):
 
     def test_server_omits_unset_optional_model_fields_before_dispatch(self) -> None:
         async def run_smoke() -> None:
-            server = create_server()
             with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
                 recent_result = await server.call_tool(
                     "memory_query",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "recent",
                             "input_data": {},
                             "options": {"filters": {"object_type": "knowledge"}},
@@ -240,7 +259,6 @@ class McpServerTest(unittest.TestCase):
                     "memory_maintain",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "cycle",
                             "input_data": {"reference_time": "2026-04-24T00:00:00+00:00"},
                             "options": {"apply": True},
@@ -264,17 +282,17 @@ class McpServerTest(unittest.TestCase):
 
     def test_server_smoke_lists_tools_and_calls_tool(self) -> None:
         async def run_smoke() -> None:
-            server = create_server()
-            tools = await server.list_tools()
-            self.assertEqual(
-                sorted(tool.name for tool in tools),
-                ["memory_ingest", "memory_maintain", "memory_query", "memory_remember"],
-            )
-
             with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
+                tools = await server.list_tools()
+                self.assertEqual(
+                    sorted(tool.name for tool in tools),
+                    ["memory_ingest", "memory_maintain", "memory_query", "memory_remember"],
+                )
+
                 structure_result = await server.call_tool(
                     "memory_maintain",
-                    {"args": {"root": tmpdir, "mode": "structure", "input_data": {}}},
+                    {"args": {"mode": "structure", "input_data": {}}},
                 )
                 structure_payload = json.loads(structure_result[0].text)
                 self.assertEqual(structure_payload["result_type"], "structure_report")
@@ -283,7 +301,7 @@ class McpServerTest(unittest.TestCase):
 
                 query_result = await server.call_tool(
                     "memory_query",
-                    {"args": {"root": tmpdir, "mode": "recent", "input_data": {}, "options": {"max_items": 5}}},
+                    {"args": {"mode": "recent", "input_data": {}, "options": {"max_items": 5}}},
                 )
                 query_payload = json.loads(query_result[0].text)
                 self.assertEqual(query_payload["result_type"], "recent")
@@ -293,8 +311,8 @@ class McpServerTest(unittest.TestCase):
 
     def test_server_smoke_uses_default_root_when_omitted(self) -> None:
         async def run_smoke() -> None:
-            server = create_server()
             with patch("memory_substrate.interfaces.mcp.tools.Path.home", return_value=Path("/tmp/fake-home")):
+                server = create_server()
                 query_result = await server.call_tool(
                     "memory_query",
                     {"args": {"mode": "recent", "input_data": {}, "options": {"max_items": 5}}},
@@ -305,22 +323,43 @@ class McpServerTest(unittest.TestCase):
 
         asyncio.run(run_smoke())
 
+    def test_server_root_can_be_configured_from_environment(self) -> None:
+        async def run_smoke() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                with patch.dict(os.environ, {"MEMORY_SUBSTRATE_ROOT": tmpdir}):
+                    server = create_server()
+                result = await server.call_tool(
+                    "memory_maintain",
+                    {
+                        "args": {
+                            "mode": "configure",
+                            "input_data": {"graph_backend": "file"},
+                            "options": {"apply": True},
+                        }
+                    },
+                )
+                payload = json.loads(result[0].text)
+                self.assertEqual(payload["result_type"], "maintain_configure_result")
+                self.assertTrue((Path(tmpdir) / "memory" / "config.json").exists())
+
+        asyncio.run(run_smoke())
+
     def test_server_converts_mode_specific_input_models_before_dispatch(self) -> None:
         async def run_smoke() -> None:
-            server = create_server()
             with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
                 note = Path(tmpdir) / "note.md"
                 note.write_text("# Note\n\nUseful context.\n", encoding="utf-8")
                 ingest_result = await server.call_tool(
                     "memory_ingest",
-                    {"args": {"root": tmpdir, "mode": "markdown", "input_data": {"path": str(note)}}},
+                    {"args": {"mode": "markdown", "input_data": {"path": str(note)}}},
                 )
                 ingest_payload = json.loads(ingest_result[0].text)
                 self.assertEqual(ingest_payload["segment_count"], 1)
 
                 query_result = await server.call_tool(
                     "memory_query",
-                    {"args": {"root": tmpdir, "mode": "search", "input_data": {"query": "missing"}}},
+                    {"args": {"mode": "search", "input_data": {"query": "missing"}}},
                 )
                 query_payload = json.loads(query_result[0].text)
                 self.assertEqual(query_payload["result_type"], "search_results")
@@ -330,7 +369,6 @@ class McpServerTest(unittest.TestCase):
                     "memory_maintain",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "promote_candidates",
                             "input_data": {"min_confidence": 0.8, "min_evidence": 2},
                             "options": {"apply": True},
@@ -345,13 +383,12 @@ class McpServerTest(unittest.TestCase):
 
     def test_server_allows_unstructured_knowledge_payload_for_soft_duplicates(self) -> None:
         async def run_smoke() -> None:
-            server = create_server()
             with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
                 first_result = await server.call_tool(
                     "memory_remember",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "knowledge",
                             "input_data": {
                                 "kind": "decision",
@@ -372,7 +409,6 @@ class McpServerTest(unittest.TestCase):
                     "memory_remember",
                     {
                         "args": {
-                            "root": tmpdir,
                             "mode": "knowledge",
                             "input_data": {
                                 "kind": "decision",

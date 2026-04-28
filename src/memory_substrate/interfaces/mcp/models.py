@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 GraphBackendName = Literal["file", "kuzu"]
+SemanticBackendName = Literal["lancedb"]
 MemorySourceName = Literal["user_declared", "human_curated", "agent_inferred", "system_generated", "imported"]
 
 
@@ -24,7 +25,6 @@ class EmptyOptions(StrictModel):
 class BaseToolArgs(StrictModel):
     """Shared top-level MCP tool arguments."""
 
-    root: str | None = Field(default=None, description="Memory root path. Defaults to ~/memory-substrate when omitted.")
     options: EmptyOptions | None = None
 
 
@@ -87,6 +87,7 @@ class QueryOptions(StrictModel):
     max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
     graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override for context, search, and graph modes.")
+    semantic_backend: SemanticBackendName | None = Field(default=None, description="Optional semantic backend override for search mode.")
 
 
 class RememberOptions(StrictModel):
@@ -105,6 +106,7 @@ class ReindexOptions(StrictModel):
     """Options for rebuilding projections and optional graph indexes."""
 
     graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override to rebuild from canonical objects.")
+    semantic_backend: SemanticBackendName | None = Field(default=None, description="Optional semantic backend override to rebuild from canonical objects.")
 
 
 class ApplyOptions(StrictModel):
@@ -441,7 +443,8 @@ class MaintainLifecycleReportInput(StrictModel):
 class MaintainConfigureInput(StrictModel):
     """Input payload for setting root-level memory defaults."""
 
-    graph_backend: GraphBackendName = Field(description="Default graph backend used when tool options omit graph_backend.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Default graph backend used when tool options omit graph_backend.")
+    semantic_backend: SemanticBackendName | None = Field(default=None, description="Default semantic backend used when tool options omit semantic_backend.")
 
 
 class MaintainApplyArgs(BaseToolArgs):

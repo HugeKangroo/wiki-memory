@@ -15,6 +15,10 @@ dependencies = [
 kuzu = [
     "kuzu>=0.11.2",
 ]
+semantic = [
+    "FlagEmbedding>=1.4.0",
+    "lancedb>=0.25.3",
+]
 
 [project.scripts]
 memory-substrate-mcp = "memory_substrate.interfaces.mcp.server:main"

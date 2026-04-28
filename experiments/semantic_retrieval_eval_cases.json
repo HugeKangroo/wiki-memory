@@ -1,0 +1,22 @@
+[
+  {
+    "query": "是否需要第二个模型 API key",
+    "expected_object_id": "synthetic:local-first"
+  },
+  {
+    "query": "Codex 能不能调用记忆 MCP",
+    "expected_object_id": "synthetic:codex-dogfood"
+  },
+  {
+    "query": "向量数据库是不是原始数据源",
+    "expected_object_id": "synthetic:semantic-index"
+  },
+  {
+    "query": "知识图谱本地后端用什么",
+    "expected_object_id": "synthetic:kuzu"
+  },
+  {
+    "query": "重复知识如何处理",
+    "expected_object_id": "synthetic:soft-duplicates"
+  }
+]

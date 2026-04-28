@@ -71,7 +71,6 @@ All tool calls use:
 ```json
 {
   "args": {
-    "root": "/optional/memory/root",
     "mode": "...",
     "input_data": {},
     "options": {}
@@ -79,7 +78,7 @@ All tool calls use:
 }
 ```
 
-`root` defaults to `~/memory-substrate`. `input_data` is required even when empty. Mutating maintain modes require `options.apply=true`.
+The server root is configured outside tool calls and defaults to `~/memory-substrate` unless `MEMORY_SUBSTRATE_ROOT` is set. `input_data` is required even when empty. Mutating maintain modes require `options.apply=true`.
 """
 
 

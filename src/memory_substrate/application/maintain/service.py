@@ -5,6 +5,7 @@ from pathlib import Path
 from memory_substrate.application.graph.health import GraphHealthReporter
 from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.application.maintain.lifecycle import MaintenanceLifecycle
+from memory_substrate.application.semantic.service import SemanticIndexService
 from memory_substrate.domain.services.repair_engine import RepairEngine
 from memory_substrate.domain.services.structure_validator import StructureValidator
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
@@ -12,7 +13,7 @@ from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
 class MaintainService:
-    def __init__(self, root: str | Path, graph_backend=None) -> None:
+    def __init__(self, root: str | Path, graph_backend=None, semantic_index: SemanticIndexService | None = None) -> None:
         """Create a maintain service bound to one memory-substrate root.
 
         Args:
@@ -29,6 +30,7 @@ class MaintainService:
         self.lifecycle = MaintenanceLifecycle(self.root)
         self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
         self.graph_health = GraphHealthReporter(self.root, graph_backend) if graph_backend is not None else None
+        self.semantic_index = semantic_index
 
     def structure(self) -> dict:
         """Validate memory object structure and projection consistency.
@@ -68,6 +70,8 @@ class MaintainService:
         result = self.projector.rebuild()
         if self.graph_sync is not None:
             result = {**result, "graph_sync": self.graph_sync.sync_all()}
+        if self.semantic_index is not None:
+            result = {**result, "semantic_index": self.semantic_index.rebuild()}
         return {
             "result_type": "reindex_result",
             "data": result,

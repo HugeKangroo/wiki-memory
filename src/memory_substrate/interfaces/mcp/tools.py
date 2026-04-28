@@ -8,16 +8,17 @@ from memory_substrate.application.maintain.service import MaintainService
 from memory_substrate.application.query.service import QueryService
 from memory_substrate.infrastructure.config.repository import MemoryConfigRepository
 from memory_substrate.infrastructure.graph.factory import create_graph_backend
+from memory_substrate.infrastructure.semantic.factory import create_semantic_index_service
 
 
 MUTATING_MAINTAIN_MODES = {"configure", "repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
 
 
 def resolve_root(root: str | Path | None) -> Path:
-    """Resolve an optional MCP root argument to a concrete memory-substrate root.
+    """Resolve an optional server or direct-dispatch root to a concrete memory-substrate root.
 
     Args:
-        root: Optional root path supplied by the host agent.
+        root: Optional root path supplied by server configuration or direct tests.
 
     Returns:
         Expanded memory-substrate root path, defaulting to ~/memory-substrate.
@@ -40,6 +41,12 @@ def _requested_graph_backend(root: Path, options: dict | None) -> str | None:
     return MemoryConfigRepository(root).graph_backend()
 
 
+def _requested_semantic_backend(root: Path, options: dict | None) -> str | None:
+    if options and options.get("semantic_backend"):
+        return options["semantic_backend"]
+    return MemoryConfigRepository(root).semantic_backend()
+
+
 def _close_graph_backend(graph_backend) -> None:
     close = getattr(graph_backend, "close", None)
     if callable(close):
@@ -50,7 +57,7 @@ def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options:
     """Dispatch memory_ingest MCP calls to repository, file, web, PDF, or conversation ingest.
 
     Args:
-        root: Optional memory-substrate root directory; defaults to ~/memory-substrate when omitted.
+        root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
         mode: Ingest mode such as repo, file, markdown, web, pdf, or conversation.
         input_data: Mode-specific payload validated by the MCP argument model.
         options: Optional execution flags reserved for future ingest behavior.
@@ -83,7 +90,7 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
     """Dispatch memory_query MCP calls to context, expansion, page, graph, recent, or search queries.
 
     Args:
-        root: Optional memory-substrate root directory; defaults to ~/memory-substrate when omitted.
+        root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
         mode: Query mode such as context, expand, page, recent, search, or graph.
         input_data: Mode-specific query payload validated by the MCP argument model.
         options: Optional query controls such as max_items and filters.
@@ -94,11 +101,13 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
     options = options or {}
     resolved_root = resolve_root(root)
     graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
-    service = (
-        QueryService(resolved_root, graph_backend=graph_backend)
-        if graph_backend is not None
-        else QueryService(resolved_root)
-    )
+    semantic_index = create_semantic_index_service(resolved_root, _requested_semantic_backend(resolved_root, options))
+    service_kwargs = {}
+    if graph_backend is not None:
+        service_kwargs["graph_backend"] = graph_backend
+    if semantic_index is not None:
+        service_kwargs["semantic_index"] = semantic_index
+    service = QueryService(resolved_root, **service_kwargs)
     try:
         if mode == "context":
             return service.context(
@@ -128,7 +137,7 @@ def memory_remember(root: str | Path | None, mode: str, input_data: dict, option
     """Dispatch memory_remember MCP calls that write durable memory objects.
 
     Args:
-        root: Optional memory-substrate root directory; defaults to ~/memory-substrate when omitted.
+        root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
         mode: Remember mode such as activity, knowledge, work_item, promote, supersede, contest, or batch.
         input_data: Mode-specific mutation payload validated by the MCP argument model.
         options: Optional execution flags reserved for future remember behavior.
@@ -185,7 +194,7 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
     """Dispatch memory_maintain MCP calls for validation, repair, reindexing, and lifecycle workflows.
 
     Args:
-        root: Optional memory-substrate root directory; defaults to ~/memory-substrate when omitted.
+        root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
         mode: Maintain mode such as structure, audit, reindex, repair, promote_candidates, cycle, or report.
         input_data: Optional mode-specific payload.
         options: Optional controls such as max_items for audit reads.
@@ -198,18 +207,25 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
     _require_apply(mode, options)
     resolved_root = resolve_root(root)
     if mode == "configure":
-        config = MemoryConfigRepository(resolved_root).set_graph_backend(input_data["graph_backend"])
+        repository = MemoryConfigRepository(resolved_root)
+        config = repository.get()
+        if input_data.get("graph_backend"):
+            config = repository.set_graph_backend(input_data["graph_backend"])
+        if input_data.get("semantic_backend"):
+            config = repository.set_semantic_backend(input_data["semantic_backend"])
         return {
             "result_type": "maintain_configure_result",
             "data": {"config": config},
             "warnings": [],
         }
     graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
-    service = (
-        MaintainService(resolved_root, graph_backend=graph_backend)
-        if graph_backend is not None
-        else MaintainService(resolved_root)
-    )
+    semantic_index = create_semantic_index_service(resolved_root, _requested_semantic_backend(resolved_root, options))
+    service_kwargs = {}
+    if graph_backend is not None:
+        service_kwargs["graph_backend"] = graph_backend
+    if semantic_index is not None:
+        service_kwargs["semantic_index"] = semantic_index
+    service = MaintainService(resolved_root, **service_kwargs)
     try:
         if mode == "structure":
             return service.structure()
