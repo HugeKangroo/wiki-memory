@@ -66,12 +66,12 @@ class QuerySemanticTest(unittest.TestCase):
                 ]
             )
 
-            result = QueryService(tmp, semantic_index=semantic).search("Codex dogfood MCP", max_items=5)
+            result = QueryService(tmp, semantic_index=semantic).search("external recall proof", max_items=5)
 
             self.assertEqual([item["id"] for item in result["data"]["items"]], ["know:dogfood"])
             self.assertEqual(result["data"]["items"][0]["retrieval_sources"], ["semantic"])
             self.assertEqual(result["data"]["semantic_backend"], "FakeSemanticService")
-            self.assertEqual(semantic.calls[0]["query"], "Codex dogfood MCP")
+            self.assertEqual(semantic.calls[0]["query"], "external recall proof")
 
     def test_search_merges_lexical_and_semantic_hits_for_same_object(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

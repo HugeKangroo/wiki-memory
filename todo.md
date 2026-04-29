@@ -70,3 +70,171 @@ This file tracks the active execution queue for this repository. Keep it current
 - [x] Make `memory_query page` compact by default with explicit `options.detail: "full"` for complete stored objects.
 - [x] Bound and truncate source segment excerpts returned by `memory_query expand`.
 - [x] Shorten repo source summaries and MCP server instructions.
+
+## Active Execution Queue
+
+### MS-01: Retrieval Fusion And Query Matching
+
+Status: `completed`
+
+Goal: make `memory_query search` robust when users and agents do not phrase queries with exact stored keywords.
+
+Boundary: memory-core retrieval only. Do not adopt llm_wiki desktop/wiki UI, web clipper, or knowledge-collection workflows.
+
+Deliverables:
+- [x] Replace lexical/semantic score max-merge with rank-based fusion such as Reciprocal Rank Fusion.
+- [x] Improve lexical query planning with phrase, title, filename/id, and CJK bigram signals.
+- [x] Return matched semantic chunks with source locators, excerpts, and chunk scores in query results.
+- [x] Document retrieval scoring behavior in MCP docs.
+
+Verification:
+- [x] Add focused unit tests for lexical phrase/title/id/CJK matching.
+- [x] Add semantic merge tests using a fake semantic index.
+- [x] Run `uv run --group dev python -m pytest tests/test_query_normalization.py tests/test_semantic_index_service.py tests/test_mcp_server.py`.
+- [x] Run non-semantic main path: `uv run --group dev python -m pytest -k 'not lance and not semantic'`.
+
+### MS-02: Source Chunking And Evidence Quality
+
+Status: `completed`
+
+Goal: make source segments and semantic chunks preserve document structure and citeable locations.
+
+Boundary: deterministic source/evidence preparation. Do not introduce mandatory LLM extraction or hosted services.
+
+Deliverables:
+- [x] Add a Markdown-aware document chunker for ingest and semantic indexing.
+- [x] Preserve heading breadcrumbs, code fences, tables, frontmatter boundaries, overlap, and source offsets in chunks.
+- [x] Reuse one chunking contract across `memory_ingest`, source segments, and semantic rebuild.
+- [x] Include source locators and heading breadcrumbs in semantic chunks.
+
+Verification:
+- [x] Add tests for CJK text, code blocks, markdown tables, YAML frontmatter, and oversized sections.
+- [x] Add ingest tests proving source segments carry stable locators and hashes.
+- [x] Run `uv run --group dev python -m pytest tests/test_phase1_acceptance.py tests/test_semantic_index_service.py`.
+
+### MS-03: Source Robustness From llm_wiki Upstream
+
+Status: `completed`
+
+Goal: absorb upstream llm_wiki source-hardening lessons without shifting Memory Substrate into a desktop knowledge collector.
+
+Boundary: adapters and projections only. Canonical memory objects remain independent of document extraction libraries.
+
+Deliverables:
+- [x] Add robust frontmatter parsing/sanitizing for LLM-generated or imported markdown projections.
+- [x] Evaluate PDF/DOCX/XLSX extraction dependencies for source capture; keep them behind ingest adapters and not core storage.
+- [x] Treat multimodal image extraction/captioning as optional evidence capture for document-heavy knowledge work, not a memory-core prerequisite.
+- [x] Add source deletion/cascade cleanup semantics only after source manifests and provenance policies are explicit.
+
+Verification:
+- [x] Add projection tests for fenced YAML, misplaced `frontmatter:`, wikilink lists, and malformed frontmatter fallback.
+- [x] Add dependency decision notes before adding document extraction packages.
+- [x] Run `uv run --group dev python -m pytest tests/test_obsidian_projection.py tests/test_structure_validation.py`.
+
+### MS-04: Graph Maintenance Insights
+
+Status: `completed`
+
+Goal: make `memory_maintain report` surface graph-health issues that agents can act on.
+
+Boundary: maintain/report output first. Defer visualization and UI concerns to product layers.
+
+Deliverables:
+- [x] Add deterministic graph health insights to `memory_maintain report`: isolated nodes, sparse clusters, bridge nodes, and weakly connected scopes.
+- [x] Evaluate a local Python graph analysis library, such as `networkx`, before considering UI-oriented graphology/sigma dependencies.
+- [x] Keep graph insights as maintain/report output for agents first; defer visualization to a separate product layer.
+
+Verification:
+- [x] Add graph-health report tests with a small synthetic memory graph.
+- [x] Run `uv run --group dev python -m pytest tests/test_maintain_service.py tests/test_graph_health_report.py`.
+
+### MS-05: MCP Query Sanitizer And Diagnostics
+
+Status: `completed`
+
+Goal: prevent long agent prompts, system instructions, and scratchpads from polluting `memory_query` retrieval.
+
+Boundary: query-service hardening only. Do not add LLM query rewriting or a new retrieval library for this slice.
+
+Deliverables:
+- [x] Review MemPalace design lessons and capture them in `docs/research/2026-04-30-mempalace-design-review.md`.
+- [x] Sanitize long `memory_query search` text before query planning.
+- [x] Sanitize long `memory_query context` task text before context building.
+- [x] Return `query_sanitizer` diagnostics and warnings when sanitization occurs.
+- [x] Update MCP usage and API docs.
+
+Verification:
+- [x] Add focused tests for labeled long-prompt sanitization in search and context.
+- [x] Run `uv run --group dev python -m pytest tests/test_query_normalization.py::QueryNormalizationTest::test_search_sanitizes_long_agent_prompt_before_planning_terms tests/test_query_normalization.py::QueryNormalizationTest::test_context_sanitizes_long_agent_prompt_and_reports_diagnostics`.
+
+### MS-06: Source Adapter Metadata Contract
+
+Status: `completed`
+
+Goal: make `memory_ingest` outputs self-describing across repos, markdown, conversations, and future source adapters.
+
+Boundary: adapter metadata and source payloads only. Do not add heavy document extraction dependencies in this slice.
+
+Deliverables:
+- [x] Define adapter metadata fields: adapter name, adapter version, supported mode, declared transformations, privacy class, and origin classification.
+- [x] Attach adapter metadata to repo and markdown ingested sources.
+- [x] Add deterministic freshness/currentness hints where available.
+- [x] Update `docs/mcp-api-reference.md` and `docs/agent-memory-mcp-usage.md`.
+
+Verification:
+- [x] Add source ingest tests for repo and markdown adapter metadata.
+- [x] Run focused source metadata tests in `tests/test_phase1_acceptance.py`.
+
+### MS-07: Tiered Context Pack Contract
+
+Status: `completed`
+
+Goal: evolve `memory_query context` into budgeted work-ready context instead of a flat item list.
+
+Boundary: context pack contract and query output shape. Do not add UI or visualization.
+
+Deliverables:
+- [x] Define context tiers for policy, active task, decisions, procedures, evidence, open work, and deep-search hints.
+- [x] Keep compact defaults and bounded excerpts.
+- [x] Preserve existing fields during the transition where practical.
+- [x] Update MCP resources so an agent with no repo context can still use the tiers correctly.
+
+Verification:
+- [x] Add context budget and tier-order tests.
+- [x] Run focused context pack contract tests.
+
+### MS-08: Derived Index Repair And Retrieval Benchmark Harness
+
+Status: `completed`
+
+Goal: make semantic and graph indexes auditable, rebuildable, and measurable.
+
+Boundary: local diagnostics and small deterministic benchmark data. Do not introduce hosted services.
+
+Deliverables:
+- [x] Add derived-index repair checks that compare index counts against canonical objects before destructive rebuilds.
+- [x] Add planted-needle retrieval benchmark cases for lexical, semantic, and hybrid retrieval.
+- [x] Report recall and latency separately per retrieval stream.
+- [x] Document when to run benchmarks and how to interpret regressions.
+
+Verification:
+- [x] Add repair-safety tests for missing or stale semantic index entries.
+- [x] Add a small benchmark smoke test that runs without network access.
+
+### MS-09: Memory Fact-Checker And Lifecycle Lint
+
+Status: `completed`
+
+Goal: surface entity confusion, stale facts, and relationship mismatches without automatic mutation.
+
+Boundary: advisory `memory_maintain report` output only. Do not auto-contest, supersede, or merge facts.
+
+Deliverables:
+- [x] Report similar entity names that may cause incorrect recall.
+- [x] Report stale active facts using `valid_until`, `last_verified_at`, status, and evidence age where available.
+- [x] Report relationship mismatches for structured claims with clear subject/predicate/object conflicts.
+- [x] Add next-action guidance for promote, contest, supersede, or keep-both review.
+
+Verification:
+- [x] Add maintain report tests with synthetic entity-confusion and stale-fact fixtures.
+- [x] Run focused maintain report fact-check test.

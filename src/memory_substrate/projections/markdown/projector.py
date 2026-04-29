@@ -8,6 +8,7 @@ import subprocess
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 from memory_substrate.infrastructure.storage.fs_utils import ensure_directory
 from memory_substrate.infrastructure.storage.paths import StoragePaths
+from memory_substrate.projections.markdown.frontmatter import render_frontmatter
 
 
 PROJECTION_DIRS = {
@@ -104,12 +105,12 @@ class MarkdownProjector:
         return f"---\n{frontmatter}\n---\n\n{body}\n"
 
     def _frontmatter(self, obj: dict) -> str:
-        lines = []
+        metadata = {}
         for key in ("id", "kind", "status", "lifecycle_state", "created_at", "updated_at"):
             value = obj.get(key)
             if value is not None:
-                lines.append(f"{key}: {value}")
-        return "\n".join(lines)
+                metadata[key] = value
+        return render_frontmatter(metadata)
 
     def _body(self, object_type: str, obj: dict) -> str:
         if object_type == "source":

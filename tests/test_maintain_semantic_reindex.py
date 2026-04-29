@@ -21,7 +21,26 @@ class FakeSemanticService:
 
     def rebuild(self) -> dict:
         self.called = True
-        return {"backend": "fake", "model": "fake-model", "chunk_count": 1}
+        return {
+            "backend": "fake",
+            "model": "fake-model",
+            "chunk_count": 1,
+            "integrity_check": {
+                "canonical_chunk_count": 1,
+                "indexed_chunk_count": 1,
+                "safe_rebuild": True,
+            },
+        }
+
+    def diagnostics(self) -> dict:
+        return {
+            "backend": "fake",
+            "model": "fake-model",
+            "canonical_chunk_count": 1,
+            "indexed_chunk_count": 0,
+            "missing_from_index": 1,
+            "stale_index": True,
+        }
 
 
 class MaintainSemanticReindexTest(unittest.TestCase):
@@ -44,6 +63,16 @@ class MaintainSemanticReindexTest(unittest.TestCase):
             self.assertTrue(semantic.called)
             self.assertEqual(result["data"]["semantic_index"]["backend"], "fake")
             self.assertEqual(result["data"]["semantic_index"]["chunk_count"], 1)
+            self.assertTrue(result["data"]["semantic_index"]["integrity_check"]["safe_rebuild"])
+
+    def test_repair_reports_semantic_index_safety_diagnostics(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            semantic = FakeSemanticService()
+
+            result = MaintainService(tmp, semantic_index=semantic).repair()
+
+            self.assertEqual(result["data"]["derived_indexes"]["semantic"]["missing_from_index"], 1)
+            self.assertTrue(result["data"]["derived_indexes"]["semantic"]["stale_index"])
 
 
 if __name__ == "__main__":

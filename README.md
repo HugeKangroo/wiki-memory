@@ -19,6 +19,9 @@ Research and design history:
 - [Context Substrate Memory Core Research](docs/research/2026-04-28-context-substrate-memory-core-research.md)
 - [Memory Backend Library Spike](docs/research/2026-04-28-memory-backend-library-spike.md)
 - [Semantic Retrieval And Reasoner Evaluation](docs/research/2026-04-28-semantic-retrieval-and-reasoner-evaluation.md)
+- [Source Extraction Dependency Decision](docs/research/2026-04-29-source-extraction-dependency-decision.md)
+- [Graph Health Dependency Decision](docs/research/2026-04-29-graph-health-dependency-decision.md)
+- [MemPalace Design Review](docs/research/2026-04-30-mempalace-design-review.md)
 - [Source Notes](docs/research/source-notes/)
 
 ## Quick Start

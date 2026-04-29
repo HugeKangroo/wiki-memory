@@ -5,6 +5,8 @@ import re
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from memory_substrate.domain.services.document_chunker import DocumentChunker
+
 
 @dataclass(slots=True)
 class ParsedModule:
@@ -30,6 +32,8 @@ class ParsedDocumentSection:
     line_start: int
     line_end: int
     excerpt: str
+    heading_path: list[str] = field(default_factory=list)
+    chunk_kind: str = "section"
     parser_backend: str = "fallback"
 
 
@@ -68,11 +72,25 @@ class TreeSitterParser:
         return None
 
     def parse_markdown(self, root: Path, path: Path) -> list[ParsedDocumentSection]:
-        if self._backend == "tree_sitter_language_pack":
-            sections = self._parse_markdown_with_language_pack(root, path)
-            if sections:
-                return sections
-        return self._parse_markdown_headings(root, path, parser_backend="fallback")
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+        chunks = DocumentChunker().chunk_markdown(source)
+        return [
+            ParsedDocumentSection(
+                path=str(path.relative_to(root)),
+                heading=chunk.title,
+                level=chunk.level,
+                line_start=chunk.line_start,
+                line_end=chunk.line_end,
+                excerpt=chunk.excerpt,
+                heading_path=chunk.heading_path,
+                chunk_kind=chunk.kind,
+                parser_backend="document_chunker.v1",
+            )
+            for chunk in chunks
+        ]
 
     def _parse_with_language_pack(self, root: Path, path: Path, language: str) -> ParsedModule | None:
         if self._get_parser is None:

@@ -29,5 +29,7 @@ class ContextPack:
     recommended_next_reads: list[str] = field(default_factory=list)
     citations: list[dict] = field(default_factory=list)
     freshness: dict = field(default_factory=dict)
+    context_tiers: dict = field(default_factory=dict)
+    context_budget: dict = field(default_factory=dict)
     generated_at: str = ""
     expires_at: str | None = None

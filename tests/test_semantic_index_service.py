@@ -22,13 +22,18 @@ class FakeSemanticIndex:
     def __init__(self) -> None:
         self.rebuilt_chunks = []
         self.hits = []
+        self.count = 0
 
     def rebuild(self, chunks):
         self.rebuilt_chunks = list(chunks)
+        self.count = len(self.rebuilt_chunks)
         return {"backend": self.backend_name, "model": self.model_name, "chunk_count": len(self.rebuilt_chunks)}
 
     def search(self, query: str, limit: int = 20):
         return self.hits[:limit]
+
+    def count_chunks(self) -> int:
+        return self.count
 
 
 class SemanticIndexServiceTest(unittest.TestCase):
@@ -58,7 +63,7 @@ class SemanticIndexServiceTest(unittest.TestCase):
                         {
                             "segment_id": "seg-1",
                             "excerpt": "LanceDB is a derived vector index.",
-                            "locator": {"path": "note.md"},
+                            "locator": {"path": "note.md", "heading_path": ["Design", "Semantic"]},
                             "hash": "h1",
                         }
                     ],
@@ -76,6 +81,10 @@ class SemanticIndexServiceTest(unittest.TestCase):
             self.assertEqual(knowledge_chunk.object_type, "knowledge")
             self.assertIn("second hosted LLM API key", knowledge_chunk.text)
             self.assertEqual(knowledge_chunk.scope_refs, ["scope:memory-substrate"])
+            source_chunk = next(chunk for chunk in fake.rebuilt_chunks if chunk.object_id == "src:note")
+            self.assertEqual(source_chunk.locator, {"path": "note.md", "heading_path": ["Design", "Semantic"]})
+            self.assertEqual(source_chunk.heading_path, ["Design", "Semantic"])
+            self.assertIn("Design > Semantic", source_chunk.text)
 
     def test_search_maps_semantic_hits_back_to_canonical_objects_and_filters(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -104,6 +113,76 @@ class SemanticIndexServiceTest(unittest.TestCase):
             self.assertEqual(result[0]["object_type"], "knowledge")
             self.assertEqual(result[0]["retrieval_sources"], ["semantic"])
             self.assertGreater(result[0]["semantic_score"], 0.0)
+
+    def test_search_returns_matched_source_chunks_with_locators(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FsObjectRepository(tmp)
+            repository.save(
+                "source",
+                {
+                    "id": "src:design-note",
+                    "kind": "markdown",
+                    "title": "Design note",
+                    "status": "active",
+                    "segments": [
+                        {
+                            "segment_id": "seg-1",
+                            "excerpt": "Hybrid retrieval should expose source locators for agent follow-up.",
+                            "locator": {"path": "docs/design.md", "line_start": 12, "line_end": 18},
+                            "hash": "h1",
+                        },
+                        {
+                            "segment_id": "seg-2",
+                            "excerpt": "Other content.",
+                            "locator": {"path": "docs/design.md", "line_start": 30},
+                            "hash": "h2",
+                        },
+                    ],
+                },
+            )
+            fake = FakeSemanticIndex()
+            fake.hits = [{"object_id": "src:design-note", "chunk_id": "src:design-note#seg-1", "distance": 0.1}]
+
+            result = SemanticIndexService(tmp, fake).search("where is hybrid retrieval described", max_items=5)
+
+            self.assertEqual([item["id"] for item in result], ["src:design-note"])
+            self.assertEqual(
+                result[0]["matched_chunks"],
+                [
+                    {
+                        "chunk_id": "src:design-note#seg-1",
+                        "segment_id": "seg-1",
+                        "semantic_score": 0.9,
+                        "distance": 0.1,
+                        "locator": {"path": "docs/design.md", "line_start": 12, "line_end": 18},
+                        "excerpt": "Hybrid retrieval should expose source locators for agent follow-up.",
+                        "hash": "h1",
+                    }
+                ],
+            )
+
+    def test_diagnostics_compares_canonical_chunks_to_index_count(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = FsObjectRepository(tmp)
+            repository.save(
+                "knowledge",
+                {
+                    "id": "know:indexed",
+                    "kind": "fact",
+                    "title": "Indexed fact",
+                    "summary": "Should be in the semantic index.",
+                    "status": "active",
+                },
+            )
+            fake = FakeSemanticIndex()
+            fake.count = 0
+
+            diagnostics = SemanticIndexService(tmp, fake).diagnostics()
+
+            self.assertEqual(diagnostics["canonical_chunk_count"], 1)
+            self.assertEqual(diagnostics["indexed_chunk_count"], 0)
+            self.assertEqual(diagnostics["missing_from_index"], 1)
+            self.assertTrue(diagnostics["stale_index"])
 
 
 if __name__ == "__main__":

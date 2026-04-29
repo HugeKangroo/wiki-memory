@@ -31,12 +31,12 @@ Current backend stance:
 
 ## Parser Strategy
 
-Use a single-primary parser strategy for repo ingest.
+Use a single-primary parser strategy per source category for repo ingest.
 
 Current parser stance:
 
-- require `tree-sitter-language-pack==1.6.0` as the primary parser library
-- use the same parser boundary for code symbols and Markdown documentation sections
+- require `tree-sitter-language-pack==1.6.0` as the primary parser library for code symbols
+- use `document_chunker.v1` as the primary Markdown/document chunking contract for source segments, repo documentation sections, and semantic chunks
 - use stdlib AST to enrich Python signatures and docstrings because it is stronger than tree-sitter for that specific semantic layer
 - keep regex parsing only as a defensive fallback if parser loading fails
 - add another external parser library only after the primary parser cannot reliably provide a required structure
@@ -48,11 +48,18 @@ Do not jump directly to vector search to solve known domain vocabulary gaps.
 Near-term order:
 
 1. query normalization and synonym expansion
-2. type/status/scope-aware retrieval
-3. unstructured soft duplicate candidates
-4. maintain report/review support
-5. graph-backed expansion
-6. embedding/vector/hybrid retrieval only after deterministic gaps are clear
+2. long agent-prompt sanitization before retrieval
+3. type/status/scope-aware retrieval
+4. unstructured soft duplicate candidates
+5. maintain report/review support
+6. graph-backed expansion
+7. embedding/vector/hybrid retrieval only after deterministic gaps are clear
+
+External memory systems should be mined for proven failure-mode fixes, not copied wholesale. MemPalace specifically supports three local lessons:
+
+- keep raw evidence separate from durable memory objects
+- treat compact indexes as reranking or hydration signals, not canonical truth
+- harden MCP query behavior against prompt contamination, index failures, and exact-noun misses before adding larger retrieval engines
 
 ## Agent And MCP Strategy
 

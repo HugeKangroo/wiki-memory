@@ -21,7 +21,7 @@ The canonical data is a structured object store under `memory/objects/`. Markdow
 Current canonical object types:
 
 - `source`: durable evidence origin, such as a file, repository, web page, PDF, or conversation.
-- `source.segments`: citable evidence slices inside a source, each with a locator, excerpt, and hash.
+- `source.segments`: citable evidence slices inside a source, each with a locator, excerpt, hash, line range, and optional heading breadcrumbs.
 - `node`: reusable long-lived entity, such as a project, person, file, concept, tool, preference, or decision anchor.
 - `knowledge`: a claim the system believes or is evaluating. It carries subject refs, evidence refs, optional structured payload, status, confidence, and validity windows.
 - `activity`: completed work or analysis, linked to nodes, work items, sources, produced objects, and artifacts.
@@ -69,7 +69,9 @@ Use the four MCP tools with strict boundaries:
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
-Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, symbols, and line locators when available; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code or full documents.
+Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, symbols, and line locators when available; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Markdown/document source segments follow `document_chunker.v1`: frontmatter, heading sections, fenced code, tables, line ranges, and heading breadcrumbs are preserved in bounded chunks. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code or full documents.
+
+Source objects include `metadata.adapter` and `metadata.freshness`. Use these fields to understand how evidence was captured: adapter version, mode, declared transformations, privacy class, origin classification, currentness, and fingerprint. Do not treat adapter metadata as extracted durable knowledge; use `memory_remember` for durable conclusions.
 
 Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it excludes those entries from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`, `requires_decision: true`, `pending_decisions`, `excluded_by_preflight`, `warnings`, and `suggested_exclude_patterns`. Treat this as a decision point for the pending entries, not as a failed ingest. Use `options.force: true` only when those entries are intentionally part of the evidence.
 
@@ -102,10 +104,11 @@ Before ending substantial work:
 
 ## Query Retry Discipline
 
-Current search behavior includes deterministic query normalization, but it is still primarily lexical with graph-backed retrieval when configured. Agents should compensate with query planning:
+Current search behavior includes deterministic query normalization, lexical matching, optional graph-backed retrieval, and optional semantic retrieval when the root is configured for it. Agents should still use query planning:
 
 - map user vocabulary to memory object types, kinds, statuses, and scopes
 - expand common domain terms before retrying
+- pass the actual user task or question, not the full system prompt, scratchpad, or transcript
 - search for both natural-language terms and canonical memory terms
 - prefer `context` when answering a task and `search` when checking existence
 - for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `doc_index`, and `document_sections`; read local files by locator when needed
@@ -122,6 +125,12 @@ Examples:
 
 Do not answer "there is no memory" from a single failed keyword query when a reasonable expansion exists.
 
+`memory_query search` and `memory_query context` sanitize unusually long query text before retrieval and return `query_sanitizer` diagnostics. Treat `was_sanitized: true` as a hint to tighten future calls; the effective `query` or `task` in the response is what retrieval used.
+
+`memory_query context` also returns `context_tiers` and `context_budget`. Prefer tiered sections for task planning: inspect `decisions`, `procedures`, `evidence`, and `open_work` first, then use `deep_search_hints` only when the compact context is insufficient.
+
+When semantic retrieval is configured, `memory_query search` fuses lexical or graph hits with semantic hits using Reciprocal Rank Fusion. Prefer items found by multiple streams, but inspect `retrieval_sources`, `retrieval_ranks`, `matched_chunks`, and source locators before treating a hit as evidence. Semantic source hits can point to the matched chunk; use `page`, `expand`, or local file reads to inspect the surrounding context when the answer depends on exact wording.
+
 ## Duplicate Handling
 
 Structured fact-like knowledge has hard duplicate and conflict checks. If the same structured claim already exists in an overlapping scope, `memory_remember` may reject it. If the same subject and predicate conflict in the same scope, the new knowledge may become `contested`.
@@ -133,6 +142,12 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 - if it is genuinely distinct, keep it and preserve the scope/reason that explains why
 
 `memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically; use explicit review, supersession, or contesting once the relationship is clear.
+
+When a graph backend is configured, `memory_maintain report` also returns graph-health insights. Treat `isolated_nodes`, `sparse_clusters`, `bridge_nodes`, and `weakly_connected_scopes` as maintenance signals: they suggest where memory may need typed relations, consolidation, evidence review, or scope cleanup, not automatic mutation instructions.
+
+`memory_maintain report` also returns advisory `fact_check_issues` for similar entity names, stale active facts, and structured relationship mismatches. These are review cues only. Use the listed `next_actions` to decide whether to verify, contest, supersede, clarify scope, or keep both records.
+
+`memory_maintain repair` may return `derived_indexes` diagnostics when semantic or graph backends are configured. Treat missing or stale derived-index counts as a reason to run `memory_maintain reindex` with explicit apply/configuration controls, not as canonical data loss.
 
 ## Memory Review Gate
 

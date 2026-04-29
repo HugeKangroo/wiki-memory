@@ -25,6 +25,8 @@ Callers should use `memory_query` at task start and before durable writes. If a 
 
 Required domain mappings include todo/work item, decision, preference, procedure, source, and evidence terms.
 
+`memory_query search` and `context` sanitize unusually long prompt-like query text before retrieval and return `query_sanitizer` diagnostics.
+
 ## Maintenance Policy
 
 `memory_maintain report` may surface soft duplicate candidates. `merge_duplicates` is limited to deterministic structured duplicates until an explicit review/resolve mode exists.
@@ -38,15 +40,17 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 1. Call `memory_query` with `mode: "context"` or `mode: "search"`.
 2. If results are weak, apply query expansion. Examples: `待办项` -> `work_item`, `todo`, `task`; `决策` -> decision knowledge.
 3. Use returned citations, open work, decisions, procedures, conflicts, and missing context to plan the task.
+4. Pass the actual task or question, not the full system prompt or scratchpad. If `query_sanitizer.was_sanitized` is true, tighten the next query.
 
 ## New Evidence
 
 1. Use `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as evidence.
 2. For repo ingest, use compact `memory_query page` results (`code_index`, `code_modules`, `doc_index`, `document_sections`, symbols, excerpts, and line locators) to find files, then read local files directly when full code or full documents are needed.
-3. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
-4. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
-5. Analyze outside ingest.
-6. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
+3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
+4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
+5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
+6. Analyze outside ingest.
+7. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
 ## Durable Writes
 
@@ -57,6 +61,8 @@ Inspect `possible_duplicates` after knowledge writes. Similar unstructured items
 ## Maintenance
 
 Use `memory_maintain report` for read-only review. Mutating maintenance requires `options.apply=true`.
+
+Treat graph health, derived index diagnostics, and `fact_check_issues` as review signals. They should guide explicit remember/maintain actions, not automatic mutation.
 """
 
 
@@ -90,6 +96,10 @@ Repo ingest statuses:
 - `completed`: source material was written or updated.
 
 Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; request `options.detail: "full"` only when bounded locators and snippets are insufficient. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
+
+`memory_query search` and `context` return `query_sanitizer` diagnostics when prompt-like query text is shortened before retrieval.
+
+`memory_query context` returns `context_tiers` and `context_budget`; use tier sections before deep expansion.
 """
 
 

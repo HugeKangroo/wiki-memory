@@ -12,6 +12,13 @@ from memory_substrate.application.semantic.service import SemanticIndexService
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
 
+RRF_K = 60
+QUERY_SANITIZER_MAX_CHARS = 400
+QUERY_SANITIZER_LABEL_RE = re.compile(
+    r"^\s*(?:question|query|task|user question|用户问题|问题|任务)\s*[:：]\s*(.+?)\s*$",
+    re.IGNORECASE,
+)
+
 QUERY_NORMALIZATION_RULES = (
     {
         "triggers": ("待办", "待办项", "todo", "to-do", "task", "tasks", "任务"),
@@ -93,12 +100,17 @@ class QueryService:
         Returns:
             Context pack with ranked items, conflicts, missing context, citations, and expiry metadata.
         """
-        plan = self._query_plan(task)
+        sanitized = self._sanitize_query_text(task)
+        effective_task = sanitized["query"]
+        plan = self._query_plan(effective_task)
         scoped = self._scope_with_query_plan(scope or {}, plan)
         if self.graph_backend is not None:
-            return self._graph_context(task=task, scope=scoped, max_items=max_items, plan=plan)
+            result = self._graph_context(task=effective_task, scope=scoped, max_items=max_items, plan=plan)
+            result["data"]["query_sanitizer"] = sanitized["diagnostics"]
+            result["warnings"].extend(self._query_sanitizer_warnings(sanitized["diagnostics"]))
+            return result
 
-        pack = self.builder.build(task=task, scope=scoped, max_items=max_items, query_terms=plan["terms"])
+        pack = self.builder.build(task=effective_task, scope=scoped, max_items=max_items, query_terms=plan["terms"])
         return {
             "result_type": "context_pack",
             "data": {
@@ -116,12 +128,15 @@ class QueryService:
                 "recommended_next_reads": pack.recommended_next_reads,
                 "citations": pack.citations,
                 "freshness": pack.freshness,
+                "context_tiers": pack.context_tiers,
+                "context_budget": pack.context_budget,
                 "generated_at": pack.generated_at,
                 "expires_at": pack.expires_at,
                 "normalized_terms": plan["terms"],
                 "inferred_filters": plan["inferred_filters"],
+                "query_sanitizer": sanitized["diagnostics"],
             },
-            "warnings": [],
+            "warnings": self._query_sanitizer_warnings(sanitized["diagnostics"]),
         }
 
     def expand(
@@ -313,7 +328,9 @@ class QueryService:
         Returns:
             Search result containing scored object summaries.
         """
-        plan = self._query_plan(query)
+        sanitized = self._sanitize_query_text(query)
+        effective_query = sanitized["query"]
+        plan = self._query_plan(effective_query)
         terms = plan["terms"]
         filters = filters or {}
         applied_filters = self._scope_with_query_plan(filters, plan)
@@ -322,42 +339,45 @@ class QueryService:
             return {
                 "result_type": "search_results",
                 "data": {
-                    "query": query,
+                    "query": effective_query,
                     "items": [],
                     "normalized_terms": [],
                     "applied_filters": applied_filters,
                     "inferred_filters": {},
                     "suggested_retry_terms": [],
+                    "query_sanitizer": sanitized["diagnostics"],
                 },
-                "warnings": [],
+                "warnings": self._query_sanitizer_warnings(sanitized["diagnostics"]),
             }
 
         primary_terms = plan.get("primary_terms", terms)
+        search_terms = terms or primary_terms
         fallback_terms = plan.get("fallback_terms", terms[1:])
         if self.graph_backend is not None:
             items = self._graph_search_terms(primary_terms, max_items=max_items, filters=applied_filters)
             if not items:
                 items = self._graph_search_terms(fallback_terms, max_items=max_items, filters=applied_filters)
         else:
-            items = self._lexical_search_terms(primary_terms, filters=applied_filters)
-            if not items and self.semantic_index is None:
+            items = self._lexical_search_terms(search_terms, filters=applied_filters)
+            if not items:
                 items = self._lexical_search_terms(fallback_terms, filters=applied_filters)
         if self.semantic_index is not None:
-            semantic_items = self.semantic_index.search(query, max_items=max_items, filters=applied_filters)
+            semantic_items = self.semantic_index.search(effective_query, max_items=max_items, filters=applied_filters)
             items = self._merge_search_items(items, semantic_items)
         items.sort(key=lambda item: (-item["score"], item["title"]))
         return {
             "result_type": "search_results",
             "data": {
-                "query": query,
+                "query": effective_query,
                 "items": items[:max_items],
                 "normalized_terms": terms,
                 "applied_filters": applied_filters,
                 "inferred_filters": plan["inferred_filters"],
                 "suggested_retry_terms": [] if items else terms[1:],
                 "semantic_backend": self.semantic_index.__class__.__name__ if self.semantic_index is not None else None,
+                "query_sanitizer": sanitized["diagnostics"],
             },
-            "warnings": [],
+            "warnings": self._query_sanitizer_warnings(sanitized["diagnostics"]),
         }
 
     def _lexical_search_terms(self, terms: list[str], filters: dict) -> list[dict]:
@@ -395,26 +415,55 @@ class QueryService:
                         "status": obj.get("status") or obj.get("lifecycle_state"),
                         "summary": summary,
                         "score": score,
+                        "lexical_score": score,
+                        "matched_terms": matching_terms,
                         "retrieval_sources": ["lexical"],
                     }
                 )
         return items
 
     def _merge_search_items(self, lexical_items: list[dict], semantic_items: list[dict]) -> list[dict]:
-        merged: dict[str, dict] = {item["id"]: dict(item) for item in lexical_items}
-        for item in semantic_items:
+        if not semantic_items:
+            return lexical_items
+
+        merged: dict[str, dict] = {}
+        ranked_lexical = sorted(lexical_items, key=lambda item: (-item.get("score", 0), item["title"], item["id"]))
+        lexical_rank_source = (
+            "graph" if any("graph" in item.get("retrieval_sources", []) for item in ranked_lexical) else "lexical"
+        )
+
+        def add_ranked_item(item: dict, source: str, rank: int) -> None:
             item_id = item["id"]
             if item_id not in merged:
                 merged[item_id] = dict(item)
-                continue
+                merged[item_id]["retrieval_sources"] = []
+                merged[item_id]["retrieval_ranks"] = {}
             existing = merged[item_id]
-            existing["score"] = max(existing.get("score", 0), item.get("score", 0))
-            existing["semantic_score"] = item.get("semantic_score")
-            sources = list(existing.get("retrieval_sources", []))
-            for source in item.get("retrieval_sources", []):
-                if source not in sources:
-                    sources.append(source)
-            existing["retrieval_sources"] = sources
+            sources = existing["retrieval_sources"]
+            for retrieval_source in item.get("retrieval_sources", [source]):
+                if retrieval_source not in sources:
+                    sources.append(retrieval_source)
+            existing["retrieval_ranks"][source] = rank
+            if source in {"graph", "lexical"}:
+                existing["lexical_score"] = item.get("lexical_score", item.get("score", 0))
+                existing["matched_terms"] = item.get("matched_terms", existing.get("matched_terms", []))
+            if source == "semantic":
+                existing["semantic_score"] = item.get("semantic_score")
+                if item.get("matched_chunks"):
+                    existing["matched_chunks"] = item["matched_chunks"]
+            for field in ("object_type", "kind", "title", "status", "summary"):
+                if not existing.get(field) and item.get(field):
+                    existing[field] = item[field]
+
+        for rank, item in enumerate(ranked_lexical, start=1):
+            add_ranked_item(item, lexical_rank_source, rank)
+        for rank, item in enumerate(semantic_items, start=1):
+            add_ranked_item(item, "semantic", rank)
+
+        for item in merged.values():
+            rank_score = sum(1.0 / (RRF_K + rank) for rank in item["retrieval_ranks"].values())
+            item["rank_score"] = round(rank_score, 6)
+            item["score"] = round(rank_score * 1000, 6)
         return list(merged.values())
 
     def _graph_context(
@@ -441,6 +490,18 @@ class QueryService:
             ][:max_items]
         generated_at = utc_now_iso()
         citations = self._graph_citations(items)
+        decisions = [
+            item for item in items if item["object_type"] == "knowledge" and item["kind"] == "decision"
+        ]
+        procedures = [
+            item for item in items if item["object_type"] == "knowledge" and item["kind"] == "procedure"
+        ]
+        open_work = [
+            item
+            for item in items
+            if item["object_type"] == "work_item" and item.get("status") in {"open", "in_progress", "blocked"}
+        ]
+        recommended_next_reads = [item["id"] for item in items[:5]]
         return {
             "result_type": "context_pack",
             "data": {
@@ -450,22 +511,28 @@ class QueryService:
                 "scope": scope,
                 "items": items,
                 "evidence": citations,
-                "decisions": [
-                    item for item in items if item["object_type"] == "knowledge" and item["kind"] == "decision"
-                ],
-                "procedures": [
-                    item for item in items if item["object_type"] == "knowledge" and item["kind"] == "procedure"
-                ],
-                "open_work": [
-                    item
-                    for item in items
-                    if item["object_type"] == "work_item" and item.get("status") in {"open", "in_progress", "blocked"}
-                ],
+                "decisions": decisions,
+                "procedures": procedures,
+                "open_work": open_work,
                 "conflicts": [],
                 "missing_context": [] if items else ["No relevant context found yet."],
-                "recommended_next_reads": [item["id"] for item in items[:5]],
+                "recommended_next_reads": recommended_next_reads,
                 "citations": citations,
                 "freshness": {"generated_at": generated_at, "expires_at": None},
+                "context_tiers": self._context_tiers(
+                    task=task,
+                    scope=scope,
+                    decisions=decisions,
+                    procedures=procedures,
+                    evidence=citations,
+                    open_work=open_work,
+                    recommended_next_reads=recommended_next_reads,
+                ),
+                "context_budget": {
+                    "max_items": max_items,
+                    "returned_items": len(items),
+                    "detail": "compact",
+                },
                 "generated_at": generated_at,
                 "expires_at": None,
                 "normalized_terms": plan["terms"],
@@ -508,6 +575,36 @@ class QueryService:
             return f"No stored context available yet for task: {task}"
         titles = ", ".join(item["title"] for item in items[:3])
         return f"Context for '{task}' built from {len(items)} graph items. Key entries: {titles}"
+
+    def _context_tiers(
+        self,
+        task: str,
+        scope: dict,
+        decisions: list[dict],
+        procedures: list[dict],
+        evidence: list[dict],
+        open_work: list[dict],
+        recommended_next_reads: list[str],
+    ) -> dict:
+        return {
+            "policy": [],
+            "active_task": {
+                "task": task,
+                "scope": scope,
+            },
+            "decisions": decisions,
+            "procedures": procedures,
+            "evidence": evidence,
+            "open_work": open_work,
+            "deep_search_hints": [
+                {
+                    "tool": "memory_query",
+                    "mode": "expand",
+                    "id": object_id,
+                }
+                for object_id in recommended_next_reads
+            ],
+        }
 
     def _parse_time(self, value: str | None) -> datetime:
         if not value:
@@ -570,6 +667,7 @@ class QueryService:
 
     def _metadata_text(self, object_type: str, obj: dict) -> str:
         parts: list[str] = [
+            str(obj.get("id") or ""),
             object_type,
             str(obj.get("kind", object_type)),
             str(obj.get("status") or ""),
@@ -793,6 +891,86 @@ class QueryService:
             return text
         return text[: max_chars - 3].rstrip() + "..."
 
+    def _sanitize_query_text(self, query: str) -> dict:
+        original = str(query or "")
+        stripped = original.strip()
+        if len(stripped) <= QUERY_SANITIZER_MAX_CHARS:
+            clean = self._collapse_query_whitespace(stripped)
+            return {
+                "query": clean,
+                "diagnostics": self._query_sanitizer_diagnostics(
+                    original=original,
+                    clean=clean,
+                    method="passthrough",
+                ),
+            }
+
+        for line in reversed([line.strip() for line in stripped.splitlines() if line.strip()]):
+            match = QUERY_SANITIZER_LABEL_RE.match(line)
+            if match:
+                clean = self._sanitize_query_candidate(match.group(1))
+                if clean:
+                    return {
+                        "query": clean,
+                        "diagnostics": self._query_sanitizer_diagnostics(
+                            original=original,
+                            clean=clean,
+                            method="labeled_line",
+                        ),
+                    }
+
+        sentence = self._last_question_sentence(stripped)
+        if sentence:
+            clean = self._sanitize_query_candidate(sentence)
+            return {
+                "query": clean,
+                "diagnostics": self._query_sanitizer_diagnostics(
+                    original=original,
+                    clean=clean,
+                    method="question_sentence",
+                ),
+            }
+
+        clean = self._sanitize_query_candidate(stripped[-QUERY_SANITIZER_MAX_CHARS:])
+        return {
+            "query": clean,
+            "diagnostics": self._query_sanitizer_diagnostics(
+                original=original,
+                clean=clean,
+                method="tail_truncation",
+            ),
+        }
+
+    def _sanitize_query_candidate(self, candidate: str) -> str:
+        return self._collapse_query_whitespace(candidate.strip())[:QUERY_SANITIZER_MAX_CHARS].strip()
+
+    def _collapse_query_whitespace(self, value: str) -> str:
+        return re.sub(r"\s+", " ", value).strip()
+
+    def _last_question_sentence(self, text: str) -> str | None:
+        sentences = re.findall(r"[^。！？!?\n]+[。！？!?]?", text)
+        for sentence in reversed(sentences):
+            sentence = sentence.strip()
+            if len(sentence) >= 3 and ("?" in sentence or "？" in sentence):
+                return sentence
+        return None
+
+    def _query_sanitizer_diagnostics(self, original: str, clean: str, method: str) -> dict:
+        original_clean = self._collapse_query_whitespace(original.strip())
+        return {
+            "was_sanitized": clean != original_clean,
+            "method": method,
+            "original_length": len(original),
+            "clean_length": len(clean),
+        }
+
+    def _query_sanitizer_warnings(self, diagnostics: dict) -> list[str]:
+        if not diagnostics.get("was_sanitized"):
+            return []
+        return [
+            "Long query text was sanitized before retrieval. Use query_sanitizer diagnostics to inspect the applied method."
+        ]
+
     def _query_plan(self, query: str) -> dict:
         normalized_query = query.strip().lower()
         terms: list[str] = []
@@ -841,7 +1019,17 @@ class QueryService:
             "架构图",
         }
         tokens = re.findall(r"[\w.-]+|[\u4e00-\u9fff]+", normalized_query)
-        return [token for token in tokens if len(token) >= 2 and token not in stopwords]
+        expanded: list[str] = []
+        for token in tokens:
+            if len(token) < 2 or token in stopwords:
+                continue
+            self._append_unique(expanded, token)
+            if re.fullmatch(r"[\u4e00-\u9fff]+", token) and len(token) > 2:
+                for index in range(len(token) - 1):
+                    bigram = token[index : index + 2]
+                    if bigram not in stopwords:
+                        self._append_unique(expanded, bigram)
+        return expanded
 
     def _rule_matches(self, query: str, triggers: tuple[str, ...]) -> bool:
         if not query:

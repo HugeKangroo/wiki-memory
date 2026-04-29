@@ -11,6 +11,7 @@ from memory_substrate.domain.objects.activity import Activity
 from memory_substrate.domain.objects.node import Node
 from memory_substrate.domain.objects.source import Source, SourceSegment
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.services.document_chunker import DocumentChunker
 from memory_substrate.domain.services.ids import new_id, slugify, stable_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
@@ -38,6 +39,7 @@ class IngestService:
             patch_repository=self.patch_repository,
             audit_repository=self.audit_repository,
         )
+        self.document_chunker = DocumentChunker()
         self.repo_adapter = RepoAdapter()
         self.projector = MarkdownProjector(self.root)
 
@@ -305,6 +307,25 @@ class IngestService:
         pending_decisions: list[dict],
         excluded_by_preflight: list[str],
     ) -> None:
+        timestamp = output.source.updated_at
+        output.source.metadata["adapter"] = self._adapter_metadata(
+            name="repo",
+            version="repo-adapter.v1",
+            mode="repo",
+            supported_modes=["repo"],
+            declared_transformations=[
+                "repo_map",
+                "code_index",
+                "document_sections",
+                "source_segments",
+            ],
+            default_privacy_class="local_repo",
+            origin_classification="local_repo",
+        )
+        output.source.metadata["freshness"] = self._freshness_metadata(
+            checked_at=timestamp,
+            fingerprint=output.source.fingerprint,
+        )
         repo_ingest = output.source.metadata.setdefault("repo_ingest", {})
         repo_ingest["pending_decisions"] = pending_decisions
         repo_ingest["excluded_by_preflight"] = excluded_by_preflight
@@ -519,9 +540,33 @@ class IngestService:
                 "text": text,
                 "byte_count": len(text.encode("utf-8")),
                 "segment_count": len(segments),
+                "chunking": {
+                    "strategy": "document_chunker.v1",
+                    "max_chars": self.document_chunker.max_chars,
+                    "overlap_lines": self.document_chunker.overlap_lines,
+                },
             },
             segments=segments,
-            metadata={"scanned_at": timestamp},
+            metadata={
+                "scanned_at": timestamp,
+                "adapter": self._adapter_metadata(
+                    name="document",
+                    version="document-adapter.v1",
+                    mode=kind,
+                    supported_modes=["file", "markdown", "web", "pdf", "conversation"],
+                    declared_transformations=[
+                        "read_text",
+                        "document_chunker.v1",
+                        "source_segments",
+                    ],
+                    default_privacy_class=self._privacy_class_for_origin(origin),
+                    origin_classification=self._origin_classification(origin),
+                ),
+                "freshness": self._freshness_metadata(
+                    checked_at=timestamp,
+                    fingerprint=fingerprint,
+                ),
+            },
             status="active",
             created_at=timestamp,
             updated_at=timestamp,
@@ -648,7 +693,22 @@ class IngestService:
             content_type="binary_stub",
             payload={"path": str(path), "byte_count": len(raw), "sha256": fingerprint},
             segments=[],
-            metadata={"scanned_at": timestamp},
+            metadata={
+                "scanned_at": timestamp,
+                "adapter": self._adapter_metadata(
+                    name="document",
+                    version="document-adapter.v1",
+                    mode=kind,
+                    supported_modes=["file", "markdown", "web", "pdf", "conversation"],
+                    declared_transformations=["binary_stub"],
+                    default_privacy_class="local_file",
+                    origin_classification="local_file",
+                ),
+                "freshness": self._freshness_metadata(
+                    checked_at=timestamp,
+                    fingerprint=fingerprint,
+                ),
+            },
             status="active",
             created_at=timestamp,
             updated_at=timestamp,
@@ -695,41 +755,75 @@ class IngestService:
         }
 
     def _document_segments(self, locator: str, text: str, content_type: str) -> list[SourceSegment]:
-        if content_type == "markdown":
-            chunks = self._markdown_chunks(text)
-        else:
-            chunks = [chunk.strip() for chunk in text.split("\n\n") if chunk.strip()]
-        if not chunks and text.strip():
-            chunks = [text.strip()]
-
+        chunks = self.document_chunker.chunk(text, content_type)
         segments: list[SourceSegment] = []
-        for index, chunk in enumerate(chunks[:100], start=1):
-            title = chunk.splitlines()[0][:80]
-            segment_id = slugify(f"{index}-{title}") or f"segment-{index}"
+        for chunk in chunks[:100]:
+            segment_id = slugify(f"{chunk.chunk_index}-{chunk.title}") or f"segment-{chunk.chunk_index}"
+            segment_locator = {
+                "kind": "source",
+                "ref": locator,
+                "segment_index": chunk.chunk_index,
+                "chunk_kind": chunk.kind,
+                "line_start": chunk.line_start,
+                "line_end": chunk.line_end,
+            }
+            if chunk.heading_path:
+                segment_locator["heading_path"] = chunk.heading_path
             segments.append(
                 SourceSegment(
                     segment_id=segment_id,
-                    locator={"kind": "source", "ref": locator, "segment_index": index},
-                    excerpt=chunk[:800],
-                    hash=hashlib.sha256(chunk.encode("utf-8")).hexdigest(),
+                    locator=segment_locator,
+                    excerpt=chunk.excerpt,
+                    hash=hashlib.sha256(chunk.text.encode("utf-8")).hexdigest(),
                 )
             )
         return segments
+
+    def _adapter_metadata(
+        self,
+        name: str,
+        version: str,
+        mode: str,
+        supported_modes: list[str],
+        declared_transformations: list[str],
+        default_privacy_class: str,
+        origin_classification: str,
+    ) -> dict:
+        return {
+            "name": name,
+            "version": version,
+            "mode": mode,
+            "supported_modes": supported_modes,
+            "declared_transformations": declared_transformations,
+            "default_privacy_class": default_privacy_class,
+            "origin_classification": origin_classification,
+        }
+
+    def _freshness_metadata(self, checked_at: str, fingerprint: str) -> dict:
+        return {
+            "checked_at": checked_at,
+            "is_current": True,
+            "fingerprint": fingerprint,
+        }
+
+    def _origin_classification(self, origin: dict) -> str:
+        if origin.get("url"):
+            return "remote_url"
+        if origin.get("path"):
+            return "local_file"
+        if origin.get("title"):
+            return "conversation"
+        return "unknown"
+
+    def _privacy_class_for_origin(self, origin: dict) -> str:
+        classification = self._origin_classification(origin)
+        if classification == "remote_url":
+            return "remote_url"
+        if classification == "conversation":
+            return "conversation"
+        return "local_file"
 
     def _html_to_text(self, html: str) -> str:
         html = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", html)
         html = re.sub(r"(?s)<[^>]+>", "\n", html)
         return re.sub(r"\n{3,}", "\n\n", html).strip()
-
-    def _markdown_chunks(self, text: str) -> list[str]:
-        chunks: list[str] = []
-        current: list[str] = []
-        for line in text.splitlines():
-            if line.startswith("#") and current:
-                chunks.append("\n".join(current).strip())
-                current = [line]
-                continue
-            current.append(line)
-        if current:
-            chunks.append("\n".join(current).strip())
-        return [chunk for chunk in chunks if chunk]

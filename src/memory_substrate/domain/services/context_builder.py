@@ -34,6 +34,9 @@ class ContextBuilder:
         summary = self._summary(task, selected)
         generated_at = utc_now_iso()
         citations = self._citations(selected)
+        decisions = self._typed_items(selected, object_type="knowledge", kind="decision")
+        procedures = self._typed_items(selected, object_type="knowledge", kind="procedure")
+        open_work = self._open_work(selected)
         return ContextPack(
             id=new_id("ctx"),
             task=task,
@@ -41,14 +44,28 @@ class ContextBuilder:
             scope=scope,
             items=selected,
             evidence=citations,
-            decisions=self._typed_items(selected, object_type="knowledge", kind="decision"),
-            procedures=self._typed_items(selected, object_type="knowledge", kind="procedure"),
-            open_work=self._open_work(selected),
+            decisions=decisions,
+            procedures=procedures,
+            open_work=open_work,
             conflicts=[],
             missing_context=[] if selected else ["No relevant context found yet."],
             recommended_next_reads=[item.id for item in selected[:5]],
             citations=citations,
             freshness={"generated_at": generated_at, "expires_at": None},
+            context_tiers=self._context_tiers(
+                task=task,
+                scope=scope,
+                decisions=decisions,
+                procedures=procedures,
+                evidence=citations,
+                open_work=open_work,
+                recommended_next_reads=[item.id for item in selected[:5]],
+            ),
+            context_budget={
+                "max_items": max_items,
+                "returned_items": len(selected),
+                "detail": "compact",
+            },
             generated_at=generated_at,
             expires_at=None,
         )
@@ -267,6 +284,36 @@ class ContextBuilder:
             for item in items
             if item.object_type == "work_item" and item.status in open_statuses
         ]
+
+    def _context_tiers(
+        self,
+        task: str,
+        scope: dict,
+        decisions: list[dict],
+        procedures: list[dict],
+        evidence: list[dict],
+        open_work: list[dict],
+        recommended_next_reads: list[str],
+    ) -> dict:
+        return {
+            "policy": [],
+            "active_task": {
+                "task": task,
+                "scope": scope,
+            },
+            "decisions": decisions,
+            "procedures": procedures,
+            "evidence": evidence,
+            "open_work": open_work,
+            "deep_search_hints": [
+                {
+                    "tool": "memory_query",
+                    "mode": "expand",
+                    "id": object_id,
+                }
+                for object_id in recommended_next_reads
+            ],
+        }
 
     def _related_items(self, root_id: str, obj: dict, max_items: int) -> list[ContextItem]:
         refs: list[str] = []

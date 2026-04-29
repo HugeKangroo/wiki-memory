@@ -72,7 +72,21 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
-The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, classes, functions, symbols, and line ranges when the parser can extract them. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, short excerpts, and line locators. It intentionally does not make full source bodies or full documents the canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code or full documents.
+The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, classes, functions, symbols, and line ranges when the parser can extract them. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, heading breadcrumbs, short excerpts, chunk kinds, and line locators. It intentionally does not make full source bodies or full documents the canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code or full documents.
+
+Markdown and text source ingest use the shared `document_chunker.v1` contract. Markdown chunks preserve frontmatter as a separate boundary, split on headings outside code fences, keep tables and fenced code inside the surrounding chunk, record `line_start` / `line_end`, and include `heading_path` breadcrumbs in segment locators when present. Oversized sections are split with small line overlap so semantic chunks and evidence segments can remain bounded while still carrying local context.
+
+Ingested sources include adapter metadata under `source.metadata.adapter` and freshness diagnostics under `source.metadata.freshness`. Adapter metadata includes:
+
+- `name`
+- `version`
+- `mode`
+- `supported_modes`
+- `declared_transformations`
+- `default_privacy_class`
+- `origin_classification`
+
+Freshness diagnostics include `checked_at`, `is_current`, and the source `fingerprint` captured during ingest. These fields describe how evidence was captured; they do not turn adapters or derived indexes into canonical memory.
 
 Before writing memory, `repo` ingest runs a preflight for local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees`. If these entries are present and not excluded, the tool excludes them from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`. Agents should use the clean source normally and inspect `pending_decisions` separately.
 
@@ -283,6 +297,14 @@ Compact query options:
 
 Query options are mode-specific. For example, `detail` is accepted only by `page`, and `snippet_chars` is accepted only by `page` and `expand`.
 
+`context` returns work-ready sections and tier diagnostics:
+
+- `context_tiers.policy`: reserved for always-on policy snippets.
+- `context_tiers.active_task`: effective task and scope.
+- `context_tiers.decisions`, `procedures`, `evidence`, and `open_work`: compact task-relevant memory sections.
+- `context_tiers.deep_search_hints`: bounded follow-up `memory_query expand` hints.
+- `context_budget`: compact budget metadata such as `max_items`, `returned_items`, and `detail`.
+
 `recent`:
 
 ```json
@@ -317,14 +339,33 @@ Query options are mode-specific. For example, `detail` is accepted only by `page
 }
 ```
 
-`search` uses deterministic query normalization before lexical matching. It can expand domain terms such as `待办项`, `todo`, `task`, and `work_item`, and returns diagnostic fields:
+`search` uses deterministic query normalization before matching. It can expand domain terms such as `待办项`, `todo`, `task`, and `work_item`, and returns diagnostic fields:
 
 - `normalized_terms`
 - `applied_filters`
 - `inferred_filters`
 - `suggested_retry_terms`
+- `semantic_backend`
+- `query_sanitizer`
 
-This is not embedding or semantic vector search. Callers should still retry with expanded terms when a result is weak.
+Lexical matching keeps the full phrase as a strong signal and also checks tokenized terms, object ids, metadata, source locators, and CJK bigrams. Title matches score higher than summaries, payloads, source segments, and metadata.
+
+`search` and `context` sanitize unusually long query text before planning terms. This protects retrieval when an agent accidentally passes a full prompt, scratchpad, or system instructions instead of the actual question. The response keeps the effective `query` or `task` and returns `query_sanitizer` diagnostics:
+
+- `was_sanitized`
+- `method`: `passthrough`, `labeled_line`, `question_sentence`, or `tail_truncation`
+- `original_length`
+- `clean_length`
+
+When a semantic backend is configured, `search` fuses lexical or graph results with semantic hits using Reciprocal Rank Fusion. Returned items may include:
+
+- `retrieval_sources`: streams that found the item, such as `lexical`, `graph`, or `semantic`.
+- `retrieval_ranks`: rank per retrieval stream.
+- `rank_score`: fused rank score used for final ordering.
+- `lexical_score` and `semantic_score`: stream-local scores for diagnostics.
+- `matched_chunks`: semantic source chunks with `chunk_id`, `segment_id`, `locator`, `excerpt`, `hash`, `distance`, and `semantic_score` when the hit maps to a stored source segment.
+
+Callers should still retry with expanded terms when a result is weak, because semantic retrieval improves recall but does not replace scope, status, evidence, or graph-aware filtering.
 
 ## `memory_remember`
 
@@ -651,7 +692,20 @@ Semantic model loading is lazy and process-local. MCP startup does not load BGE-
 }
 ```
 
-`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, counts, and graph health when a graph backend is configured.
+`repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
+
+`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, fact-check issues, counts, and graph health when a graph backend is configured. Fact-check issues are advisory and currently include:
+
+- `similar_entity_name`: multiple nodes normalize to the same name key.
+- `stale_fact`: active facts past their validity window.
+- `relationship_mismatch`: structured facts with the same subject and predicate but different value/object assertions.
+
+Graph health includes backend/canonical count comparisons, missing backend counts, stub node counts, and deterministic `insights`:
+
+- `isolated_nodes`: graph records with no relations.
+- `sparse_clusters`: low-density connected components that may need more typed relations or consolidation.
+- `bridge_nodes`: high-leverage records whose removal disconnects an existing component.
+- `weakly_connected_scopes`: scopes with multiple records but too few internal relations.
 
 Soft duplicate report entries use this shape:
 

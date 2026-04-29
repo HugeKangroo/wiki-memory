@@ -53,3 +53,21 @@ uv run --extra semantic python experiments/mcp_semantic_demo.py
 The demo uses a temporary `MEMORY_SUBSTRATE_ROOT`, intentionally does not pass `root` in normal tool calls, verifies that rogue `root` arguments are rejected, writes one knowledge object, rebuilds the LanceDB semantic index, and confirms semantic search retrieves the object.
 
 The semantic loader tries cached BGE-M3 files first and downloads only when the cache is missing. Add `HF_HUB_OFFLINE=1` and `--offline` when you want the demo to fail fast if the model is not already cached.
+
+## Retrieval Benchmark Harness
+
+The packaged benchmark helper seeds a temporary/local memory root with small planted-needle records and reports recall per retrieval stream without network access:
+
+```bash
+uv run --group dev python -m pytest tests/test_retrieval_benchmark.py
+```
+
+Programmatic entrypoint:
+
+```python
+from memory_substrate.experiments.retrieval_benchmark import run_planted_needle_benchmark
+
+result = run_planted_needle_benchmark("/tmp/memory-benchmark")
+```
+
+The default smoke path reports lexical recall and marks semantic/hybrid streams as `not_configured`. Pass a configured semantic service only when intentionally evaluating hybrid retrieval.

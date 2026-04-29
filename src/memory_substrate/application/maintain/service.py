@@ -85,6 +85,15 @@ class MaintainService:
             Repair result with patch, audit, and changed object metadata.
         """
         result = self.repair_engine.repair_safe_missing_references()
+        derived_indexes: dict[str, dict] = {}
+        if self.semantic_index is not None:
+            diagnostics = getattr(self.semantic_index, "diagnostics", None)
+            if callable(diagnostics):
+                derived_indexes["semantic"] = diagnostics()
+        if self.graph_health is not None:
+            derived_indexes["graph"] = self.graph_health.report()
+        if derived_indexes:
+            result = {**result, "derived_indexes": derived_indexes}
         return {
             "result_type": "repair_result",
             "data": result,

@@ -185,6 +185,7 @@ class MaintenanceLifecycle:
         low_evidence_candidate_ids: list[str] = []
         stale_candidate_ids: list[str] = []
         governance_violations: list[dict] = []
+        fact_check_issues = self._fact_check_issues(reference_time=now)
 
         for item in self.object_repository.list("knowledge"):
             status = item.get("status")
@@ -216,6 +217,7 @@ class MaintenanceLifecycle:
                 "stale_candidate_ids": sorted(stale_candidate_ids),
                 "duplicate_groups": duplicate_groups,
                 "soft_duplicate_candidates": soft_duplicate_candidates,
+                "fact_check_issues": fact_check_issues,
                 "governance_violations": sorted(governance_violations, key=lambda item: item["object_id"]),
                 "counts": {
                     "promote_candidates": len(promote_candidate_ids),
@@ -223,6 +225,7 @@ class MaintenanceLifecycle:
                     "stale_candidates": len(stale_candidate_ids),
                     "duplicate_groups": len(duplicate_groups),
                     "soft_duplicate_candidates": len(soft_duplicate_candidates),
+                    "fact_check_issues": len(fact_check_issues),
                     "governance_violations": len(governance_violations),
                 },
             },
@@ -254,6 +257,119 @@ class MaintenanceLifecycle:
             return None
         value = metadata.get("memory_source")
         return str(value) if value else None
+
+    def _fact_check_issues(self, reference_time: datetime) -> list[dict]:
+        issues = [
+            *self._similar_entity_name_issues(),
+            *self._stale_fact_issues(reference_time),
+            *self._relationship_mismatch_issues(reference_time),
+        ]
+        return sorted(issues, key=lambda item: (item["kind"], item.get("object_id", ""), ",".join(item.get("object_ids", []))))
+
+    def _similar_entity_name_issues(self) -> list[dict]:
+        nodes = self.object_repository.list("node")
+        buckets: dict[str, list[dict]] = {}
+        for node in nodes:
+            names = [str(node.get("name") or node.get("title") or node["id"])]
+            names.extend(str(alias) for alias in node.get("aliases", []) if alias)
+            for name in names:
+                normalized = self._entity_name_key(name)
+                if normalized:
+                    buckets.setdefault(normalized, []).append(node)
+        issues = []
+        for candidates in buckets.values():
+            unique = {candidate["id"]: candidate for candidate in candidates}
+            if len(unique) < 2:
+                continue
+            ids = sorted(unique)
+            issues.append(
+                {
+                    "kind": "similar_entity_name",
+                    "severity": "warning",
+                    "object_ids": ids,
+                    "summary": "Multiple nodes have names or aliases that normalize to the same key.",
+                    "next_actions": ["clarify_scope", "merge_if_same_entity", "keep_both_if_distinct"],
+                }
+            )
+        return issues
+
+    def _entity_name_key(self, name: str) -> str:
+        return "".join(character.lower() for character in name if character.isalnum())
+
+    def _stale_fact_issues(self, reference_time: datetime) -> list[dict]:
+        issues = []
+        for item in self.object_repository.list("knowledge"):
+            if item.get("kind") != "fact" or item.get("status") != "active":
+                continue
+            valid_until = item.get("valid_until")
+            if not valid_until:
+                continue
+            if self._parse_time(valid_until) >= reference_time:
+                continue
+            issues.append(
+                {
+                    "kind": "stale_fact",
+                    "severity": "warning",
+                    "object_id": item["id"],
+                    "summary": "Active fact is past its validity window.",
+                    "valid_until": valid_until,
+                    "next_actions": ["verify", "supersede", "contest"],
+                }
+            )
+        return issues
+
+    def _relationship_mismatch_issues(self, reference_time: datetime) -> list[dict]:
+        buckets: dict[tuple[str, str], list[dict]] = {}
+        for item in self.object_repository.list("knowledge"):
+            if item.get("kind") != "fact" or item.get("status") in {"superseded", "archived", "contested"}:
+                continue
+            valid_until = item.get("valid_until")
+            if valid_until and self._parse_time(valid_until) < reference_time:
+                continue
+            payload = item.get("payload", {})
+            if not isinstance(payload, dict):
+                continue
+            predicate = payload.get("predicate")
+            if not predicate:
+                continue
+            subject = self._fact_subject(item, payload)
+            if not subject:
+                continue
+            buckets.setdefault((subject, str(predicate)), []).append(item)
+        issues = []
+        for (subject, predicate), items in buckets.items():
+            values: dict[str, list[dict]] = {}
+            for item in items:
+                payload = item.get("payload", {})
+                value_key = self._normalize_value(
+                    {
+                        "value": payload.get("value"),
+                        "object": payload.get("object"),
+                    }
+                )
+                values.setdefault(value_key, []).append(item)
+            if len(values) < 2:
+                continue
+            ids = sorted(item["id"] for group in values.values() for item in group)
+            issues.append(
+                {
+                    "kind": "relationship_mismatch",
+                    "severity": "warning",
+                    "object_ids": ids,
+                    "subject": subject,
+                    "predicate": predicate,
+                    "summary": "Structured facts assert different values for the same subject and predicate.",
+                    "next_actions": ["review_evidence", "contest", "supersede", "keep_both_with_scopes"],
+                }
+            )
+        return issues
+
+    def _fact_subject(self, item: dict, payload: dict) -> str:
+        subject_refs = item.get("subject_refs", [])
+        if subject_refs:
+            return str(subject_refs[0])
+        subject = payload.get("subject")
+        return str(subject) if subject else ""
 
     def cycle(
         self,

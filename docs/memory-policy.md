@@ -103,6 +103,7 @@ Query should return work-ready context, not just raw string matches.
 Near-term deterministic query behavior should include:
 
 - query normalization for domain terms
+- long agent-prompt sanitization before query planning
 - type and status aware retrieval
 - scope-aware filtering
 - graph expansion when configured
@@ -117,6 +118,14 @@ Required domain mappings include:
 - `证据`, `source`, `evidence` -> source and evidence records
 
 When a query returns no useful results, callers should expand terms and retry before concluding that memory has no answer.
+
+Context responses should be tiered and budgeted. Agents should be able to distinguish active task, decisions, procedures, evidence, open work, and deep-search hints without reading all returned items as one flat list.
+
+## Source Adapter Policy
+
+Ingest adapters should record how evidence was captured. Source metadata should include adapter name, version, mode, declared transformations, privacy class, origin classification, and freshness diagnostics.
+
+Adapter metadata describes evidence capture. It is not a durable conclusion about the world and should not replace `memory_remember`.
 
 ## LLM And Embedding Policy
 
@@ -137,10 +146,16 @@ The preferred progression is:
 Tool responses should guide callers even if they have not read the docs. Prefer fields such as:
 
 - `normalized_terms`
+- `query_sanitizer`
+- `context_tiers`
+- `context_budget`
 - `applied_filters`
 - `code_index`
 - `code_modules`
+- `adapter`
+- `freshness`
 - `possible_duplicates`
+- `fact_check_issues`
 - `conflicts_with`
 - `requires_decision`
 - `pending_decisions`

@@ -249,6 +249,8 @@ class RepoAdapter:
                                     "line_start": section.line_start,
                                     "line_end": section.line_end,
                                     "excerpt": section.excerpt,
+                                    "heading_path": section.heading_path,
+                                    "chunk_kind": section.chunk_kind,
                                     "parser_backend": section.parser_backend,
                                 }
                             )
@@ -436,6 +438,8 @@ class RepoAdapter:
                         "kind": "document_section",
                         "path": section["path"],
                         "heading": section["heading"],
+                        "heading_path": section.get("heading_path", []),
+                        "chunk_kind": section.get("chunk_kind", "section"),
                         "line_start": section["line_start"],
                         "line_end": section["line_end"],
                     },

@@ -513,6 +513,63 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             )
             self.assertIn("title_overlap", report["data"]["soft_duplicate_candidates"][0]["reasons"])
 
+    def test_report_surfaces_fact_checker_lifecycle_issues(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            node_a = self._seed_node(root, "node:memory-substrate")
+            self._seed_node(root, "node:memory_substrate")
+            remember = RememberService(root)
+            maintain = MaintenanceLifecycle(root)
+
+            stale = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Expired active fact",
+                    "summary": "This fact is past its validity window.",
+                    "subject_refs": [node_a],
+                    "payload": {"subject": node_a, "predicate": "backend", "value": "file"},
+                    "status": "active",
+                    "valid_until": "2026-01-01T00:00:00+00:00",
+                    "confidence": 0.8,
+                }
+            )
+            first = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Backend is Kuzu",
+                    "summary": "First backend claim.",
+                    "subject_refs": [node_a],
+                    "payload": {"subject": node_a, "predicate": "backend", "value": "kuzu"},
+                    "status": "active",
+                    "confidence": 0.8,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Backend is Neo4j",
+                    "summary": "Conflicting backend claim.",
+                    "subject_refs": [node_a],
+                    "payload": {"subject": node_a, "predicate": "backend", "value": "neo4j"},
+                    "status": "candidate",
+                    "confidence": 0.7,
+                }
+            )
+
+            report = maintain.report(reference_time="2026-04-30T00:00:00+00:00")
+            issues = report["data"]["fact_check_issues"]
+            issue_kinds = {issue["kind"] for issue in issues}
+
+            self.assertIn("similar_entity_name", issue_kinds)
+            self.assertIn("stale_fact", issue_kinds)
+            self.assertIn("relationship_mismatch", issue_kinds)
+            stale_issue = next(issue for issue in issues if issue["kind"] == "stale_fact")
+            mismatch = next(issue for issue in issues if issue["kind"] == "relationship_mismatch")
+            self.assertEqual(stale_issue["object_id"], stale["knowledge_id"])
+            self.assertEqual(set(mismatch["object_ids"]), {first["knowledge_id"], second["knowledge_id"]})
+            self.assertIn("contest", mismatch["next_actions"])
+            self.assertEqual(report["data"]["counts"]["fact_check_issues"], len(issues))
+
     def test_merge_duplicates_does_not_merge_unstructured_soft_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

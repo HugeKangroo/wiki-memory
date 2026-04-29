@@ -12,6 +12,7 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from memory_substrate.application.ingest.service import IngestService
+from memory_substrate.projections.markdown.frontmatter import render_frontmatter, split_frontmatter
 from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
@@ -141,6 +142,38 @@ class ObsidianProjectionTest(unittest.TestCase):
             self.assertFalse((wiki_root / "nodes").exists())
             self.assertIn(".markdown-preview-view .callout[data-callout=\"example\"]", css)
             self.assertIn("--table-border-color", css)
+
+    def test_frontmatter_parser_handles_fenced_yaml_misplaced_keys_wikilinks_and_malformed_fallback(self) -> None:
+        rendered = render_frontmatter(
+            {
+                "id": "know:frontmatter-test",
+                "aliases": ["[[Projects/Memory Substrate]]", "复利记忆"],
+                "active": True,
+            }
+        )
+        markdown = (
+            f"---\n{rendered}\n---\n\n"
+            "# Body\n\n"
+            "```yaml\n"
+            "---\n"
+            "not: frontmatter\n"
+            "---\n"
+            "```\n"
+        )
+
+        parsed = split_frontmatter(markdown)
+        misplaced = split_frontmatter("# Body\n\nfrontmatter:\n  id: ignored\n")
+        malformed = split_frontmatter("---\nid: missing-close\n# Body\n")
+
+        self.assertEqual(parsed.metadata["id"], "know:frontmatter-test")
+        self.assertEqual(parsed.metadata["aliases"], ["[[Projects/Memory Substrate]]", "复利记忆"])
+        self.assertEqual(parsed.metadata["active"], True)
+        self.assertIn("```yaml", parsed.body)
+        self.assertEqual(misplaced.metadata, {})
+        self.assertIn("frontmatter:", misplaced.body)
+        self.assertEqual(malformed.metadata, {})
+        self.assertIn("id: missing-close", malformed.body)
+        self.assertEqual(malformed.warnings, ["unclosed_frontmatter_fallback_to_body"])
 
 
 if __name__ == "__main__":

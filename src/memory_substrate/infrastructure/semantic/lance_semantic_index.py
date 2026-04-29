@@ -79,6 +79,15 @@ class LanceSemanticIndex:
             for row in rows
         ]
 
+    def count_chunks(self) -> int:
+        table = self._open_table()
+        if table is None:
+            return 0
+        counter = getattr(table, "count_rows", None)
+        if callable(counter):
+            return int(counter())
+        return len(table.to_list())
+
     def _open_table(self):
         if not self.index_root.exists():
             return None

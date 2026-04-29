@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import sys
 import tempfile
 import unittest
@@ -224,6 +225,26 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(filtered["warnings"], [])
             self.assertTrue(FsObjectRepository(root).get("source", filtered["source_id"]))
 
+    def test_repo_ingest_records_adapter_metadata_and_freshness(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = self._make_repo(root)
+
+            result = IngestService(root).ingest_repo(repo)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+            adapter = source["metadata"]["adapter"]
+            freshness = source["metadata"]["freshness"]
+
+            self.assertEqual(adapter["name"], "repo")
+            self.assertEqual(adapter["version"], "repo-adapter.v1")
+            self.assertEqual(adapter["mode"], "repo")
+            self.assertEqual(adapter["default_privacy_class"], "local_repo")
+            self.assertEqual(adapter["origin_classification"], "local_repo")
+            self.assertIn("repo_map", adapter["declared_transformations"])
+            self.assertIn("document_sections", adapter["declared_transformations"])
+            self.assertTrue(freshness["is_current"])
+            self.assertEqual(freshness["fingerprint"], source["fingerprint"])
+
     def test_repo_ingest_can_force_include_agent_local_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -372,6 +393,41 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(source["content_type"], "markdown")
             self.assertTrue(any("Guide" in excerpt for excerpt in excerpts))
             self.assertTrue(any("Install" in excerpt for excerpt in excerpts))
+
+    def test_markdown_ingest_records_line_locators_heading_breadcrumbs_and_hashes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "guide.md"
+            document.write_text(
+                "---\n"
+                "title: Guide\n"
+                "---\n\n"
+                "# Guide\n\n"
+                "Opening context.\n\n"
+                "## Install\n\n"
+                "Run the installer.\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_markdown(document)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+            install = next(segment for segment in source["segments"] if segment["locator"].get("heading_path") == ["Guide", "Install"])
+
+            self.assertEqual(install["locator"]["chunk_kind"], "section")
+            self.assertEqual(install["locator"]["line_start"], 9)
+            self.assertEqual(install["locator"]["line_end"], 11)
+            self.assertEqual(install["hash"], hashlib.sha256(install["excerpt"].encode("utf-8")).hexdigest())
+            self.assertEqual(source["payload"]["chunking"]["strategy"], "document_chunker.v1")
+            adapter = source["metadata"]["adapter"]
+            freshness = source["metadata"]["freshness"]
+            self.assertEqual(adapter["name"], "document")
+            self.assertEqual(adapter["version"], "document-adapter.v1")
+            self.assertEqual(adapter["mode"], "markdown")
+            self.assertEqual(adapter["default_privacy_class"], "local_file")
+            self.assertEqual(adapter["origin_classification"], "local_file")
+            self.assertIn("document_chunker.v1", adapter["declared_transformations"])
+            self.assertTrue(freshness["is_current"])
+            self.assertEqual(freshness["fingerprint"], source["fingerprint"])
 
     def test_web_pdf_and_conversation_ingest_modes(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
