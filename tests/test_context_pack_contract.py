@@ -3,6 +3,7 @@ from __future__ import annotations
 import sys
 import tempfile
 import unittest
+import json
 from pathlib import Path
 
 
@@ -21,9 +22,9 @@ class ContextPackContractTest(unittest.TestCase):
         pack = ContextPack(id="ctx:test", task="test", summary="summary")
 
         self.assertEqual(pack.evidence, [])
-        self.assertEqual(pack.decisions, [])
-        self.assertEqual(pack.procedures, [])
-        self.assertEqual(pack.open_work, [])
+        self.assertEqual(pack.decisions, {})
+        self.assertEqual(pack.procedures, {})
+        self.assertEqual(pack.open_work, {})
         self.assertEqual(pack.freshness, {})
         self.assertEqual(pack.context_tiers, {})
         self.assertEqual(pack.context_budget, {})
@@ -71,9 +72,9 @@ class ContextPackContractTest(unittest.TestCase):
             self.assertIn("procedures", data)
             self.assertIn("open_work", data)
             self.assertIn("freshness", data)
-            self.assertEqual(data["decisions"][0]["id"], decision["knowledge_id"])
-            self.assertEqual(data["procedures"][0]["id"], procedure["knowledge_id"])
-            self.assertEqual(data["open_work"][0]["id"], work_item["work_item_id"])
+            self.assertEqual(data["decisions"]["ids"], [decision["knowledge_id"]])
+            self.assertEqual(data["procedures"]["ids"], [procedure["knowledge_id"]])
+            self.assertEqual(data["open_work"]["ids"], [work_item["work_item_id"]])
             self.assertEqual(data["evidence"], data["citations"])
             self.assertEqual(data["freshness"]["generated_at"], data["generated_at"])
 
@@ -108,9 +109,51 @@ class ContextPackContractTest(unittest.TestCase):
             self.assertIn("open_work", data["context_tiers"])
             self.assertIn("deep_search_hints", data["context_tiers"])
             self.assertEqual(data["context_tiers"]["active_task"]["task"], "context tier design")
-            self.assertEqual(data["context_tiers"]["decisions"][0]["id"], decision["knowledge_id"])
-            self.assertEqual(data["context_tiers"]["open_work"][0]["id"], work["work_item_id"])
+            self.assertEqual(data["context_tiers"]["decisions"]["ids"], [decision["knowledge_id"]])
+            self.assertEqual(data["context_tiers"]["open_work"]["ids"], [work["work_item_id"]])
             self.assertEqual(data["context_tiers"]["deep_search_hints"][0]["tool"], "memory_query")
+
+    def test_context_tiers_are_directory_metadata_not_duplicate_sections(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            remember = RememberService(tmp)
+            decision = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Reduce context duplication",
+                    "summary": "Context tiers should point to existing sections instead of copying them.",
+                    "status": "candidate",
+                    "confidence": 0.8,
+                }
+            )
+
+            data = QueryService(tmp).context("reduce context", max_items=3)["data"]
+            tier = data["context_tiers"]["decisions"]
+
+            self.assertEqual(tier["field"], "decisions")
+            self.assertEqual(tier["count"], 1)
+            self.assertEqual(tier["ids"], [decision["knowledge_id"]])
+            self.assertNotIn("summary", tier)
+
+    def test_context_payload_avoids_duplicate_section_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            remember = RememberService(tmp)
+            for index in range(12):
+                kind = "decision" if index % 2 == 0 else "procedure"
+                remember.create_knowledge(
+                    {
+                        "kind": kind,
+                        "title": f"Large context item {index}",
+                        "summary": "Long reusable summary. " * 16,
+                        "status": "candidate",
+                        "confidence": 0.8,
+                    }
+                )
+
+            data = QueryService(tmp).context("large context", max_items=12)["data"]
+
+            self.assertLess(len(json.dumps(data, ensure_ascii=False)), 9000)
+            self.assertNotIn("summary", data["decisions"])
+            self.assertNotIn("summary", data["procedures"])
 
 
 if __name__ == "__main__":

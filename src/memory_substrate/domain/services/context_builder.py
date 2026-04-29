@@ -9,6 +9,9 @@ from memory_substrate.domain.services.patch_applier import utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
 
+CONTEXT_ITEM_SUMMARY_CHARS = 240
+
+
 class ContextBuilder:
     def __init__(self, root: str | Path) -> None:
         self.repository = FsObjectRepository(root)
@@ -37,6 +40,9 @@ class ContextBuilder:
         decisions = self._typed_items(selected, object_type="knowledge", kind="decision")
         procedures = self._typed_items(selected, object_type="knowledge", kind="procedure")
         open_work = self._open_work(selected)
+        decision_ref = self._tier_ref("decisions", decisions)
+        procedure_ref = self._tier_ref("procedures", procedures)
+        open_work_ref = self._tier_ref("open_work", open_work)
         return ContextPack(
             id=new_id("ctx"),
             task=task,
@@ -44,9 +50,9 @@ class ContextBuilder:
             scope=scope,
             items=selected,
             evidence=citations,
-            decisions=decisions,
-            procedures=procedures,
-            open_work=open_work,
+            decisions=decision_ref,
+            procedures=procedure_ref,
+            open_work=open_work_ref,
             conflicts=[],
             missing_context=[] if selected else ["No relevant context found yet."],
             recommended_next_reads=[item.id for item in selected[:5]],
@@ -55,10 +61,10 @@ class ContextBuilder:
             context_tiers=self._context_tiers(
                 task=task,
                 scope=scope,
-                decisions=decisions,
-                procedures=procedures,
+                decisions=decision_ref,
+                procedures=procedure_ref,
                 evidence=citations,
-                open_work=open_work,
+                open_work=open_work_ref,
                 recommended_next_reads=[item.id for item in selected[:5]],
             ),
             context_budget={
@@ -180,7 +186,7 @@ class ContextBuilder:
     def _to_item(self, object_type: str, obj: dict) -> ContextItem:
         kind = str(obj.get("kind", object_type))
         title = str(obj.get("title") or obj.get("name") or obj["id"])
-        summary = self._summary_text(object_type, obj)
+        summary = self._clip_summary(self._summary_text(object_type, obj))
         status = str(obj.get("status") or obj.get("lifecycle_state") or "unknown")
         return ContextItem(
             object_type=object_type,
@@ -234,6 +240,11 @@ class ContextBuilder:
             f"with {payload.get('file_count', 0)} files and {payload.get('dir_count', 0)} directories."
             f"{roots}{modules}{documents}{languages}"
         )
+
+    def _clip_summary(self, summary: str) -> str:
+        if len(summary) <= CONTEXT_ITEM_SUMMARY_CHARS:
+            return summary
+        return summary[: CONTEXT_ITEM_SUMMARY_CHARS - 3].rstrip() + "..."
 
     def _citations(self, items: list[ContextItem]) -> list[dict]:
         citations: list[dict] = []
@@ -289,30 +300,36 @@ class ContextBuilder:
         self,
         task: str,
         scope: dict,
-        decisions: list[dict],
-        procedures: list[dict],
+        decisions: dict,
+        procedures: dict,
         evidence: list[dict],
-        open_work: list[dict],
+        open_work: dict,
         recommended_next_reads: list[str],
     ) -> dict:
         return {
-            "policy": [],
+            "policy": {"field": "policy", "count": 0, "ids": []},
             "active_task": {
                 "task": task,
                 "scope": scope,
             },
             "decisions": decisions,
             "procedures": procedures,
-            "evidence": evidence,
+            "evidence": self._tier_ref("evidence", evidence),
             "open_work": open_work,
             "deep_search_hints": [
                 {
                     "tool": "memory_query",
                     "mode": "expand",
-                    "id": object_id,
+                    "ids": recommended_next_reads,
                 }
-                for object_id in recommended_next_reads
-            ],
+            ] if recommended_next_reads else [],
+        }
+
+    def _tier_ref(self, field: str, items: list[dict]) -> dict:
+        return {
+            "field": field,
+            "count": len(items),
+            "ids": [str(item.get("id") or f"{item.get('source_id')}#{item.get('segment_id')}") for item in items],
         }
 
     def _related_items(self, root_id: str, obj: dict, max_items: int) -> list[ContextItem]:

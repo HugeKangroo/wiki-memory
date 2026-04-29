@@ -70,7 +70,7 @@ class QueryGraphBackendTest(unittest.TestCase):
 
             self.assertEqual(result["result_type"], "context_pack")
             self.assertEqual([item["id"] for item in result["data"]["items"]], ["know:graph-context"])
-            self.assertEqual(result["data"]["decisions"][0]["id"], "know:graph-context")
+            self.assertEqual(result["data"]["decisions"]["ids"], ["know:graph-context"])
             self.assertEqual(
                 result["data"]["citations"],
                 [{"source_id": "src:design", "segment_id": "seg:1", "object_id": "know:graph-context"}],

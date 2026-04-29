@@ -99,7 +99,7 @@ class QueryNormalizationTest(unittest.TestCase):
             result = QueryService(tmp).context("待办项", max_items=1)
 
             self.assertEqual([item["id"] for item in result["data"]["items"]], ["work:next-review"])
-            self.assertEqual([item["id"] for item in result["data"]["open_work"]], ["work:next-review"])
+            self.assertEqual(result["data"]["open_work"]["ids"], ["work:next-review"])
             self.assertEqual(result["data"]["scope"]["object_types"], ["work_item"])
 
     def test_context_does_not_override_explicit_status_scope(self) -> None:

@@ -99,7 +99,7 @@ Repo sources store a lightweight repo map rather than full source bodies or full
 
 `memory_query search` and `context` return `query_sanitizer` diagnostics when prompt-like query text is shortened before retrieval.
 
-`memory_query context` returns `context_tiers` and `context_budget`; use tier sections before deep expansion.
+`memory_query context` returns `context_tiers` and `context_budget`; tier sections are compact id directories back into `items`, so use them before deep expansion.
 """
 
 

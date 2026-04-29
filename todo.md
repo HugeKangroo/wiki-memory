@@ -238,3 +238,23 @@ Deliverables:
 Verification:
 - [x] Add maintain report tests with synthetic entity-confusion and stale-fact fixtures.
 - [x] Run focused maintain report fact-check test.
+
+### MS-10: Context Payload Compression
+
+Status: `completed`
+
+Goal: reduce `memory_query context` response size so MCP callers spend less context on duplicated section data.
+
+Boundary: response shape and documentation only. Do not remove compact item details or require an LLM summarizer.
+
+Deliverables:
+- [x] Measure context response field sizes and identify duplicated section payloads.
+- [x] Convert `context_tiers` from copied section lists into compact directory metadata.
+- [x] Convert top-level `decisions`, `procedures`, and `open_work` into id directories back into `items`.
+- [x] Clip context item summaries to keep default context compact.
+- [x] Update MCP docs and agent resources.
+
+Verification:
+- [x] Add regression coverage that context tiers do not duplicate section summaries.
+- [x] Add payload budget coverage for large context responses.
+- [x] Measure sample context payload reduction from about 16.2 KB to about 7.2 KB.

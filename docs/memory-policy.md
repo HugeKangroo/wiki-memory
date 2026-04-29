@@ -119,7 +119,7 @@ Required domain mappings include:
 
 When a query returns no useful results, callers should expand terms and retry before concluding that memory has no answer.
 
-Context responses should be tiered and budgeted. Agents should be able to distinguish active task, decisions, procedures, evidence, open work, and deep-search hints without reading all returned items as one flat list.
+Context responses should be tiered and budgeted. Agents should be able to distinguish active task, decisions, procedures, evidence, open work, and deep-search hints without reading all returned items as one flat list. Tier fields should avoid duplicating full item details; they should point to compact item ids whenever possible.
 
 ## Source Adapter Policy
 

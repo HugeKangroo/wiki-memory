@@ -127,7 +127,7 @@ Do not answer "there is no memory" from a single failed keyword query when a rea
 
 `memory_query search` and `memory_query context` sanitize unusually long query text before retrieval and return `query_sanitizer` diagnostics. Treat `was_sanitized: true` as a hint to tighten future calls; the effective `query` or `task` in the response is what retrieval used.
 
-`memory_query context` also returns `context_tiers` and `context_budget`. Prefer tiered sections for task planning: inspect `decisions`, `procedures`, `evidence`, and `open_work` first, then use `deep_search_hints` only when the compact context is insufficient.
+`memory_query context` also returns `context_tiers` and `context_budget`. To keep context small, `items` carries compact item details while `decisions`, `procedures`, and `open_work` are id directories back into `items`. Use tier directories for planning, then use `deep_search_hints`, `expand`, or `page` only when the compact context is insufficient.
 
 When semantic retrieval is configured, `memory_query search` fuses lexical or graph hits with semantic hits using Reciprocal Rank Fusion. Prefer items found by multiple streams, but inspect `retrieval_sources`, `retrieval_ranks`, `matched_chunks`, and source locators before treating a hit as evidence. Semantic source hits can point to the matched chunk; use `page`, `expand`, or local file reads to inspect the surrounding context when the answer depends on exact wording.
 

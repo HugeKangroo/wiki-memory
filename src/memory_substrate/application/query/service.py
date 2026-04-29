@@ -501,6 +501,9 @@ class QueryService:
             for item in items
             if item["object_type"] == "work_item" and item.get("status") in {"open", "in_progress", "blocked"}
         ]
+        decision_ref = self._tier_ref("decisions", decisions)
+        procedure_ref = self._tier_ref("procedures", procedures)
+        open_work_ref = self._tier_ref("open_work", open_work)
         recommended_next_reads = [item["id"] for item in items[:5]]
         return {
             "result_type": "context_pack",
@@ -511,9 +514,9 @@ class QueryService:
                 "scope": scope,
                 "items": items,
                 "evidence": citations,
-                "decisions": decisions,
-                "procedures": procedures,
-                "open_work": open_work,
+                "decisions": decision_ref,
+                "procedures": procedure_ref,
+                "open_work": open_work_ref,
                 "conflicts": [],
                 "missing_context": [] if items else ["No relevant context found yet."],
                 "recommended_next_reads": recommended_next_reads,
@@ -522,10 +525,10 @@ class QueryService:
                 "context_tiers": self._context_tiers(
                     task=task,
                     scope=scope,
-                    decisions=decisions,
-                    procedures=procedures,
+                    decisions=decision_ref,
+                    procedures=procedure_ref,
                     evidence=citations,
-                    open_work=open_work,
+                    open_work=open_work_ref,
                     recommended_next_reads=recommended_next_reads,
                 ),
                 "context_budget": {
@@ -548,7 +551,7 @@ class QueryService:
             "kind": item.get("kind", item.get("object_type", "unknown")),
             "title": item.get("title", item["id"]),
             "status": item.get("status", "active"),
-            "summary": item.get("summary", ""),
+            "summary": self._clip(str(item.get("summary", "")), 240),
             "evidence_refs": item.get("evidence_refs", []),
         }
 
@@ -580,30 +583,36 @@ class QueryService:
         self,
         task: str,
         scope: dict,
-        decisions: list[dict],
-        procedures: list[dict],
+        decisions: dict,
+        procedures: dict,
         evidence: list[dict],
-        open_work: list[dict],
+        open_work: dict,
         recommended_next_reads: list[str],
     ) -> dict:
         return {
-            "policy": [],
+            "policy": {"field": "policy", "count": 0, "ids": []},
             "active_task": {
                 "task": task,
                 "scope": scope,
             },
             "decisions": decisions,
             "procedures": procedures,
-            "evidence": evidence,
+            "evidence": self._tier_ref("evidence", evidence),
             "open_work": open_work,
             "deep_search_hints": [
                 {
                     "tool": "memory_query",
                     "mode": "expand",
-                    "id": object_id,
+                    "ids": recommended_next_reads,
                 }
-                for object_id in recommended_next_reads
-            ],
+            ] if recommended_next_reads else [],
+        }
+
+    def _tier_ref(self, field: str, items: list[dict]) -> dict:
+        return {
+            "field": field,
+            "count": len(items),
+            "ids": [str(item.get("id") or f"{item.get('source_id')}#{item.get('segment_id')}") for item in items],
         }
 
     def _parse_time(self, value: str | None) -> datetime:

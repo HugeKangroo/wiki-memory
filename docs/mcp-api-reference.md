@@ -301,9 +301,11 @@ Query options are mode-specific. For example, `detail` is accepted only by `page
 
 - `context_tiers.policy`: reserved for always-on policy snippets.
 - `context_tiers.active_task`: effective task and scope.
-- `context_tiers.decisions`, `procedures`, `evidence`, and `open_work`: compact task-relevant memory sections.
+- `context_tiers.decisions`, `procedures`, `evidence`, and `open_work`: compact directory metadata with `field`, `count`, and `ids`.
 - `context_tiers.deep_search_hints`: bounded follow-up `memory_query expand` hints.
 - `context_budget`: compact budget metadata such as `max_items`, `returned_items`, and `detail`.
+
+To reduce context consumption, `items` is the only default field carrying compact item summaries. `decisions`, `procedures`, and `open_work` are section references with ids that point back into `items`; use `expand` or `page` only when more detail is required.
 
 `recent`:
 
