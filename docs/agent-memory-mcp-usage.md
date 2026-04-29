@@ -69,7 +69,7 @@ Use the four MCP tools with strict boundaries:
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
-Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it returns `status: "blocked"`, `requires_decision: true`, `warnings`, and `suggested_exclude_patterns` without writing canonical objects. Treat this as a decision point: inspect the entries, decide whether they belong in memory, and re-run `memory_ingest` with the suggested `exclude_patterns` when they should be skipped. Use `options.force: true` only when those entries are intentionally part of the evidence.
+Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it excludes those entries from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`, `requires_decision: true`, `pending_decisions`, `excluded_by_preflight`, `warnings`, and `suggested_exclude_patterns`. Treat this as a decision point for the pending entries, not as a failed ingest. Use `options.force: true` only when those entries are intentionally part of the evidence.
 
 If a repo was already ingested and its computed fingerprint is unchanged, repository ingest returns `status: "noop"` and `applied_operations: 0` without writing patch, audit, or projection data. Treat `noop` as a clean result, not a failure.
 
@@ -84,7 +84,7 @@ At task start:
 When new material appears:
 
 1. Call `memory_ingest` to capture the material as evidence.
-2. Inspect returned `status` and `warnings`. If `status` is `blocked`, decide whether to re-run with `suggested_exclude_patterns` or, rarely, `options.force: true`.
+2. Inspect returned `status`, `warnings`, and `pending_decisions`. If `status` is `completed_with_pending_decisions`, use the clean ingested source normally and decide separately whether any pending entry deserves a later explicit `options.force: true` ingest.
 3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
 4. Analyze the ingested evidence outside ingest.
 5. Decide whether anything should become durable memory.

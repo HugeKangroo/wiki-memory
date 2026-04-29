@@ -307,7 +307,7 @@ class RepoAdapter:
         entries = ", ".join(suggested_exclude_patterns)
         return [
             "Repository contains local/agent state entries that may not belong in memory: "
-            f"{entries}. Re-run memory_ingest repo with exclude_patterns to skip them."
+            f"{entries}. They are excluded from the clean repo ingest unless options.force=true is used."
         ]
 
     def _fingerprint(self, summary: RepoScanSummary) -> str:

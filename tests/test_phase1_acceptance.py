@@ -179,7 +179,7 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertIn("src/App.tsx", source["payload"]["code_files"])
             self.assertNotIn("src-tauri/target/debug/generated.ts", source["payload"]["code_files"])
 
-    def test_repo_ingest_suggests_excludes_for_agent_local_state(self) -> None:
+    def test_repo_ingest_writes_clean_view_and_returns_pending_agent_local_state(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
             repo = root / "agent-state-repo"
@@ -192,22 +192,34 @@ class Phase1AcceptanceTest(unittest.TestCase):
 
             ingest = IngestService(root)
             result = ingest.ingest_repo(repo)
+            source = FsObjectRepository(root).get("source", result["source_id"])
 
-            self.assertEqual(result["status"], "blocked")
+            self.assertEqual(result["status"], "completed_with_pending_decisions")
             self.assertTrue(result["requires_decision"])
-            self.assertIsNone(result["source_id"])
-            self.assertEqual(result["applied_operations"], 0)
-            self.assertEqual(FsObjectRepository(root).list("source"), [])
-            self.assertEqual(FsObjectRepository(root).list("node"), [])
+            self.assertGreater(result["applied_operations"], 0)
+            self.assertIsNotNone(source)
+            self.assertNotIn(".codex", source["payload"]["top_level_entries"])
+            self.assertNotIn(".worktrees", source["payload"]["top_level_entries"])
+            self.assertEqual(result["excluded_by_preflight"], [".codex", ".worktrees"])
             self.assertIn(".codex", result["suggested_exclude_patterns"])
             self.assertIn(".worktrees", result["suggested_exclude_patterns"])
+            self.assertEqual(
+                [item["path"] for item in result["pending_decisions"]],
+                [".codex", ".worktrees"],
+            )
             self.assertTrue(result["warnings"])
             self.assertIn("local/agent state", result["warnings"][0])
+            self.assertEqual(
+                source["metadata"]["repo_ingest"]["excluded_by_preflight"],
+                [".codex", ".worktrees"],
+            )
 
-            filtered = ingest.ingest_repo(repo, exclude_patterns=[".codex", ".worktrees"])
+            filtered = ingest.ingest_repo(repo, exclude_patterns=[".worktrees", ".codex"])
 
-            self.assertEqual(filtered["status"], "completed")
+            self.assertEqual(filtered["status"], "noop")
             self.assertFalse(filtered["requires_decision"])
+            self.assertEqual(filtered["pending_decisions"], [])
+            self.assertEqual(filtered["excluded_by_preflight"], [])
             self.assertEqual(filtered["suggested_exclude_patterns"], [])
             self.assertEqual(filtered["warnings"], [])
             self.assertTrue(FsObjectRepository(root).get("source", filtered["source_id"]))

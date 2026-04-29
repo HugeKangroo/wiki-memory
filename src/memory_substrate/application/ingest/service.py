@@ -64,12 +64,37 @@ class IngestService:
             include_patterns=include_patterns,
             exclude_patterns=exclude_patterns,
         )
-        if preflight.suggested_exclude_patterns and not force:
-            return self._blocked_repo_ingest_result(preflight)
-
-        output = self.repo_adapter.ingest(repo_path, include_patterns=include_patterns, exclude_patterns=exclude_patterns)
+        pending_decisions = self._repo_pending_decisions(preflight, force=force)
+        excluded_by_preflight = [decision["path"] for decision in pending_decisions]
+        effective_exclude_patterns = self._effective_repo_exclude_patterns(
+            exclude_patterns,
+            excluded_by_preflight=excluded_by_preflight,
+            force=force,
+        )
+        output = self.repo_adapter.ingest(
+            repo_path,
+            include_patterns=include_patterns,
+            exclude_patterns=effective_exclude_patterns,
+        )
+        self._annotate_repo_ingest_metadata(
+            output=output,
+            pending_decisions=pending_decisions,
+            excluded_by_preflight=excluded_by_preflight,
+        )
+        warnings = preflight.warnings if pending_decisions else output.warnings
+        suggested_exclude_patterns = (
+            preflight.suggested_exclude_patterns
+            if pending_decisions
+            else output.suggested_exclude_patterns
+        )
         if self._repo_ingest_is_noop(output):
-            return self._noop_repo_ingest_result(output)
+            return self._noop_repo_ingest_result(
+                output,
+                warnings=warnings,
+                suggested_exclude_patterns=suggested_exclude_patterns,
+                pending_decisions=pending_decisions,
+                excluded_by_preflight=excluded_by_preflight,
+            )
 
         repo_root = str(Path(repo_path).resolve())
         operations = [
@@ -175,8 +200,8 @@ class IngestService:
         projection_result = self.projector.rebuild()
         return {
             "result_type": "repo_ingest_result",
-            "status": "completed",
-            "requires_decision": False,
+            "status": "completed_with_pending_decisions" if pending_decisions else "completed",
+            "requires_decision": bool(pending_decisions),
             "patch_id": apply_result.patch_id,
             "source_id": output.source.id,
             "node_ids": [node.id for node in output.nodes],
@@ -185,26 +210,44 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
-            "warnings": output.warnings,
-            "suggested_exclude_patterns": output.suggested_exclude_patterns,
+            "warnings": warnings,
+            "suggested_exclude_patterns": suggested_exclude_patterns,
+            "pending_decisions": pending_decisions,
+            "excluded_by_preflight": excluded_by_preflight,
         }
 
     def _repo_ingest_is_noop(self, output) -> bool:
         existing_source = self.object_repository.get("source", output.source.id)
         if existing_source is None:
             return False
+        existing_scope = existing_source.get("metadata", {}).get("repo_ingest", {})
+        output_scope = output.source.metadata.get("repo_ingest", {})
         return (
             existing_source.get("kind") == output.source.kind
             and existing_source.get("identity_key") == output.source.identity_key
             and existing_source.get("status") == "active"
             and existing_source.get("fingerprint") == output.source.fingerprint
+            and self._normalized_repo_patterns(existing_scope.get("include_patterns", []))
+            == self._normalized_repo_patterns(output_scope.get("include_patterns", []))
+            and self._normalized_repo_patterns(existing_scope.get("exclude_patterns", []))
+            == self._normalized_repo_patterns(output_scope.get("exclude_patterns", []))
         )
 
-    def _noop_repo_ingest_result(self, output) -> dict:
+    def _normalized_repo_patterns(self, patterns: list[str] | None) -> list[str]:
+        return sorted(patterns or [])
+
+    def _noop_repo_ingest_result(
+        self,
+        output,
+        warnings: list[str],
+        suggested_exclude_patterns: list[str],
+        pending_decisions: list[dict],
+        excluded_by_preflight: list[str],
+    ) -> dict:
         return {
             "result_type": "repo_ingest_result",
             "status": "noop",
-            "requires_decision": False,
+            "requires_decision": bool(pending_decisions),
             "patch_id": None,
             "source_id": output.source.id,
             "node_ids": [node.id for node in output.nodes],
@@ -213,10 +256,49 @@ class IngestService:
             "applied_operations": 0,
             "audit_event_ids": [],
             "projection_count": 0,
-            "warnings": output.warnings,
-            "suggested_exclude_patterns": output.suggested_exclude_patterns,
+            "warnings": warnings,
+            "suggested_exclude_patterns": suggested_exclude_patterns,
+            "pending_decisions": pending_decisions,
+            "excluded_by_preflight": excluded_by_preflight,
             "reason": "repo_fingerprint_unchanged",
         }
+
+    def _repo_pending_decisions(self, preflight: RepoPreflightOutput, force: bool) -> list[dict]:
+        if force:
+            return []
+        return [
+            {
+                "path": pattern,
+                "kind": "local_agent_state",
+                "reason": "Repository contains local/agent state that may not belong in durable memory.",
+                "suggested_action": "exclude",
+            }
+            for pattern in preflight.suggested_exclude_patterns
+        ]
+
+    def _effective_repo_exclude_patterns(
+        self,
+        exclude_patterns: list[str] | None,
+        excluded_by_preflight: list[str],
+        force: bool,
+    ) -> list[str] | None:
+        if force:
+            return exclude_patterns
+        merged = list(exclude_patterns or [])
+        for pattern in excluded_by_preflight:
+            if pattern not in merged:
+                merged.append(pattern)
+        return merged
+
+    def _annotate_repo_ingest_metadata(
+        self,
+        output,
+        pending_decisions: list[dict],
+        excluded_by_preflight: list[str],
+    ) -> None:
+        repo_ingest = output.source.metadata.setdefault("repo_ingest", {})
+        repo_ingest["pending_decisions"] = pending_decisions
+        repo_ingest["excluded_by_preflight"] = excluded_by_preflight
 
     def _blocked_repo_ingest_result(self, preflight: RepoPreflightOutput) -> dict:
         return {

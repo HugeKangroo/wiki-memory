@@ -108,11 +108,12 @@ class McpServerTest(unittest.TestCase):
             playbook = await server.read_resource("memory://agent-playbook")
             self.assertIn("query expansion", playbook[0].content)
             self.assertIn("possible_duplicates", playbook[0].content)
-            self.assertIn('status: "blocked"', playbook[0].content)
+            self.assertIn('status: "completed_with_pending_decisions"', playbook[0].content)
             self.assertIn('status: "noop"', playbook[0].content)
 
             api_summary = await server.read_resource("memory://mcp-api-summary")
             self.assertIn("Repo ingest statuses", api_summary[0].content)
+            self.assertIn("completed_with_pending_decisions", api_summary[0].content)
             self.assertIn("noop", api_summary[0].content)
 
         asyncio.run(run_smoke())
@@ -349,30 +350,16 @@ class McpServerTest(unittest.TestCase):
                 initial_payload = json.loads(initial_query[0].text)
                 self.assertEqual(initial_payload["data"]["items"], [])
 
-                blocked_ingest = await server.call_tool(
+                pending_ingest = await server.call_tool(
                     "memory_ingest",
                     {"args": {"mode": "repo", "input_data": {"path": str(repo)}}},
                 )
-                blocked_payload = json.loads(blocked_ingest[0].text)
-                self.assertEqual(blocked_payload["status"], "blocked")
-                self.assertEqual(blocked_payload["applied_operations"], 0)
-                self.assertEqual(blocked_payload["suggested_exclude_patterns"], [".codex"])
-
-                completed_ingest = await server.call_tool(
-                    "memory_ingest",
-                    {
-                        "args": {
-                            "mode": "repo",
-                            "input_data": {
-                                "path": str(repo),
-                                "exclude_patterns": blocked_payload["suggested_exclude_patterns"],
-                            },
-                        }
-                    },
-                )
-                completed_payload = json.loads(completed_ingest[0].text)
-                self.assertEqual(completed_payload["status"], "completed")
-                self.assertGreater(completed_payload["applied_operations"], 0)
+                pending_payload = json.loads(pending_ingest[0].text)
+                self.assertEqual(pending_payload["status"], "completed_with_pending_decisions")
+                self.assertGreater(pending_payload["applied_operations"], 0)
+                self.assertEqual(pending_payload["suggested_exclude_patterns"], [".codex"])
+                self.assertEqual(pending_payload["excluded_by_preflight"], [".codex"])
+                self.assertEqual(pending_payload["pending_decisions"][0]["path"], ".codex")
 
                 noop_ingest = await server.call_tool(
                     "memory_ingest",
@@ -381,7 +368,7 @@ class McpServerTest(unittest.TestCase):
                             "mode": "repo",
                             "input_data": {
                                 "path": str(repo),
-                                "exclude_patterns": blocked_payload["suggested_exclude_patterns"],
+                                "exclude_patterns": pending_payload["suggested_exclude_patterns"],
                             },
                         }
                     },
@@ -390,12 +377,21 @@ class McpServerTest(unittest.TestCase):
                 self.assertEqual(noop_payload["status"], "noop")
                 self.assertEqual(noop_payload["applied_operations"], 0)
 
+                repeated_pending_ingest = await server.call_tool(
+                    "memory_ingest",
+                    {"args": {"mode": "repo", "input_data": {"path": str(repo)}}},
+                )
+                repeated_pending_payload = json.loads(repeated_pending_ingest[0].text)
+                self.assertEqual(repeated_pending_payload["status"], "noop")
+                self.assertEqual(repeated_pending_payload["pending_decisions"][0]["path"], ".codex")
+
                 page = await server.call_tool(
                     "memory_query",
-                    {"args": {"mode": "page", "input_data": {"id": completed_payload["source_id"]}}},
+                    {"args": {"mode": "page", "input_data": {"id": pending_payload["source_id"]}}},
                 )
                 page_payload = json.loads(page[0].text)
                 source = page_payload["data"]["object"]
+                self.assertNotIn(".codex", source["payload"]["top_level_entries"])
                 evidence = source["segments"][0]
 
                 remembered = await server.call_tool(
@@ -412,15 +408,15 @@ class McpServerTest(unittest.TestCase):
                                 "scope_refs": ["scope:mcp-workflow-test"],
                                 "status": "active",
                                 "confidence": 1.0,
-                                "subject_refs": [completed_payload["node_ids"][0]],
+                                "subject_refs": [pending_payload["node_ids"][0]],
                                 "evidence_refs": [
                                     {
-                                        "source_id": completed_payload["source_id"],
+                                        "source_id": pending_payload["source_id"],
                                         "segment_id": evidence["segment_id"],
                                     }
                                 ],
                                 "payload": {
-                                    "subject": completed_payload["node_ids"][0],
+                                    "subject": pending_payload["node_ids"][0],
                                     "predicate": "workflow_marker",
                                     "value": "mcp-workflow",
                                     "object": None,

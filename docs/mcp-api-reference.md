@@ -72,22 +72,32 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
-Before writing memory, `repo` ingest runs a preflight for local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees`. If these entries are present and not excluded, the tool returns `status: "blocked"` and does not write source, node, knowledge, activity, patch, audit, or projection data. Agents should inspect the warning and then re-run the same repo ingest with `exclude_patterns` when those entries should be skipped.
+Before writing memory, `repo` ingest runs a preflight for local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees`. If these entries are present and not excluded, the tool excludes them from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`. Agents should use the clean source normally and inspect `pending_decisions` separately.
 
 ```json
 {
-  "result_type": "repo_ingest_preflight",
-  "status": "blocked",
+  "result_type": "repo_ingest_result",
+  "status": "completed_with_pending_decisions",
   "requires_decision": true,
-  "applied_operations": 0,
+  "source_id": "src:...",
+  "applied_operations": 24,
+  "excluded_by_preflight": [".codex", ".worktrees"],
+  "pending_decisions": [
+    {
+      "path": ".codex",
+      "kind": "local_agent_state",
+      "reason": "Repository contains local/agent state that may not belong in durable memory.",
+      "suggested_action": "exclude"
+    }
+  ],
   "warnings": [
-    "Repository contains local/agent state entries that may not belong in memory: .codex, .worktrees. Re-run memory_ingest repo with exclude_patterns to skip them."
+    "Repository contains local/agent state entries that may not belong in memory: .codex, .worktrees. They are excluded from the clean repo ingest unless options.force=true is used."
   ],
   "suggested_exclude_patterns": [".codex", ".worktrees"]
 }
 ```
 
-Use `options.force: true` only when the local or agent state is intentionally part of the evidence and should be written.
+Use `options.force: true` only when the local or agent state is intentionally part of the evidence and should be written. In normal use, do not re-run just to exclude pending entries; the clean view has already been written.
 
 When repo preflight passes but the computed repo fingerprint is unchanged from the active stored source, the tool returns `status: "noop"` without writing patch, audit, or projection data:
 

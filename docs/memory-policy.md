@@ -141,8 +141,10 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 - `possible_duplicates`
 - `conflicts_with`
 - `requires_decision`
+- `pending_decisions`
 - `suggested_retry_terms`
 - `suggested_exclude_patterns`
+- `excluded_by_preflight`
 - `warnings`
 - `next_actions`
 
