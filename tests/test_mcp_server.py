@@ -329,6 +329,121 @@ class McpServerTest(unittest.TestCase):
 
         asyncio.run(run_smoke())
 
+    def test_server_runs_repo_ingest_remember_query_workflow(self) -> None:
+        async def run_workflow() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
+                repo = Path(tmpdir) / "workflow-repo"
+                src = repo / "src"
+                codex_state = repo / ".codex"
+                src.mkdir(parents=True)
+                codex_state.mkdir()
+                (repo / "README.md").write_text("# Workflow Repo\n\nMCP workflow marker.\n", encoding="utf-8")
+                (src / "workflow.py").write_text("def marker():\n    return 'mcp-workflow'\n", encoding="utf-8")
+                (codex_state / "session.json").write_text("{}", encoding="utf-8")
+
+                initial_query = await server.call_tool(
+                    "memory_query",
+                    {"args": {"mode": "search", "input_data": {"query": "mcp workflow marker"}}},
+                )
+                initial_payload = json.loads(initial_query[0].text)
+                self.assertEqual(initial_payload["data"]["items"], [])
+
+                blocked_ingest = await server.call_tool(
+                    "memory_ingest",
+                    {"args": {"mode": "repo", "input_data": {"path": str(repo)}}},
+                )
+                blocked_payload = json.loads(blocked_ingest[0].text)
+                self.assertEqual(blocked_payload["status"], "blocked")
+                self.assertEqual(blocked_payload["applied_operations"], 0)
+                self.assertEqual(blocked_payload["suggested_exclude_patterns"], [".codex"])
+
+                completed_ingest = await server.call_tool(
+                    "memory_ingest",
+                    {
+                        "args": {
+                            "mode": "repo",
+                            "input_data": {
+                                "path": str(repo),
+                                "exclude_patterns": blocked_payload["suggested_exclude_patterns"],
+                            },
+                        }
+                    },
+                )
+                completed_payload = json.loads(completed_ingest[0].text)
+                self.assertEqual(completed_payload["status"], "completed")
+                self.assertGreater(completed_payload["applied_operations"], 0)
+
+                noop_ingest = await server.call_tool(
+                    "memory_ingest",
+                    {
+                        "args": {
+                            "mode": "repo",
+                            "input_data": {
+                                "path": str(repo),
+                                "exclude_patterns": blocked_payload["suggested_exclude_patterns"],
+                            },
+                        }
+                    },
+                )
+                noop_payload = json.loads(noop_ingest[0].text)
+                self.assertEqual(noop_payload["status"], "noop")
+                self.assertEqual(noop_payload["applied_operations"], 0)
+
+                page = await server.call_tool(
+                    "memory_query",
+                    {"args": {"mode": "page", "input_data": {"id": completed_payload["source_id"]}}},
+                )
+                page_payload = json.loads(page[0].text)
+                source = page_payload["data"]["object"]
+                evidence = source["segments"][0]
+
+                remembered = await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "mode": "knowledge",
+                            "input_data": {
+                                "kind": "fact",
+                                "title": "Workflow repo exposes an MCP workflow marker",
+                                "summary": "The workflow repo README and source mention an MCP workflow marker.",
+                                "reason": "This durable fact verifies the query-ingest-remember-query MCP workflow.",
+                                "memory_source": "user_declared",
+                                "scope_refs": ["scope:mcp-workflow-test"],
+                                "status": "active",
+                                "confidence": 1.0,
+                                "subject_refs": [completed_payload["node_ids"][0]],
+                                "evidence_refs": [
+                                    {
+                                        "source_id": completed_payload["source_id"],
+                                        "segment_id": evidence["segment_id"],
+                                    }
+                                ],
+                                "payload": {
+                                    "subject": completed_payload["node_ids"][0],
+                                    "predicate": "workflow_marker",
+                                    "value": "mcp-workflow",
+                                    "object": None,
+                                    "metadata": {},
+                                },
+                            },
+                        }
+                    },
+                )
+                remembered_payload = json.loads(remembered[0].text)
+                self.assertTrue(remembered_payload["knowledge_id"].startswith("know:"))
+                self.assertEqual(remembered_payload["possible_duplicates"], [])
+
+                final_query = await server.call_tool(
+                    "memory_query",
+                    {"args": {"mode": "search", "input_data": {"query": "workflow marker"}}},
+                )
+                final_payload = json.loads(final_query[0].text)
+                item_ids = {item["id"] for item in final_payload["data"]["items"]}
+                self.assertIn(remembered_payload["knowledge_id"], item_ids)
+
+        asyncio.run(run_workflow())
+
     def test_server_root_can_be_configured_from_environment(self) -> None:
         async def run_smoke() -> None:
             with tempfile.TemporaryDirectory() as tmpdir:
