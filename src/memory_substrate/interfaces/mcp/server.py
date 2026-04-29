@@ -20,18 +20,12 @@ from memory_substrate.interfaces.mcp.tools import (
 SERVER_ROOT_ENV_VAR = "MEMORY_SUBSTRATE_ROOT"
 
 SERVER_INSTRUCTIONS = (
-    "Memory Substrate MCP server for capturing evidence, remembering durable knowledge, "
-    "querying accumulated context, and maintaining memory lifecycle health.\n\n"
-    "Recommended workflow: Task start: use memory_query to load existing context. "
-    "New evidence: use memory_ingest to capture files, repos, web pages, PDFs, or conversations "
-    "as citable evidence. Then analyze evidence outside ingest and call memory_remember only when "
-    "the user or agent decides the extracted information should survive future sessions; create "
-    "writes require reason, memory_source, and scope_refs. "
-    "Use memory_query before memory_remember to check related context, duplicates, and conflicts. "
-    "Do not pass memory root paths in tool calls; the MCP server root is fixed by host configuration. "
-    "Use memory_maintain configure to set root-level defaults such as graph_backend and semantic_backend. "
-    "Use memory_maintain report/structure for read-only checks before mutating maintenance. "
-    "Mutating memory_maintain modes require options.apply=true."
+    "Memory Substrate MCP server. Recommended workflow: Task start: use memory_query. "
+    "New evidence: use memory_ingest, analyze evidence outside ingest, then use memory_remember only for durable writes "
+    "with reason, memory_source, and scope_refs. Use memory_query before memory_remember to check context, "
+    "duplicates, and conflicts. Do not pass memory root paths; the host fixes the server root. "
+    "Use memory_maintain for configure/report/structure/reindex; mutating memory_maintain modes require "
+    "options.apply=true."
 )
 
 

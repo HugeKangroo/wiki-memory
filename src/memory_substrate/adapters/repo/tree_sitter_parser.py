@@ -22,35 +22,43 @@ class ParsedModule:
     parser_backend: str = "fallback"
 
 
-class TreeSitterParser:
-    """Optional parsing boundary for repo ingest.
+@dataclass(slots=True)
+class ParsedDocumentSection:
+    path: str
+    heading: str
+    level: int
+    line_start: int
+    line_end: int
+    excerpt: str
+    parser_backend: str = "fallback"
 
-    Uses tree-sitter if available, otherwise falls back to lightweight parsing
-    for Python via stdlib `ast`.
+
+class TreeSitterParser:
+    """Single-primary parser boundary for repo ingest.
+
+    Prefer `tree_sitter_language_pack` when it is installed. The stdlib and
+    regex paths are safety fallbacks for local/default installs, not parallel
+    semantic implementations.
     """
 
     def __init__(self) -> None:
         self._backend = "fallback"
-        self._parser = None
-        self._languages = None
+        self._get_parser = None
         try:
-            from tree_sitter import Parser  # type: ignore
-            from tree_sitter_languages import get_language  # type: ignore
+            from tree_sitter_language_pack import get_parser  # type: ignore
 
-            self._parser = Parser
-            self._get_language = get_language
-            self._backend = "tree_sitter"
+            self._get_parser = get_parser
+            self._backend = "tree_sitter_language_pack"
         except Exception:
-            self._parser = None
-            self._get_language = None
+            self._get_parser = None
 
     @property
     def backend(self) -> str:
         return self._backend
 
     def parse(self, root: Path, path: Path, language: str) -> ParsedModule | None:
-        if self._backend == "tree_sitter":
-            parsed = self._parse_with_tree_sitter(root, path, language)
+        if self._backend == "tree_sitter_language_pack":
+            parsed = self._parse_with_language_pack(root, path, language)
             if parsed is not None:
                 return parsed
         if language == "python":
@@ -59,16 +67,18 @@ class TreeSitterParser:
             return self._parse_js_like(root, path, language)
         return None
 
-    def _parse_with_tree_sitter(self, root: Path, path: Path, language: str) -> ParsedModule | None:
-        if self._parser is None or self._get_language is None:
+    def parse_markdown(self, root: Path, path: Path) -> list[ParsedDocumentSection]:
+        if self._backend == "tree_sitter_language_pack":
+            sections = self._parse_markdown_with_language_pack(root, path)
+            if sections:
+                return sections
+        return self._parse_markdown_headings(root, path, parser_backend="fallback")
+
+    def _parse_with_language_pack(self, root: Path, path: Path, language: str) -> ParsedModule | None:
+        if self._get_parser is None:
             return None
-        language_map = {
-            "python": "python",
-            "typescript": "typescript",
-            "javascript": "javascript",
-        }
-        ts_lang = language_map.get(language)
-        if ts_lang is None:
+        ts_lang = self._tree_sitter_language_candidates(path, language)
+        if not ts_lang:
             return None
 
         try:
@@ -77,8 +87,9 @@ class TreeSitterParser:
             return None
 
         try:
-            parser = self._parser()
-            parser.set_language(self._get_language(ts_lang))
+            parser = self._load_parser(ts_lang)
+            if parser is None:
+                return None
             tree = parser.parse(source.encode("utf-8"))
         except Exception:
             return None
@@ -88,7 +99,8 @@ class TreeSitterParser:
         imports: list[str] = []
         symbols: list[dict] = []
 
-        def walk(node) -> None:
+        def walk(node, class_stack: list[str] | None = None) -> None:
+            class_stack = class_stack or []
             node_type = node.type
             if node_type in {"class_definition", "class_declaration"}:
                 name_node = node.child_by_field_name("name")
@@ -96,20 +108,41 @@ class TreeSitterParser:
                     name = source[name_node.start_byte:name_node.end_byte]
                     classes.append(name)
                     symbols.append(self._tree_sitter_symbol(name, "class", node))
-            elif node_type in {"function_definition", "function_declaration", "method_definition"}:
+                    for child in node.children:
+                        walk(child, [*class_stack, name])
+                    return
+            elif node_type in {
+                "function_definition",
+                "function_declaration",
+                "method_definition",
+                "generator_function_declaration",
+            }:
                 name_node = node.child_by_field_name("name")
                 if name_node is not None:
                     name = source[name_node.start_byte:name_node.end_byte]
+                    kind = "method" if class_stack or node_type == "method_definition" else "function"
+                    if kind == "method" and class_stack and "." not in name:
+                        name = f"{class_stack[-1]}.{name}"
                     functions.append(name)
-                    symbols.append(self._tree_sitter_symbol(name, "function", node))
-            elif node_type in {"import_statement", "import_from_statement"}:
+                    symbols.append(self._tree_sitter_symbol(name, kind, node))
+            elif node_type in {"interface_declaration", "type_alias_declaration"}:
+                name_node = node.child_by_field_name("name")
+                if name_node is not None:
+                    kind = "interface" if node_type == "interface_declaration" else "type"
+                    name = source[name_node.start_byte:name_node.end_byte]
+                    symbols.append(self._tree_sitter_symbol(name, kind, node))
+            elif node_type in {"import_statement", "import_from_statement", "import_declaration"}:
                 imports.append(source[node.start_byte:node.end_byte].strip())
             for child in node.children:
-                walk(child)
+                walk(child, class_stack)
 
         walk(tree.root_node)
         if not classes and not functions and not imports:
             return None
+        rich_python = self._parse_python_ast(root, path) if language == "python" else None
+        if rich_python is not None:
+            if not imports:
+                imports = rich_python.imports
         return ParsedModule(
             path=str(path.relative_to(root)),
             language=language,
@@ -119,16 +152,148 @@ class TreeSitterParser:
             functions=functions[:20],
             imports=imports[:20],
             symbols=symbols[:40],
-            parser_backend="tree_sitter",
+            module_doc=rich_python.module_doc if rich_python is not None else "",
+            class_docs=rich_python.class_docs if rich_python is not None else {},
+            interfaces=rich_python.interfaces[:30] if rich_python is not None else [],
+            parser_backend="tree_sitter_language_pack",
         )
+
+    def _tree_sitter_language_candidates(self, path: Path, language: str) -> list[str]:
+        suffix = path.suffix.lower()
+        if suffix == ".tsx":
+            return ["tsx", "typescript"]
+        if suffix == ".jsx":
+            return ["javascript"]
+        language_map = {
+            "python": ["python"],
+            "typescript": ["typescript"],
+            "javascript": ["javascript"],
+        }
+        return language_map.get(language, [])
+
+    def _load_parser(self, language_candidates: list[str]):
+        if self._get_parser is None:
+            return None
+        for language in language_candidates:
+            try:
+                return self._get_parser(language)
+            except Exception:
+                continue
+        return None
 
     def _tree_sitter_symbol(self, name: str, kind: str, node) -> dict:
         return {
             "name": name,
             "kind": kind,
-            "line_start": int(node.start_point[0]) + 1,
-            "line_end": int(node.end_point[0]) + 1,
+            "line_start": self._point_line(node.start_point),
+            "line_end": self._point_line(node.end_point),
         }
+
+    def _point_line(self, point) -> int:
+        if hasattr(point, "row"):
+            return int(point.row) + 1
+        return int(point[0]) + 1
+
+    def _parse_markdown_with_language_pack(self, root: Path, path: Path) -> list[ParsedDocumentSection]:
+        if self._get_parser is None:
+            return []
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+        try:
+            parser = self._load_parser(["markdown"])
+            if parser is None:
+                return []
+            tree = parser.parse(source.encode("utf-8"))
+        except Exception:
+            return []
+
+        heading_rows: list[int] = []
+
+        def walk(node) -> None:
+            if node.type in {"atx_heading", "setext_heading"}:
+                heading_rows.append(self._point_line(node.start_point) - 1)
+            for child in node.children:
+                walk(child)
+
+        walk(tree.root_node)
+        return self._markdown_sections_from_heading_rows(
+            root=root,
+            path=path,
+            source=source,
+            heading_rows=heading_rows,
+            parser_backend="tree_sitter_language_pack",
+        )
+
+    def _parse_markdown_headings(
+        self,
+        root: Path,
+        path: Path,
+        parser_backend: str,
+    ) -> list[ParsedDocumentSection]:
+        try:
+            source = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return []
+        heading_rows: list[int] = []
+        fenced = False
+        for index, line in enumerate(source.splitlines()):
+            stripped = line.strip()
+            if stripped.startswith("```") or stripped.startswith("~~~"):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            if line.startswith("#"):
+                heading_rows.append(index)
+        return self._markdown_sections_from_heading_rows(
+            root=root,
+            path=path,
+            source=source,
+            heading_rows=heading_rows,
+            parser_backend=parser_backend,
+        )
+
+    def _markdown_sections_from_heading_rows(
+        self,
+        root: Path,
+        path: Path,
+        source: str,
+        heading_rows: list[int],
+        parser_backend: str,
+    ) -> list[ParsedDocumentSection]:
+        lines = source.splitlines()
+        if not lines:
+            return []
+        rows = sorted(set(row for row in heading_rows if 0 <= row < len(lines)))
+        if not rows:
+            rows = [0]
+        sections: list[ParsedDocumentSection] = []
+        for index, start_row in enumerate(rows):
+            next_row = rows[index + 1] if index + 1 < len(rows) else len(lines)
+            heading, level = self._markdown_heading(lines[start_row], fallback=path.stem)
+            excerpt = "\n".join(lines[start_row:next_row]).strip()
+            if not excerpt:
+                continue
+            sections.append(
+                ParsedDocumentSection(
+                    path=str(path.relative_to(root)),
+                    heading=heading,
+                    level=level,
+                    line_start=start_row + 1,
+                    line_end=max(start_row + 1, next_row),
+                    excerpt=excerpt[:1600],
+                    parser_backend=parser_backend,
+                )
+            )
+        return sections
+
+    def _markdown_heading(self, line: str, fallback: str) -> tuple[str, int]:
+        match = re.match(r"^(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if not match:
+            return fallback, 1
+        return match.group(2).strip() or fallback, len(match.group(1))
 
     def _parse_python_ast(self, root: Path, path: Path) -> ParsedModule | None:
         try:

@@ -270,6 +270,10 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "activity",
+            "object_id": activity_id,
+            "status": changes["status"],
             "patch_id": result["patch_id"],
             "activity_id": activity_id,
             "applied_operations": result["applied_operations"],
@@ -364,6 +368,10 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "knowledge",
+            "object_id": knowledge_id,
+            "status": changes["status"],
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
@@ -438,6 +446,10 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "work_item",
+            "object_id": work_item_id,
+            "status": changes["status"],
             "patch_id": result["patch_id"],
             "work_item_id": work_item_id,
             "applied_operations": result["applied_operations"],
@@ -483,6 +495,10 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "knowledge",
+            "object_id": knowledge_id,
+            "status": "active",
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
@@ -528,6 +544,10 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "knowledge",
+            "object_id": knowledge_id,
+            "status": "contested",
             "patch_id": result["patch_id"],
             "knowledge_id": knowledge_id,
             "applied_operations": result["applied_operations"],
@@ -622,6 +642,11 @@ class RememberService:
         )
         result = self._apply_and_project(patch)
         output = {
+            "result_type": "remember_result",
+            "object_type": "knowledge",
+            "object_id": new_knowledge_id,
+            "status": "active",
+            "old_status": "superseded",
             "patch_id": result["patch_id"],
             "old_knowledge_id": old_knowledge_id,
             "new_knowledge_id": new_knowledge_id,

@@ -110,6 +110,10 @@ Configure a root-level default graph backend with:
 
 Supported graph backend values are `file` and `kuzu`.
 
+## Repo Parser Backend
+
+Repository ingest uses `tree-sitter-language-pack` as the primary parser for code symbols and Markdown documentation sections. Python parsing also uses the stdlib AST to enrich interface signatures and docstrings. Local fallback parsing remains in code only as a defensive path if parser loading fails.
+
 ## Optional LanceDB Semantic Index
 
 Semantic retrieval is optional and local-first. It uses BGE-M3 through FlagEmbedding and stores derived chunks in LanceDB under `memory/indexes/semantic_lancedb`.

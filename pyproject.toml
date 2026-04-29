@@ -9,6 +9,7 @@ description = "Graph-backed memory substrate for agents, with derived wiki proje
 requires-python = ">=3.10"
 dependencies = [
     "mcp>=1.27.0",
+    "tree-sitter-language-pack==1.6.0",
 ]
 
 [project.optional-dependencies]

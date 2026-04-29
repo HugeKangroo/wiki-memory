@@ -214,6 +214,7 @@ class IngestService:
             "suggested_exclude_patterns": suggested_exclude_patterns,
             "pending_decisions": pending_decisions,
             "excluded_by_preflight": excluded_by_preflight,
+            "next_actions": self._ingest_next_actions(),
         }
 
     def _repo_ingest_is_noop(self, output) -> bool:
@@ -261,7 +262,15 @@ class IngestService:
             "pending_decisions": pending_decisions,
             "excluded_by_preflight": excluded_by_preflight,
             "reason": "repo_fingerprint_unchanged",
+            "next_actions": self._ingest_next_actions(),
         }
+
+    def _ingest_next_actions(self) -> list[str]:
+        return [
+            "query_related_context",
+            "analyze_evidence_outside_ingest",
+            "call_memory_remember_if_durable",
+        ]
 
     def _repo_pending_decisions(self, preflight: RepoPreflightOutput, force: bool) -> list[dict]:
         if force:
@@ -610,6 +619,9 @@ class IngestService:
         apply_result = self.patch_applier.apply(patch)
         projection_result = self.projector.rebuild()
         return {
+            "result_type": "source_ingest_result",
+            "status": "completed",
+            "warnings": [],
             "patch_id": apply_result.patch_id,
             "source_id": source.id,
             "node_id": node.id,
@@ -618,6 +630,7 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
+            "next_actions": self._ingest_next_actions(),
         }
 
     def _ingest_binary_stub(self, path: Path, kind: str, raw: bytes) -> dict:
@@ -667,6 +680,9 @@ class IngestService:
         apply_result = self.patch_applier.apply(patch)
         projection_result = self.projector.rebuild()
         return {
+            "result_type": "source_ingest_result",
+            "status": "completed",
+            "warnings": [],
             "patch_id": apply_result.patch_id,
             "source_id": source.id,
             "node_id": None,
@@ -675,6 +691,7 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
+            "next_actions": self._ingest_next_actions(),
         }
 
     def _document_segments(self, locator: str, text: str, content_type: str) -> list[SourceSegment]:

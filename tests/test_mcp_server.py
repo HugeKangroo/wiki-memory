@@ -174,13 +174,20 @@ class McpServerTest(unittest.TestCase):
         )
 
         query_defs = tools["memory_query"].parameters["$defs"]
-        self.assertIn("QueryOptions", query_defs)
+        self.assertIn("QuerySearchOptions", query_defs)
+        self.assertIn("QueryPageOptions", query_defs)
+        self.assertIn("QueryExpandOptions", query_defs)
         self.assertIn("QueryFilters", query_defs)
         recent_args = query_defs["QueryRecentArgs"]
         self.assertEqual(
             recent_args["properties"]["options"]["anyOf"][0]["$ref"],
-            "#/$defs/QueryOptions",
+            "#/$defs/QueryRecentOptions",
         )
+        search_options = query_defs["QuerySearchOptions"]["properties"]
+        self.assertNotIn("detail", search_options)
+        page_options = query_defs["QueryPageOptions"]["properties"]
+        self.assertIn("detail", page_options)
+        self.assertIn("include_segments", page_options)
 
         ingest_defs = tools["memory_ingest"].parameters["$defs"]
         self.assertIn("ConversationMessage", ingest_defs)
@@ -205,6 +212,23 @@ class McpServerTest(unittest.TestCase):
                 await server.call_tool(
                     "memory_query",
                     {"args": {"root": "/tmp/rogue-root", "mode": "recent", "input_data": {}}},
+                )
+
+        asyncio.run(run_smoke())
+
+    def test_query_rejects_mode_invalid_options(self) -> None:
+        async def run_smoke() -> None:
+            server = create_server()
+            with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
+                await server.call_tool(
+                    "memory_query",
+                    {
+                        "args": {
+                            "mode": "search",
+                            "input_data": {"query": "memory"},
+                            "options": {"detail": "full"},
+                        }
+                    },
                 )
 
         asyncio.run(run_smoke())
@@ -387,7 +411,13 @@ class McpServerTest(unittest.TestCase):
 
                 page = await server.call_tool(
                     "memory_query",
-                    {"args": {"mode": "page", "input_data": {"id": pending_payload["source_id"]}}},
+                    {
+                        "args": {
+                            "mode": "page",
+                            "input_data": {"id": pending_payload["source_id"]},
+                            "options": {"detail": "full"},
+                        }
+                    },
                 )
                 page_payload = json.loads(page[0].text)
                 source = page_payload["data"]["object"]

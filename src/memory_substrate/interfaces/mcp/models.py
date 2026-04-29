@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 GraphBackendName = Literal["file", "kuzu"]
 SemanticBackendName = Literal["lancedb"]
 MemorySourceName = Literal["user_declared", "human_curated", "agent_inferred", "system_generated", "imported"]
+QueryDetailName = Literal["compact", "full"]
 
 
 class StrictModel(BaseModel):
@@ -81,13 +82,51 @@ class QueryFilters(StrictModel):
     source_ids: list[str] = Field(default_factory=list)
 
 
-class QueryOptions(StrictModel):
-    """Query controls shared by memory_query modes."""
+class QueryContextOptions(StrictModel):
+    """Options for memory_query context mode."""
 
-    max_items: int | None = Field(default=None, ge=1, description="Maximum result count. Mode defaults apply when omitted.")
+    max_items: int | None = Field(default=None, ge=1, description="Maximum context items. Default: 12.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override.")
+
+
+class QuerySearchOptions(StrictModel):
+    """Options for memory_query search mode."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum search hits. Default: 20.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
-    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override for context, search, and graph modes.")
-    semantic_backend: SemanticBackendName | None = Field(default=None, description="Optional semantic backend override for search mode.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override.")
+    semantic_backend: SemanticBackendName | None = Field(default=None, description="Optional semantic backend override.")
+
+
+class QueryExpandOptions(StrictModel):
+    """Options for memory_query expand mode."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum related items and source segment snippets. Default: 10.")
+    include_segments: bool | None = Field(default=None, description="Include source segment snippets. Default: true.")
+    snippet_chars: int | None = Field(default=None, ge=40, le=4000, description="Maximum segment excerpt length. Default: 360.")
+
+
+class QueryPageOptions(StrictModel):
+    """Options for memory_query page mode."""
+
+    detail: QueryDetailName | None = Field(default=None, description="Use compact by default; set full only when the complete stored object is required.")
+    max_items: int | None = Field(default=None, ge=1, description="For compact pages, maximum entries per returned list. Default: 10.")
+    include_segments: bool | None = Field(default=None, description="For compact source pages, include source segment snippets. Default: false.")
+    snippet_chars: int | None = Field(default=None, ge=40, le=4000, description="Maximum compact excerpt length. Default: 360.")
+
+
+class QueryRecentOptions(StrictModel):
+    """Options for memory_query recent mode."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum recent items. Default: 20.")
+    filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
+
+
+class QueryGraphOptions(StrictModel):
+    """Options for memory_query graph mode."""
+
+    max_items: int | None = Field(default=None, ge=1, description="Maximum graph nodes. Default: 20.")
+    graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override.")
 
 
 class RememberOptions(StrictModel):
@@ -164,7 +203,7 @@ class QueryGraphInput(StrictModel):
 class QueryBaseArgs(BaseToolArgs):
     """Base MCP arguments for memory_query modes."""
 
-    options: QueryOptions | None = None
+    pass
 
 
 class QueryContextArgs(QueryBaseArgs):
@@ -172,6 +211,7 @@ class QueryContextArgs(QueryBaseArgs):
 
     mode: Literal["context"]
     input_data: QueryContextInput
+    options: QueryContextOptions | None = None
 
 
 class QueryExpandArgs(QueryBaseArgs):
@@ -179,6 +219,7 @@ class QueryExpandArgs(QueryBaseArgs):
 
     mode: Literal["expand"]
     input_data: QueryExpandInput
+    options: QueryExpandOptions | None = None
 
 
 class QueryPageArgs(QueryBaseArgs):
@@ -186,6 +227,7 @@ class QueryPageArgs(QueryBaseArgs):
 
     mode: Literal["page"]
     input_data: QueryPageInput
+    options: QueryPageOptions | None = None
 
 
 class QueryRecentArgs(QueryBaseArgs):
@@ -193,6 +235,7 @@ class QueryRecentArgs(QueryBaseArgs):
 
     mode: Literal["recent"]
     input_data: QueryRecentInput
+    options: QueryRecentOptions | None = None
 
 
 class QuerySearchArgs(QueryBaseArgs):
@@ -200,6 +243,7 @@ class QuerySearchArgs(QueryBaseArgs):
 
     mode: Literal["search"]
     input_data: QuerySearchInput
+    options: QuerySearchOptions | None = None
 
 
 class QueryGraphArgs(QueryBaseArgs):
@@ -207,6 +251,7 @@ class QueryGraphArgs(QueryBaseArgs):
 
     mode: Literal["graph"]
     input_data: QueryGraphInput
+    options: QueryGraphOptions | None = None
 
 
 QueryToolArgs = Annotated[

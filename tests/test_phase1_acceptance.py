@@ -399,6 +399,10 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertEqual(objects.get("source", pdf_result["source_id"])["content_type"], "binary_stub")
             self.assertEqual(objects.get("source", conversation_result["source_id"])["kind"], "conversation")
             self.assertEqual(conversation_result["segment_count"], 2)
+            self.assertEqual(conversation_result["result_type"], "source_ingest_result")
+            self.assertEqual(conversation_result["status"], "completed")
+            self.assertEqual(conversation_result["warnings"], [])
+            self.assertIn("call_memory_remember_if_durable", conversation_result["next_actions"])
 
     def test_query_filters_recent_search_and_context(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -526,6 +530,11 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertIsNotNone(objects.get("activity", activity_result["activity_id"]))
             self.assertIsNotNone(objects.get("knowledge", knowledge_result["knowledge_id"]))
             self.assertIsNotNone(objects.get("work_item", work_item_result["work_item_id"]))
+            self.assertEqual(activity_result["object_id"], activity_result["activity_id"])
+            self.assertEqual(knowledge_result["object_id"], knowledge_result["knowledge_id"])
+            self.assertEqual(work_item_result["object_id"], work_item_result["work_item_id"])
+            self.assertEqual(knowledge_result["object_type"], "knowledge")
+            self.assertEqual(work_item_result["status"], "open")
 
             for patch_id in (
                 activity_result["patch_id"],

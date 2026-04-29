@@ -57,3 +57,16 @@ This file tracks the active execution queue for this repository. Keep it current
 - [x] Merge lexical and semantic results in `memory_query search`.
 - [x] Keep semantic search active when a graph backend is also configured.
 - [x] Add regression coverage for the `Codex dogfood MCP` query miss.
+
+## P1: Repo Parser And Documentation Indexing
+
+- [x] Adopt a single-primary parser stance: require `tree_sitter_language_pack`, then use local fallback parsing only when parser loading fails.
+- [x] Index Markdown repository docs as source evidence with headings, excerpts, and line locators.
+- [x] Make repo query summaries include documentation sections so theory-to-code questions can find design docs.
+- [x] Add a locked parser dependency for `tree-sitter-language-pack==1.6.0` and run a live parser smoke test.
+
+## P1: MCP Context Budget
+
+- [x] Make `memory_query page` compact by default with explicit `options.detail: "full"` for complete stored objects.
+- [x] Bound and truncate source segment excerpts returned by `memory_query expand`.
+- [x] Shorten repo source summaries and MCP server instructions.

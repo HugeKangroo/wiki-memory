@@ -29,6 +29,18 @@ Current backend stance:
 - Cognee and LlamaIndex are future adapter candidates only if they fit behind Memory Substrate governance.
 - Neo4j should remain optional until local contracts, migration, and lifecycle semantics are stable.
 
+## Parser Strategy
+
+Use a single-primary parser strategy for repo ingest.
+
+Current parser stance:
+
+- require `tree-sitter-language-pack==1.6.0` as the primary parser library
+- use the same parser boundary for code symbols and Markdown documentation sections
+- use stdlib AST to enrich Python signatures and docstrings because it is stronger than tree-sitter for that specific semantic layer
+- keep regex parsing only as a defensive fallback if parser loading fails
+- add another external parser library only after the primary parser cannot reliably provide a required structure
+
 ## Retrieval Strategy
 
 Do not jump directly to vector search to solve known domain vocabulary gaps.

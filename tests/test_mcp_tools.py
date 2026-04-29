@@ -11,7 +11,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from memory_substrate.interfaces.mcp.tools import memory_ingest, memory_maintain, resolve_root
+from memory_substrate.interfaces.mcp.tools import memory_ingest, memory_maintain, memory_query, resolve_root
 
 
 class McpToolsTest(unittest.TestCase):
@@ -110,6 +110,10 @@ class McpToolsTest(unittest.TestCase):
                 exclude_patterns=None,
                 force=True,
             )
+
+    def test_memory_query_direct_dispatch_rejects_mode_invalid_options(self) -> None:
+        with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
+            memory_query(".", "search", {"query": "memory"}, {"detail": "full"})
 
     def test_memory_maintain_requires_apply_for_mutating_modes(self) -> None:
         with self.assertRaisesRegex(ValueError, "options.apply=true"):

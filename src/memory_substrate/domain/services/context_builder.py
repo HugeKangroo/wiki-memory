@@ -53,7 +53,13 @@ class ContextBuilder:
             expires_at=None,
         )
 
-    def expand(self, object_id: str, max_items: int = 10) -> tuple[list[ContextItem], list[dict]]:
+    def expand(
+        self,
+        object_id: str,
+        max_items: int = 10,
+        include_segments: bool = True,
+        snippet_chars: int = 360,
+    ) -> tuple[list[ContextItem], list[dict]]:
         items: list[ContextItem] = []
         source_segments: list[dict] = []
         for object_type in ("node", "knowledge", "activity", "work_item", "source"):
@@ -61,7 +67,15 @@ class ContextBuilder:
             if obj is not None:
                 items.append(self._to_item(object_type, obj))
                 items.extend(self._related_items(object_id, obj, max_items=max_items - 1))
-                source_segments.extend(self._collect_source_segments(object_id, obj))
+                if include_segments:
+                    source_segments.extend(
+                        self._collect_source_segments(
+                            object_id,
+                            obj,
+                            max_segments=max_items,
+                            snippet_chars=snippet_chars,
+                        )
+                    )
                 break
         return items[:max_items], source_segments
 
@@ -180,6 +194,18 @@ class ContextBuilder:
                 if isinstance(module, dict) and module.get("path")
             ]
         modules = f" Code modules: {', '.join(module_names)}." if module_names else ""
+        document_sections = payload.get("document_sections", [])
+        document_parts: list[str] = []
+        if isinstance(document_sections, list):
+            for section in document_sections[:3]:
+                if not isinstance(section, dict):
+                    continue
+                path = str(section.get("path", ""))
+                heading = str(section.get("heading", ""))
+                excerpt = " ".join(str(section.get("excerpt", "")).split())[:120]
+                if path and heading:
+                    document_parts.append(f"{path}#{heading}: {excerpt}")
+        documents = f" Documents: {' | '.join(document_parts)}." if document_parts else ""
         language_counts = payload.get("language_counts", {})
         languages = ""
         if isinstance(language_counts, dict) and language_counts:
@@ -189,7 +215,7 @@ class ContextBuilder:
         return (
             f"Repository {payload.get('repo_name', obj.get('title', 'repo'))} "
             f"with {payload.get('file_count', 0)} files and {payload.get('dir_count', 0)} directories."
-            f"{roots}{modules}{languages}"
+            f"{roots}{modules}{documents}{languages}"
         )
 
     def _citations(self, items: list[ContextItem]) -> list[dict]:
@@ -268,7 +294,13 @@ class ContextBuilder:
                         return items
         return items
 
-    def _collect_source_segments(self, root_id: str, obj: dict) -> list[dict]:
+    def _collect_source_segments(
+        self,
+        root_id: str,
+        obj: dict,
+        max_segments: int = 10,
+        snippet_chars: int = 360,
+    ) -> list[dict]:
         segments: list[dict] = []
         source_ids: set[str] = set()
         if obj.get("id", "").startswith("src:"):
@@ -287,16 +319,22 @@ class ContextBuilder:
             source = self.repository.get("source", source_id)
             if source is None:
                 continue
-            for segment in source.get("segments", [])[:10]:
+            for segment in source.get("segments", [])[:max_segments]:
                 segments.append(
                     {
                         "source_id": source_id,
                         "segment_id": segment.get("segment_id"),
                         "locator": segment.get("locator"),
-                        "excerpt": segment.get("excerpt", ""),
+                        "excerpt": self._clip(str(segment.get("excerpt", "")), snippet_chars),
                     }
                 )
         return segments
+
+    def _clip(self, text: str, max_chars: int) -> str:
+        max_chars = max(3, max_chars)
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3].rstrip() + "..."
 
     def _matching_repo_sources(self, obj: dict) -> set[str]:
         matches: set[str] = set()

@@ -42,7 +42,7 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 ## New Evidence
 
 1. Use `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as evidence.
-2. For repo ingest, use the stored code map (`code_index`, `code_modules`, symbols, and line locators) to find files, then read local source files directly when full code is needed.
+2. For repo ingest, use compact `memory_query page` results (`code_index`, `code_modules`, `doc_index`, `document_sections`, symbols, excerpts, and line locators) to find files, then read local files directly when full code or full documents are needed.
 3. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 4. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
 5. Analyze outside ingest.
@@ -89,7 +89,7 @@ Repo ingest statuses:
 - `noop`: repo fingerprint is unchanged from the active stored source; no patch, audit, or projection data is written.
 - `completed`: source material was written or updated.
 
-Repo sources store a code map rather than full source bodies as canonical memory. Use `code_index`, `code_modules`, source segments, and locators to decide which local files to inspect.
+Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; request `options.detail: "full"` only when bounded locators and snippets are insufficient. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
 """
 
 

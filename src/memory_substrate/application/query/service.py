@@ -124,7 +124,13 @@ class QueryService:
             "warnings": [],
         }
 
-    def expand(self, object_id: str, max_items: int = 10) -> dict:
+    def expand(
+        self,
+        object_id: str,
+        max_items: int = 10,
+        include_segments: bool | None = None,
+        snippet_chars: int | None = None,
+    ) -> dict:
         """Expand one memory object into nearby context and source evidence.
 
         Args:
@@ -134,7 +140,12 @@ class QueryService:
         Returns:
             Expanded context items and source segments for the requested object.
         """
-        items, source_segments = self.builder.expand(object_id=object_id, max_items=max_items)
+        items, source_segments = self.builder.expand(
+            object_id=object_id,
+            max_items=max_items,
+            include_segments=True if include_segments is None else include_segments,
+            snippet_chars=snippet_chars or 360,
+        )
         return {
             "result_type": "expanded_context",
             "data": {
@@ -145,11 +156,22 @@ class QueryService:
             "warnings": [],
         }
 
-    def page(self, object_id: str) -> dict:
-        """Fetch the full stored object for a single memory identifier.
+    def page(
+        self,
+        object_id: str,
+        detail: str | None = None,
+        max_items: int | None = None,
+        include_segments: bool | None = None,
+        snippet_chars: int | None = None,
+    ) -> dict:
+        """Fetch one memory object, compact by default and full on request.
 
         Args:
             object_id: Source, node, knowledge, activity, or work item identifier to fetch.
+            detail: `compact` by default, or `full` to return the complete stored object.
+            max_items: Maximum list entries in compact object previews.
+            include_segments: Whether compact source pages include segment snippets.
+            snippet_chars: Maximum excerpt length in compact previews.
 
         Returns:
             Page result containing the object type and object payload, or a warning if missing.
@@ -157,13 +179,32 @@ class QueryService:
         for object_type in ("source", "node", "knowledge", "activity", "work_item"):
             obj = self.repository.get(object_type, object_id)
             if obj is not None:
+                if detail == "full":
+                    return {
+                        "result_type": "page",
+                        "data": {
+                            "object_type": object_type,
+                            "object": obj,
+                            "detail": "full",
+                        },
+                        "warnings": [],
+                    }
+                compact = self._compact_object_page(
+                    object_type=object_type,
+                    obj=obj,
+                    max_items=max_items or 10,
+                    include_segments=False if include_segments is None else include_segments,
+                    snippet_chars=snippet_chars or 360,
+                )
                 return {
                     "result_type": "page",
                     "data": {
                         "object_type": object_type,
-                        "object": obj,
+                        "object": compact["object"],
+                        "detail": "compact",
+                        "truncated": compact["truncated"],
                     },
-                    "warnings": [],
+                    "warnings": ["Compact page returned. Use options.detail='full' only when the complete stored object is required."],
                 }
         return {
             "result_type": "page",
@@ -572,6 +613,18 @@ class QueryService:
                 if isinstance(module, dict) and module.get("path")
             ]
         modules = f" Code modules: {', '.join(module_names)}." if module_names else ""
+        document_sections = payload.get("document_sections", [])
+        document_parts: list[str] = []
+        if isinstance(document_sections, list):
+            for section in document_sections[:3]:
+                if not isinstance(section, dict):
+                    continue
+                path = str(section.get("path", ""))
+                heading = str(section.get("heading", ""))
+                excerpt = " ".join(str(section.get("excerpt", "")).split())[:120]
+                if path and heading:
+                    document_parts.append(f"{path}#{heading}: {excerpt}")
+        documents = f" Documents: {' | '.join(document_parts)}." if document_parts else ""
         language_counts = payload.get("language_counts", {})
         languages = ""
         if isinstance(language_counts, dict) and language_counts:
@@ -581,11 +634,164 @@ class QueryService:
         return (
             f"Repository {payload.get('repo_name', obj.get('title', 'repo'))} "
             f"with {payload.get('file_count', 0)} files and {payload.get('dir_count', 0)} directories."
-            f"{roots}{modules}{languages}"
+            f"{roots}{modules}{documents}{languages}"
         )
 
     def _module_name(self, module_path: str) -> str:
         return str(Path(module_path).with_suffix("")).replace("/", ".")
+
+    def _compact_object_page(
+        self,
+        object_type: str,
+        obj: dict,
+        max_items: int,
+        include_segments: bool,
+        snippet_chars: int,
+    ) -> dict:
+        compact = {
+            "id": obj["id"],
+            "kind": obj.get("kind", object_type),
+            "title": obj.get("title") or obj.get("name") or obj["id"],
+            "status": obj.get("status") or obj.get("lifecycle_state"),
+            "summary": self._object_summary(object_type, obj),
+            "identity_key": obj.get("identity_key"),
+            "created_at": obj.get("created_at"),
+            "updated_at": obj.get("updated_at"),
+        }
+        truncated: dict[str, dict] = {}
+        if object_type == "source":
+            compact["origin"] = obj.get("origin", {})
+            compact["content_type"] = obj.get("content_type")
+            payload = obj.get("payload", {})
+            if isinstance(payload, dict):
+                compact["payload"] = self._compact_source_payload(obj, payload, max_items, snippet_chars, truncated)
+            segments = obj.get("segments", [])
+            compact["segment_count"] = len(segments) if isinstance(segments, list) else 0
+            if include_segments and isinstance(segments, list):
+                compact["segments"] = [self._compact_segment(segment, snippet_chars) for segment in segments[:max_items]]
+                self._mark_truncated(truncated, "segments", len(segments), len(compact["segments"]))
+        else:
+            for field in (
+                "subject_refs",
+                "evidence_refs",
+                "related_node_refs",
+                "related_work_item_refs",
+                "related_knowledge_refs",
+                "source_refs",
+                "depends_on",
+                "blocked_by",
+                "child_refs",
+            ):
+                value = obj.get(field)
+                if isinstance(value, list) and value:
+                    compact[field] = value[:max_items]
+                    self._mark_truncated(truncated, field, len(value), len(compact[field]))
+            payload = obj.get("payload")
+            if isinstance(payload, dict) and payload:
+                compact["payload"] = self._compact_generic_payload(payload, max_items, snippet_chars, truncated)
+        return {"object": {key: value for key, value in compact.items() if value not in (None, [], {})}, "truncated": truncated}
+
+    def _compact_source_payload(
+        self,
+        obj: dict,
+        payload: dict,
+        max_items: int,
+        snippet_chars: int,
+        truncated: dict,
+    ) -> dict:
+        if obj.get("kind") != "repo":
+            result = {
+                key: value
+                for key, value in payload.items()
+                if key not in {"text"}
+            }
+            if "text" in payload:
+                result["text_preview"] = self._clip(str(payload.get("text", "")), snippet_chars)
+                result["text_char_count"] = len(str(payload.get("text", "")))
+                truncated["payload.text"] = {"returned": "text_preview", "total_chars": result["text_char_count"]}
+            return result
+
+        result: dict = {}
+        for key in ("repo_name", "file_count", "dir_count", "language_counts", "readme_present", "source_roots"):
+            if key in payload:
+                result[key] = payload[key]
+        for key in ("top_level_entries", "code_files", "code_index", "doc_index", "code_modules", "document_sections"):
+            value = payload.get(key, [])
+            if not isinstance(value, list):
+                continue
+            if key == "code_modules":
+                result[key] = [self._compact_code_module(module, snippet_chars) for module in value[:max_items]]
+            elif key == "document_sections":
+                result[key] = [self._compact_document_section(section, snippet_chars) for section in value[:max_items]]
+            else:
+                result[key] = value[:max_items]
+            self._mark_truncated(truncated, f"payload.{key}", len(value), len(result[key]))
+        if "parser_backend" in payload:
+            result["parser_backend"] = payload["parser_backend"]
+        return result
+
+    def _compact_generic_payload(
+        self,
+        payload: dict,
+        max_items: int,
+        snippet_chars: int,
+        truncated: dict,
+    ) -> dict:
+        compact: dict = {}
+        for key, value in payload.items():
+            if isinstance(value, str):
+                compact[key] = self._clip(value, snippet_chars)
+                if compact[key] != value:
+                    truncated[f"payload.{key}"] = {"returned_chars": len(compact[key]), "total_chars": len(value)}
+            elif isinstance(value, list):
+                compact[key] = value[:max_items]
+                self._mark_truncated(truncated, f"payload.{key}", len(value), len(compact[key]))
+            else:
+                compact[key] = value
+        return compact
+
+    def _compact_code_module(self, module: dict, snippet_chars: int) -> dict:
+        symbols = module.get("symbols", [])
+        return {
+            "path": module.get("path"),
+            "language": module.get("language"),
+            "line_start": module.get("line_start"),
+            "line_end": module.get("line_end"),
+            "classes": module.get("classes", [])[:8],
+            "functions": module.get("functions", [])[:12],
+            "symbols": symbols[:12] if isinstance(symbols, list) else [],
+            "module_doc": self._clip(str(module.get("module_doc", "")), snippet_chars),
+            "parser_backend": module.get("parser_backend"),
+        }
+
+    def _compact_document_section(self, section: dict, snippet_chars: int) -> dict:
+        return {
+            "path": section.get("path"),
+            "heading": section.get("heading"),
+            "level": section.get("level"),
+            "line_start": section.get("line_start"),
+            "line_end": section.get("line_end"),
+            "excerpt": self._clip(str(section.get("excerpt", "")), snippet_chars),
+            "parser_backend": section.get("parser_backend"),
+        }
+
+    def _compact_segment(self, segment: dict, snippet_chars: int) -> dict:
+        return {
+            "segment_id": segment.get("segment_id"),
+            "locator": segment.get("locator"),
+            "excerpt": self._clip(str(segment.get("excerpt", "")), snippet_chars),
+            "hash": segment.get("hash"),
+        }
+
+    def _mark_truncated(self, truncated: dict, field: str, total: int, returned: int) -> None:
+        if total > returned:
+            truncated[field] = {"returned": returned, "total": total}
+
+    def _clip(self, text: str, max_chars: int) -> str:
+        max_chars = max(3, max_chars)
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3].rstrip() + "..."
 
     def _query_plan(self, query: str) -> dict:
         normalized_query = query.strip().lower()

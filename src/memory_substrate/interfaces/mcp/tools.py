@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from typing import Any
 from pathlib import Path
+
+from pydantic import TypeAdapter
 
 from memory_substrate.application.remember.service import RememberService
 from memory_substrate.application.ingest.service import IngestService
@@ -9,9 +12,11 @@ from memory_substrate.application.query.service import QueryService
 from memory_substrate.infrastructure.config.repository import MemoryConfigRepository
 from memory_substrate.infrastructure.graph.factory import create_graph_backend
 from memory_substrate.infrastructure.semantic.factory import create_semantic_index_service
+from memory_substrate.interfaces.mcp.models import QueryToolArgs
 
 
 MUTATING_MAINTAIN_MODES = {"configure", "repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
+_QUERY_TOOL_ARGS_ADAPTER = TypeAdapter(QueryToolArgs)
 
 
 def resolve_root(root: str | Path | None) -> Path:
@@ -51,6 +56,18 @@ def _close_graph_backend(graph_backend) -> None:
     close = getattr(graph_backend, "close", None)
     if callable(close):
         close()
+
+
+def _validate_query_args(mode: str, input_data: dict, options: dict | None) -> tuple[str, dict[str, Any], dict[str, Any]]:
+    args = _QUERY_TOOL_ARGS_ADAPTER.validate_python(
+        {
+            "mode": mode,
+            "input_data": input_data,
+            "options": options,
+        }
+    )
+    normalized_options = args.options.model_dump(exclude_none=True) if args.options is not None else {}
+    return args.mode, args.input_data.model_dump(exclude_none=True), normalized_options
 
 
 def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
@@ -103,7 +120,7 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
     Returns:
         Query result produced by the selected application service method.
     """
-    options = options or {}
+    mode, input_data, options = _validate_query_args(mode, input_data, options)
     resolved_root = resolve_root(root)
     graph_backend = create_graph_backend(resolved_root, _requested_graph_backend(resolved_root, options))
     semantic_index = create_semantic_index_service(resolved_root, _requested_semantic_backend(resolved_root, options))
@@ -124,9 +141,17 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
             return service.expand(
                 object_id=input_data["id"],
                 max_items=options.get("max_items", 10),
+                include_segments=options.get("include_segments"),
+                snippet_chars=options.get("snippet_chars"),
             )
         if mode == "page":
-            return service.page(object_id=input_data["id"])
+            return service.page(
+                object_id=input_data["id"],
+                detail=options.get("detail"),
+                max_items=options.get("max_items"),
+                include_segments=options.get("include_segments"),
+                snippet_chars=options.get("snippet_chars"),
+            )
         if mode == "recent":
             return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
         if mode == "search":

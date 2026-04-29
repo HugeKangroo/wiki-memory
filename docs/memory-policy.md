@@ -152,4 +152,6 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 
 These fields should be test-covered when added.
 
+Query responses should be compact by default. Full stored objects, full repo maps, long source segments, and large audit/report payloads should require explicit caller options such as `detail: "full"` or bounded `max_items` / snippet controls.
+
 The MCP server should also expose compact policy and playbook resources for hosts that can read MCP resources directly. Repository-local `AGENTS.md` or `CLAUDE.md` files are adapters, not the policy source of truth.

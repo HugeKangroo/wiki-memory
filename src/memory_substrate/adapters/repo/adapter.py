@@ -67,6 +67,8 @@ class RepoScanSummary:
     source_roots: list[str]
     code_files: list[str]
     code_index: list[dict]
+    doc_index: list[dict]
+    document_sections: list[dict]
     python_modules: list[dict]
 
 
@@ -121,6 +123,8 @@ class RepoAdapter:
                 "source_roots": summary.source_roots,
                 "code_files": summary.code_files,
                 "code_index": summary.code_index,
+                "doc_index": summary.doc_index,
+                "document_sections": summary.document_sections,
                 "code_modules": summary.python_modules,
                 "python_modules": summary.python_modules,
                 "parser_backend": parser.backend,
@@ -204,6 +208,8 @@ class RepoAdapter:
         source_roots: list[str] = []
         code_files: list[str] = []
         code_index: list[dict] = []
+        doc_index: list[dict] = []
+        document_sections: list[dict] = []
         parsed_modules: list[dict] = []
 
         for child in sorted(root.iterdir()):
@@ -230,7 +236,25 @@ class RepoAdapter:
             if suffix in LANGUAGE_BY_SUFFIX:
                 language = LANGUAGE_BY_SUFFIX[suffix]
                 language_counter[language] += 1
-                if language != "markdown":
+                if language == "markdown":
+                    if len(doc_index) < 300:
+                        doc_index.append(self._document_index_entry(root, path))
+                    if len(document_sections) < 400:
+                        for section in parser.parse_markdown(root, path):
+                            document_sections.append(
+                                {
+                                    "path": section.path,
+                                    "heading": section.heading,
+                                    "level": section.level,
+                                    "line_start": section.line_start,
+                                    "line_end": section.line_end,
+                                    "excerpt": section.excerpt,
+                                    "parser_backend": section.parser_backend,
+                                }
+                            )
+                            if len(document_sections) >= 400:
+                                break
+                else:
                     relative_path = str(path.relative_to(root))
                     if len(code_files) < 300:
                         code_files.append(relative_path)
@@ -269,6 +293,8 @@ class RepoAdapter:
             source_roots=source_roots,
             code_files=code_files,
             code_index=code_index,
+            doc_index=doc_index,
+            document_sections=document_sections,
             python_modules=parsed_modules[:200],
         )
 
@@ -285,6 +311,23 @@ class RepoAdapter:
         return {
             "path": relative_path,
             "language": language,
+            "line_count": line_count,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
+
+    def _document_index_entry(self, root: Path, path: Path) -> dict:
+        relative_path = str(path.relative_to(root))
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            raw = b""
+        try:
+            line_count = len(raw.decode("utf-8").splitlines())
+        except UnicodeDecodeError:
+            line_count = 0
+        return {
+            "path": relative_path,
+            "content_type": "markdown",
             "line_count": line_count,
             "sha256": hashlib.sha256(raw).hexdigest(),
         }
@@ -350,6 +393,7 @@ class RepoAdapter:
             str(summary.readme_present),
             ",".join(summary.source_roots),
             ",".join(f'{item["path"]}:{item["sha256"]}' for item in summary.code_index[:300]),
+            ",".join(f'{item["path"]}:{item["sha256"]}' for item in summary.doc_index[:300]),
             ",".join(
                 f'{module["path"]}:'
                 f'{",".join(symbol["name"] for symbol in module.get("symbols", [])[:20])}'
@@ -381,6 +425,22 @@ class RepoAdapter:
                     },
                     excerpt=self._module_excerpt(module),
                     hash=module["path"],
+                )
+            )
+        for section in summary.document_sections[:120]:
+            segment_key = f'{section["path"]}:{section["line_start"]}:{section["heading"]}'
+            segments.append(
+                SourceSegment(
+                    segment_id=f"doc-{slugify(segment_key)}",
+                    locator={
+                        "kind": "document_section",
+                        "path": section["path"],
+                        "heading": section["heading"],
+                        "line_start": section["line_start"],
+                        "line_end": section["line_end"],
+                    },
+                    excerpt=section["excerpt"],
+                    hash=hashlib.sha256(section["excerpt"].encode("utf-8")).hexdigest(),
                 )
             )
         for entry in summary.code_index[:120]:
