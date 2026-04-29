@@ -10,9 +10,12 @@ from pathlib import Path
 class ParsedModule:
     path: str
     language: str
+    line_start: int = 1
+    line_end: int = 1
     classes: list[str] = field(default_factory=list)
     functions: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
+    symbols: list[dict] = field(default_factory=list)
     module_doc: str = ""
     class_docs: dict[str, str] = field(default_factory=dict)
     interfaces: list[dict] = field(default_factory=list)
@@ -83,17 +86,22 @@ class TreeSitterParser:
         classes: list[str] = []
         functions: list[str] = []
         imports: list[str] = []
+        symbols: list[dict] = []
 
         def walk(node) -> None:
             node_type = node.type
             if node_type in {"class_definition", "class_declaration"}:
                 name_node = node.child_by_field_name("name")
                 if name_node is not None:
-                    classes.append(source[name_node.start_byte:name_node.end_byte])
+                    name = source[name_node.start_byte:name_node.end_byte]
+                    classes.append(name)
+                    symbols.append(self._tree_sitter_symbol(name, "class", node))
             elif node_type in {"function_definition", "function_declaration", "method_definition"}:
                 name_node = node.child_by_field_name("name")
                 if name_node is not None:
-                    functions.append(source[name_node.start_byte:name_node.end_byte])
+                    name = source[name_node.start_byte:name_node.end_byte]
+                    functions.append(name)
+                    symbols.append(self._tree_sitter_symbol(name, "function", node))
             elif node_type in {"import_statement", "import_from_statement"}:
                 imports.append(source[node.start_byte:node.end_byte].strip())
             for child in node.children:
@@ -105,11 +113,22 @@ class TreeSitterParser:
         return ParsedModule(
             path=str(path.relative_to(root)),
             language=language,
+            line_start=1,
+            line_end=max(1, len(source.splitlines())),
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            symbols=symbols[:40],
             parser_backend="tree_sitter",
         )
+
+    def _tree_sitter_symbol(self, name: str, kind: str, node) -> dict:
+        return {
+            "name": name,
+            "kind": kind,
+            "line_start": int(node.start_point[0]) + 1,
+            "line_end": int(node.end_point[0]) + 1,
+        }
 
     def _parse_python_ast(self, root: Path, path: Path) -> ParsedModule | None:
         try:
@@ -127,17 +146,22 @@ class TreeSitterParser:
         imports: list[str] = []
         class_docs: dict[str, str] = {}
         interfaces: list[dict] = []
+        symbols: list[dict] = []
         module_doc = ast.get_docstring(tree) or ""
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 classes.append(node.name)
                 class_docs[node.name] = ast.get_docstring(node) or ""
+                symbols.append(self._python_symbol(node.name, "class", node))
                 for child in node.body:
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
-                        functions.append(f"{node.name}.{child.name}")
+                        method_name = f"{node.name}.{child.name}"
+                        functions.append(method_name)
+                        symbols.append(self._python_symbol(method_name, "method", child))
                         interfaces.append(self._python_interface(child, class_name=node.name))
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.append(node.name)
+                symbols.append(self._python_symbol(node.name, "function", node))
                 interfaces.append(self._python_interface(node))
             elif isinstance(node, ast.Import):
                 imports.extend(alias.name for alias in node.names)
@@ -151,14 +175,25 @@ class TreeSitterParser:
         return ParsedModule(
             path=str(path.relative_to(root)),
             language="python",
+            line_start=1,
+            line_end=max(1, len(source.splitlines())),
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            symbols=symbols[:40],
             module_doc=module_doc.splitlines()[0] if module_doc else "",
             class_docs={key: value.splitlines()[0] for key, value in class_docs.items() if value},
             interfaces=interfaces[:30],
             parser_backend="ast",
         )
+
+    def _python_symbol(self, name: str, kind: str, node: ast.AST) -> dict:
+        return {
+            "name": name,
+            "kind": kind,
+            "line_start": int(getattr(node, "lineno", 1)),
+            "line_end": int(getattr(node, "end_lineno", getattr(node, "lineno", 1))),
+        }
 
     def _python_interface(self, node: ast.FunctionDef | ast.AsyncFunctionDef, class_name: str | None = None) -> dict:
         name = f"{class_name}.{node.name}" if class_name else node.name
@@ -259,10 +294,20 @@ class TreeSitterParser:
         except (OSError, UnicodeDecodeError):
             return None
 
-        classes = re.findall(r"\bclass\s+([A-Za-z_$][\w$]*)", source)
-        functions = [
-            *re.findall(r"\bfunction\s+([A-Za-z_$][\w$]*)", source),
-            *re.findall(r"\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>", source),
+        class_matches = list(re.finditer(r"\bclass\s+([A-Za-z_$][\w$]*)", source))
+        function_matches = [
+            *re.finditer(r"\bfunction\s+([A-Za-z_$][\w$]*)", source),
+            *re.finditer(r"\bconst\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?\([^)]*\)\s*=>", source),
+        ]
+        interface_matches = list(re.finditer(r"\binterface\s+([A-Za-z_$][\w$]*)", source))
+        type_matches = list(re.finditer(r"\btype\s+([A-Za-z_$][\w$]*)\s*=", source))
+        classes = [match.group(1) for match in class_matches]
+        functions = [match.group(1) for match in function_matches]
+        symbols = [
+            *(self._regex_symbol(match.group(1), "class", source, match.start()) for match in class_matches),
+            *(self._regex_symbol(match.group(1), "function", source, match.start()) for match in function_matches),
+            *(self._regex_symbol(match.group(1), "interface", source, match.start()) for match in interface_matches),
+            *(self._regex_symbol(match.group(1), "type", source, match.start()) for match in type_matches),
         ]
         imports = [
             line.strip()
@@ -276,8 +321,20 @@ class TreeSitterParser:
         return ParsedModule(
             path=str(path.relative_to(root)),
             language=language,
+            line_start=1,
+            line_end=max(1, len(source.splitlines())),
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            symbols=symbols[:40],
             parser_backend="regex",
         )
+
+    def _regex_symbol(self, name: str, kind: str, source: str, start_index: int) -> dict:
+        line_number = source.count("\n", 0, start_index) + 1
+        return {
+            "name": name,
+            "kind": kind,
+            "line_start": line_number,
+            "line_end": line_number,
+        }

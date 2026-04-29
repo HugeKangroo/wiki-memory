@@ -69,6 +69,8 @@ Use the four MCP tools with strict boundaries:
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
+Repository ingest stores a code map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash, plus `payload.code_modules` with parsed module paths, classes, functions, imports, symbols, and line locators when available. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code.
+
 Repository ingest runs a preflight before writing memory. If it detects local or agent state that was not excluded, it excludes those entries from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`, `requires_decision: true`, `pending_decisions`, `excluded_by_preflight`, `warnings`, and `suggested_exclude_patterns`. Treat this as a decision point for the pending entries, not as a failed ingest. Use `options.force: true` only when those entries are intentionally part of the evidence.
 
 If a repo was already ingested and its computed fingerprint is unchanged, repository ingest returns `status: "noop"` and `applied_operations: 0` without writing patch, audit, or projection data. Treat `noop` as a clean result, not a failure.
@@ -106,6 +108,7 @@ Current search behavior includes deterministic query normalization, but it is st
 - expand common domain terms before retrying
 - search for both natural-language terms and canonical memory terms
 - prefer `context` when answering a task and `search` when checking existence
+- for codebase questions, query repo/module/path/symbol terms first, then use `page` on the repo source to inspect `code_index` and `code_modules`, then read local source files by locator when needed
 
 Examples:
 

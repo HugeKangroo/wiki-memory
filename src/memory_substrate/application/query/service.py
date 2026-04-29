@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,32 @@ QUERY_NORMALIZATION_RULES = (
         "terms": ("证据", "evidence", "source", "sources"),
         "filters": {"object_types": ("source", "knowledge")},
     },
+    {
+        "triggers": (
+            "架构",
+            "architecture",
+            "codebase",
+            "repo",
+            "repository",
+            "module",
+            "modules",
+            "源码",
+            "代码",
+        ),
+        "terms": (
+            "架构",
+            "architecture",
+            "codebase",
+            "repo",
+            "repository",
+            "module",
+            "modules",
+            "source",
+            "code_index",
+            "code_modules",
+        ),
+        "filters": {"object_types": ("source", "node")},
+    },
 )
 
 
@@ -71,7 +98,7 @@ class QueryService:
         if self.graph_backend is not None:
             return self._graph_context(task=task, scope=scoped, max_items=max_items, plan=plan)
 
-        pack = self.builder.build(task=task, scope=scoped, max_items=max_items)
+        pack = self.builder.build(task=task, scope=scoped, max_items=max_items, query_terms=plan["terms"])
         return {
             "result_type": "context_pack",
             "data": {
@@ -264,45 +291,16 @@ class QueryService:
                 "warnings": [],
             }
 
+        primary_terms = plan.get("primary_terms", terms)
+        fallback_terms = plan.get("fallback_terms", terms[1:])
         if self.graph_backend is not None:
-            items = self._graph_search_terms(terms, max_items=max_items, filters=applied_filters)
+            items = self._graph_search_terms(primary_terms, max_items=max_items, filters=applied_filters)
+            if not items:
+                items = self._graph_search_terms(fallback_terms, max_items=max_items, filters=applied_filters)
         else:
-            for object_type in ("node", "knowledge", "activity", "work_item", "source"):
-                for obj in self.repository.list(object_type):
-                    if not self._matches_filters(object_type, obj, applied_filters):
-                        continue
-                    title = str(obj.get("title") or obj.get("name") or obj["id"])
-                    summary = str(obj.get("summary", ""))
-                    payload = str(obj.get("payload", ""))
-                    segments = self._segment_text(obj)
-                    metadata = self._metadata_text(object_type, obj)
-                    haystack = f"{title}\n{summary}\n{payload}\n{segments}\n{metadata}".lower()
-                    matching_terms = [term for term in terms if term in haystack]
-                    if not matching_terms:
-                        continue
-                    score = max(
-                        self._score(
-                            term,
-                            title.lower(),
-                            summary.lower(),
-                            payload.lower(),
-                            segments.lower(),
-                            metadata.lower(),
-                        )
-                        for term in matching_terms
-                    )
-                    items.append(
-                        {
-                            "object_type": object_type,
-                            "id": obj["id"],
-                            "kind": obj.get("kind", object_type),
-                            "title": title,
-                            "status": obj.get("status") or obj.get("lifecycle_state"),
-                            "summary": summary,
-                            "score": score,
-                            "retrieval_sources": ["lexical"],
-                        }
-                    )
+            items = self._lexical_search_terms(primary_terms, filters=applied_filters)
+            if not items and self.semantic_index is None:
+                items = self._lexical_search_terms(fallback_terms, filters=applied_filters)
         if self.semantic_index is not None:
             semantic_items = self.semantic_index.search(query, max_items=max_items, filters=applied_filters)
             items = self._merge_search_items(items, semantic_items)
@@ -320,6 +318,46 @@ class QueryService:
             },
             "warnings": [],
         }
+
+    def _lexical_search_terms(self, terms: list[str], filters: dict) -> list[dict]:
+        items: list[dict] = []
+        for object_type in ("node", "knowledge", "activity", "work_item", "source"):
+            for obj in self.repository.list(object_type):
+                if not self._matches_filters(object_type, obj, filters):
+                    continue
+                title = str(obj.get("title") or obj.get("name") or obj["id"])
+                summary = self._object_summary(object_type, obj)
+                payload = str(obj.get("payload", ""))
+                segments = self._segment_text(obj)
+                metadata = self._metadata_text(object_type, obj)
+                haystack = f"{title}\n{summary}\n{payload}\n{segments}\n{metadata}".lower()
+                matching_terms = [term for term in terms if term in haystack]
+                if not matching_terms:
+                    continue
+                score = max(
+                    self._score(
+                        term,
+                        title.lower(),
+                        summary.lower(),
+                        payload.lower(),
+                        segments.lower(),
+                        metadata.lower(),
+                    )
+                    for term in matching_terms
+                )
+                items.append(
+                    {
+                        "object_type": object_type,
+                        "id": obj["id"],
+                        "kind": obj.get("kind", object_type),
+                        "title": title,
+                        "status": obj.get("status") or obj.get("lifecycle_state"),
+                        "summary": summary,
+                        "score": score,
+                        "retrieval_sources": ["lexical"],
+                    }
+                )
+        return items
 
     def _merge_search_items(self, lexical_items: list[dict], semantic_items: list[dict]) -> list[dict]:
         merged: dict[str, dict] = {item["id"]: dict(item) for item in lexical_items}
@@ -344,11 +382,22 @@ class QueryService:
         scope = scope or {}
         plan = plan or self._query_plan(task)
         filters = scope if isinstance(scope, dict) else {}
+        search_terms = plan.get("primary_terms", plan["terms"])
         items = [
             self._graph_context_item(item)
-            for item in self._graph_search_terms(plan["terms"], max_items=max_items, filters=filters)
+            for item in self._graph_search_terms(search_terms, max_items=max_items, filters=filters)
             if self._matches_filters(item.get("object_type", ""), item, filters)
         ][:max_items]
+        if not items:
+            items = [
+                self._graph_context_item(item)
+                for item in self._graph_search_terms(
+                    plan.get("fallback_terms", plan["terms"][1:]),
+                    max_items=max_items,
+                    filters=filters,
+                )
+                if self._matches_filters(item.get("object_type", ""), item, filters)
+            ][:max_items]
         generated_at = utc_now_iso()
         citations = self._graph_citations(items)
         return {
@@ -484,8 +533,10 @@ class QueryService:
             str(obj.get("kind", object_type)),
             str(obj.get("status") or ""),
             str(obj.get("lifecycle_state") or ""),
+            str(obj.get("identity_key") or ""),
         ]
         for field in (
+            "aliases",
             "subject_refs",
             "related_node_refs",
             "related_work_item_refs",
@@ -501,11 +552,50 @@ class QueryService:
                 parts.append(str(evidence.get("segment_id", "")))
         return "\n".join(part for part in parts if part)
 
+    def _object_summary(self, object_type: str, obj: dict) -> str:
+        summary = str(obj.get("summary", ""))
+        if summary or object_type != "source" or obj.get("kind") != "repo":
+            return summary
+        payload = obj.get("payload", {})
+        if not isinstance(payload, dict):
+            return ""
+        source_roots = payload.get("source_roots", [])
+        roots = ""
+        if isinstance(source_roots, list) and source_roots:
+            roots = f" Source roots: {', '.join(str(root) for root in source_roots)}."
+        code_modules = payload.get("code_modules", payload.get("python_modules", []))
+        module_names: list[str] = []
+        if isinstance(code_modules, list):
+            module_names = [
+                self._module_name(str(module.get("path", "")))
+                for module in code_modules[:12]
+                if isinstance(module, dict) and module.get("path")
+            ]
+        modules = f" Code modules: {', '.join(module_names)}." if module_names else ""
+        language_counts = payload.get("language_counts", {})
+        languages = ""
+        if isinstance(language_counts, dict) and language_counts:
+            languages = ". Languages: " + ", ".join(
+                f"{language}:{count}" for language, count in list(language_counts.items())[:5]
+            )
+        return (
+            f"Repository {payload.get('repo_name', obj.get('title', 'repo'))} "
+            f"with {payload.get('file_count', 0)} files and {payload.get('dir_count', 0)} directories."
+            f"{roots}{modules}{languages}"
+        )
+
+    def _module_name(self, module_path: str) -> str:
+        return str(Path(module_path).with_suffix("")).replace("/", ".")
+
     def _query_plan(self, query: str) -> dict:
         normalized_query = query.strip().lower()
         terms: list[str] = []
+        primary_terms: list[str] = []
         inferred_filters: dict[str, list[str]] = {}
         self._append_unique(terms, normalized_query)
+        self._append_unique(primary_terms, normalized_query)
+        for token in self._query_tokens(normalized_query):
+            self._append_unique(terms, token)
         for rule in QUERY_NORMALIZATION_RULES:
             if not self._rule_matches(normalized_query, rule["triggers"]):
                 continue
@@ -515,7 +605,37 @@ class QueryService:
                 bucket = inferred_filters.setdefault(key, [])
                 for value in values:
                     self._append_unique(bucket, str(value))
-        return {"terms": terms, "inferred_filters": inferred_filters}
+        fallback_terms = [term for term in terms if term not in primary_terms]
+        return {
+            "terms": terms,
+            "primary_terms": primary_terms or terms,
+            "fallback_terms": fallback_terms,
+            "inferred_filters": inferred_filters,
+        }
+
+    def _query_tokens(self, normalized_query: str) -> list[str]:
+        stopwords = {
+            "a",
+            "an",
+            "and",
+            "are",
+            "can",
+            "draw",
+            "for",
+            "from",
+            "how",
+            "of",
+            "the",
+            "to",
+            "what",
+            "with",
+            "一下",
+            "这个",
+            "通过",
+            "架构图",
+        }
+        tokens = re.findall(r"[\w.-]+|[\u4e00-\u9fff]+", normalized_query)
+        return [token for token in tokens if len(token) >= 2 and token not in stopwords]
 
     def _rule_matches(self, query: str, triggers: tuple[str, ...]) -> bool:
         if not query:

@@ -13,15 +13,23 @@ class ContextBuilder:
     def __init__(self, root: str | Path) -> None:
         self.repository = FsObjectRepository(root)
 
-    def build(self, task: str, scope: dict | None = None, max_items: int = 12) -> ContextPack:
+    def build(
+        self,
+        task: str,
+        scope: dict | None = None,
+        max_items: int = 12,
+        query_terms: list[str] | None = None,
+    ) -> ContextPack:
         scope = scope or {}
+        query_terms = query_terms or []
         items: list[ContextItem] = []
         items.extend(self._items_for("node", scope.get("node_ids")))
         items.extend(self._items_for("knowledge", None))
         items.extend(self._items_for("activity", None))
         items.extend(self._items_for("work_item", None))
+        items.extend(self._items_for("source", None))
 
-        filtered = self._filter(items, scope)
+        filtered = self._filter(items, scope, query_terms)
         selected = filtered[:max_items]
         summary = self._summary(task, selected)
         generated_at = utc_now_iso()
@@ -63,7 +71,7 @@ class ContextBuilder:
             return [self._to_item(object_type, obj) for obj in objects if obj is not None]
         return [self._to_item(object_type, obj) for obj in self.repository.list(object_type)]
 
-    def _filter(self, items: list[ContextItem], scope: dict) -> list[ContextItem]:
+    def _filter(self, items: list[ContextItem], scope: dict, query_terms: list[str]) -> list[ContextItem]:
         object_types = set(scope.get("object_types", []))
         if scope.get("object_type"):
             object_types.add(str(scope["object_type"]))
@@ -84,15 +92,16 @@ class ContextBuilder:
 
         node_ids = set(scope.get("node_ids", []))
         if not node_ids:
-            return self._rank(items)
+            return self._rank(items, query_terms)
         filtered = [
             item
             for item in items
             if item.id in node_ids or self._references_any_node(item.object_type, item.id, node_ids)
         ]
-        return self._rank(filtered or items)
+        return self._rank(filtered or items, query_terms)
 
-    def _rank(self, items: list[ContextItem]) -> list[ContextItem]:
+    def _rank(self, items: list[ContextItem], query_terms: list[str] | None = None) -> list[ContextItem]:
+        query_terms = query_terms or []
         status_rank = {
             "active": 0,
             "finalized": 1,
@@ -103,7 +112,33 @@ class ContextBuilder:
             "draft": 6,
             "archived": 99,
         }
-        return sorted(items, key=lambda item: (status_rank.get(item.status, 50), item.object_type, item.title))
+        return sorted(
+            items,
+            key=lambda item: (
+                -self._query_score(item, query_terms),
+                status_rank.get(item.status, 50),
+                item.object_type,
+                item.title,
+            ),
+        )
+
+    def _query_score(self, item: ContextItem, query_terms: list[str]) -> int:
+        if not query_terms:
+            return 0
+        title = item.title.lower()
+        summary = item.summary.lower()
+        metadata = f"{item.kind}\n{item.object_type}".lower()
+        score = 0
+        for term in query_terms:
+            if not term:
+                continue
+            if term in title:
+                score += 3
+            if term in summary:
+                score += 1
+            if term in metadata:
+                score += 1
+        return score
 
     def _summary(self, task: str, items: list[ContextItem]) -> str:
         if not items:
@@ -114,7 +149,7 @@ class ContextBuilder:
     def _to_item(self, object_type: str, obj: dict) -> ContextItem:
         kind = str(obj.get("kind", object_type))
         title = str(obj.get("title") or obj.get("name") or obj["id"])
-        summary = str(obj.get("summary", ""))
+        summary = self._summary_text(object_type, obj)
         status = str(obj.get("status") or obj.get("lifecycle_state") or "unknown")
         return ContextItem(
             object_type=object_type,
@@ -123,6 +158,38 @@ class ContextBuilder:
             title=title,
             status=status,
             summary=summary,
+        )
+
+    def _summary_text(self, object_type: str, obj: dict) -> str:
+        summary = str(obj.get("summary", ""))
+        if summary or object_type != "source" or obj.get("kind") != "repo":
+            return summary
+        payload = obj.get("payload", {})
+        if not isinstance(payload, dict):
+            return ""
+        source_roots = payload.get("source_roots", [])
+        roots = ""
+        if isinstance(source_roots, list) and source_roots:
+            roots = f" Source roots: {', '.join(str(root) for root in source_roots)}."
+        code_modules = payload.get("code_modules", payload.get("python_modules", []))
+        module_names = []
+        if isinstance(code_modules, list):
+            module_names = [
+                str(Path(str(module.get("path", ""))).with_suffix("")).replace("/", ".")
+                for module in code_modules[:12]
+                if isinstance(module, dict) and module.get("path")
+            ]
+        modules = f" Code modules: {', '.join(module_names)}." if module_names else ""
+        language_counts = payload.get("language_counts", {})
+        languages = ""
+        if isinstance(language_counts, dict) and language_counts:
+            languages = ". Languages: " + ", ".join(
+                f"{language}:{count}" for language, count in list(language_counts.items())[:5]
+            )
+        return (
+            f"Repository {payload.get('repo_name', obj.get('title', 'repo'))} "
+            f"with {payload.get('file_count', 0)} files and {payload.get('dir_count', 0)} directories."
+            f"{roots}{modules}{languages}"
         )
 
     def _citations(self, items: list[ContextItem]) -> list[dict]:

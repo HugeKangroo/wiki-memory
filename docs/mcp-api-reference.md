@@ -72,6 +72,8 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
+The stored repo source is a lightweight code map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, classes, functions, symbols, and line ranges when the parser can extract them. It intentionally does not make full source bodies the canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code.
+
 Before writing memory, `repo` ingest runs a preflight for local or agent state such as `.codex`, `.claude`, `.cursor`, or `.worktrees`. If these entries are present and not excluded, the tool excludes them from the current scan, writes the clean repo view, and returns `status: "completed_with_pending_decisions"`. Agents should use the clean source normally and inspect `pending_decisions` separately.
 
 ```json

@@ -138,6 +138,8 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 
 - `normalized_terms`
 - `applied_filters`
+- `code_index`
+- `code_modules`
 - `possible_duplicates`
 - `conflicts_with`
 - `requires_decision`

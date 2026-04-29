@@ -1,4 +1,6 @@
 from __future__ import annotations
+
+import hashlib
 from collections import Counter
 from dataclasses import dataclass
 from fnmatch import fnmatch
@@ -64,6 +66,7 @@ class RepoScanSummary:
     readme_present: bool
     source_roots: list[str]
     code_files: list[str]
+    code_index: list[dict]
     python_modules: list[dict]
 
 
@@ -117,6 +120,8 @@ class RepoAdapter:
                 "readme_present": summary.readme_present,
                 "source_roots": summary.source_roots,
                 "code_files": summary.code_files,
+                "code_index": summary.code_index,
+                "code_modules": summary.python_modules,
                 "python_modules": summary.python_modules,
                 "parser_backend": parser.backend,
             },
@@ -198,6 +203,7 @@ class RepoAdapter:
         top_level_entries: list[str] = []
         source_roots: list[str] = []
         code_files: list[str] = []
+        code_index: list[dict] = []
         parsed_modules: list[dict] = []
 
         for child in sorted(root.iterdir()):
@@ -224,8 +230,12 @@ class RepoAdapter:
             if suffix in LANGUAGE_BY_SUFFIX:
                 language = LANGUAGE_BY_SUFFIX[suffix]
                 language_counter[language] += 1
-                if language != "markdown" and len(code_files) < 80:
-                    code_files.append(str(path.relative_to(root)))
+                if language != "markdown":
+                    relative_path = str(path.relative_to(root))
+                    if len(code_files) < 300:
+                        code_files.append(relative_path)
+                    if len(code_index) < 500:
+                        code_index.append(self._code_index_entry(root, path, language))
             if path.name.lower() in {"readme.md", "readme"}:
                 readme_present = True
             language = LANGUAGE_BY_SUFFIX.get(suffix)
@@ -236,9 +246,12 @@ class RepoAdapter:
                         {
                             "path": module_info.path,
                             "language": module_info.language,
+                            "line_start": module_info.line_start,
+                            "line_end": module_info.line_end,
                             "classes": module_info.classes,
                             "functions": module_info.functions,
                             "imports": module_info.imports,
+                            "symbols": module_info.symbols,
                             "module_doc": module_info.module_doc,
                             "class_docs": module_info.class_docs,
                             "interfaces": module_info.interfaces,
@@ -255,8 +268,26 @@ class RepoAdapter:
             readme_present=readme_present,
             source_roots=source_roots,
             code_files=code_files,
-            python_modules=parsed_modules[:60],
+            code_index=code_index,
+            python_modules=parsed_modules[:200],
         )
+
+    def _code_index_entry(self, root: Path, path: Path, language: str) -> dict:
+        relative_path = str(path.relative_to(root))
+        try:
+            raw = path.read_bytes()
+        except OSError:
+            raw = b""
+        try:
+            line_count = len(raw.decode("utf-8").splitlines())
+        except UnicodeDecodeError:
+            line_count = 0
+        return {
+            "path": relative_path,
+            "language": language,
+            "line_count": line_count,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+        }
 
     def _is_excluded(self, root: Path, path: Path, exclude_patterns: list[str]) -> bool:
         relative = self._relative_posix(root, path)
@@ -318,8 +349,12 @@ class RepoAdapter:
             ",".join(f"{key}:{value}" for key, value in sorted(summary.language_counts.items())),
             str(summary.readme_present),
             ",".join(summary.source_roots),
-            ",".join(summary.code_files[:40]),
-            ",".join(module["path"] for module in summary.python_modules[:10]),
+            ",".join(f'{item["path"]}:{item["sha256"]}' for item in summary.code_index[:300]),
+            ",".join(
+                f'{module["path"]}:'
+                f'{",".join(symbol["name"] for symbol in module.get("symbols", [])[:20])}'
+                for module in summary.python_modules[:120]
+            ),
         ]
         return "|".join(parts)
 
@@ -334,37 +369,59 @@ class RepoAdapter:
                     hash=entry,
                 )
             )
-        for module in summary.python_modules[:10]:
+        for module in summary.python_modules[:120]:
             segments.append(
                 SourceSegment(
                     segment_id=slugify(module["path"]),
-                    locator={"kind": "path", "path": str(root / module["path"])},
-                    excerpt=f'{module["path"]}: classes={len(module["classes"])}, functions={len(module["functions"])}',
+                    locator={
+                        "kind": "code_module",
+                        "path": module["path"],
+                        "line_start": module.get("line_start", 1),
+                        "line_end": module.get("line_end", 1),
+                    },
+                    excerpt=self._module_excerpt(module),
                     hash=module["path"],
                 )
             )
-        for code_file in summary.code_files[:40]:
+        for entry in summary.code_index[:120]:
+            code_file = entry["path"]
             path = root / code_file
-            excerpt = self._code_excerpt(path)
+            excerpt, line_end = self._code_excerpt(path)
             if not excerpt:
                 continue
             segments.append(
                 SourceSegment(
                     segment_id=f"code-{slugify(code_file)}",
-                    locator={"kind": "code_file", "path": code_file},
+                    locator={
+                        "kind": "code_file",
+                        "path": code_file,
+                        "line_start": 1,
+                        "line_end": line_end,
+                    },
                     excerpt=excerpt,
-                    hash=code_file,
+                    hash=entry["sha256"],
                 )
             )
         return segments
 
-    def _code_excerpt(self, path: Path) -> str:
+    def _module_excerpt(self, module: dict) -> str:
+        symbol_names = [symbol["name"] for symbol in module.get("symbols", [])[:12] if symbol.get("name")]
+        parts = [
+            f'{module["path"]}: {module["language"]} module',
+            f'classes={len(module["classes"])}, functions={len(module["functions"])}',
+        ]
+        if symbol_names:
+            parts.append(f'symbols={", ".join(symbol_names)}')
+        return "; ".join(parts)
+
+    def _code_excerpt(self, path: Path) -> tuple[str, int]:
         try:
             text = path.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
-            return ""
+            return "", 0
         lines = text.splitlines()
-        return "\n".join(lines[:80])[:4000]
+        excerpt_lines = lines[:80]
+        return "\n".join(excerpt_lines)[:4000], len(excerpt_lines)
 
     def _module_nodes(self, root: Path, summary: RepoScanSummary, timestamp: str) -> list[Node]:
         nodes: list[Node] = []
@@ -393,9 +450,11 @@ class RepoAdapter:
                     updated_at=timestamp,
                 )
             )
-        for module in summary.python_modules[:10]:
+        for module in summary.python_modules[:120]:
             stem = self._module_name(module["path"])
             language_label = self._language_label(module["language"])
+            symbol_names = [symbol["name"] for symbol in module.get("symbols", [])[:8] if symbol.get("name")]
+            symbol_summary = f" Symbols: {', '.join(symbol_names)}." if symbol_names else ""
             nodes.append(
                 Node(
                     id=stable_id("node", f'node|module|{root}|{module["path"]}'),
@@ -404,7 +463,11 @@ class RepoAdapter:
                     slug=slugify(stem),
                     identity_key=f'node|module|{root}|{module["path"]}',
                     aliases=[module["path"]],
-                    summary=f'{language_label} module with {len(module["classes"])} classes and {len(module["functions"])} functions.',
+                    summary=(
+                        f'{language_label} module at {module["path"]} with '
+                        f'{len(module["classes"])} classes and {len(module["functions"])} functions.'
+                        f"{symbol_summary}"
+                    ),
                     status="active",
                     created_at=timestamp,
                     updated_at=timestamp,
