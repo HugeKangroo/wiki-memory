@@ -142,7 +142,7 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 - if it is a refinement, consider superseding or updating in a later maintenance step
 - if it is genuinely distinct, keep it and preserve the scope/reason that explains why
 
-`memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically. After reviewing the listed ids, use `memory_maintain resolve_duplicates` with `options.apply=true` and one explicit outcome:
+`memory_maintain report` also surfaces soft duplicate candidates. Each candidate includes `review_guidance`, a default editable `suggested_resolution`, and `next_actions`. `memory_maintain merge_duplicates` does not merge them automatically. After reviewing the listed ids, use `memory_maintain resolve_duplicates` with `options.apply=true` and one explicit outcome:
 
 - `supersede`: one listed item is canonical and the others should become superseded.
 - `keep_both`: both listed items are distinct after clarifying summaries or scopes.

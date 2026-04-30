@@ -819,7 +819,36 @@ Soft duplicate report entries use this shape:
 {
   "object_ids": ["know:...", "know:..."],
   "score": 0.72,
-  "reasons": ["title_overlap", "summary_overlap", "same_kind"]
+  "reasons": ["title_overlap", "summary_overlap", "same_kind"],
+  "review_guidance": {
+    "required_checks": [
+      "read_both_knowledge_items",
+      "compare_scope_refs",
+      "compare_evidence_refs",
+      "decide_whether_meaning_is_same_distinct_or_conflicting"
+    ],
+    "outcomes": [
+      {"action": "supersede", "tool": "memory_maintain", "mode": "resolve_duplicates"},
+      {"action": "keep_both", "tool": "memory_maintain", "mode": "resolve_duplicates"},
+      {"action": "contest", "tool": "memory_maintain", "mode": "resolve_duplicates"}
+    ]
+  },
+  "suggested_resolution": {
+    "tool": "memory_maintain",
+    "mode": "resolve_duplicates",
+    "input_data": {
+      "outcome": "supersede",
+      "knowledge_ids": ["know:...", "know:..."],
+      "canonical_knowledge_id": "know:...",
+      "reason": "Reviewed soft duplicate candidate and selected the canonical memory."
+    },
+    "options": {"apply": true}
+  },
+  "next_actions": [
+    "review_duplicate_pair",
+    "choose_supersede_keep_both_or_contest",
+    "call_memory_maintain_resolve_duplicates_if_actionable"
+  ]
 }
 ```
 

@@ -72,15 +72,88 @@ class KnowledgeSoftDuplicateDetector:
                 if not matches:
                     continue
                 match = matches[0]
+                object_ids = [item["id"], other["id"]]
+                canonical_id = self._suggested_canonical_id([item, other])
                 groups.append(
                     {
-                        "object_ids": [item["id"], other["id"]],
+                        "object_ids": object_ids,
                         "score": match["score"],
                         "reasons": match["reasons"],
+                        "review_guidance": self._review_guidance(),
+                        "suggested_resolution": {
+                            "tool": "memory_maintain",
+                            "mode": "resolve_duplicates",
+                            "input_data": {
+                                "outcome": "supersede",
+                                "knowledge_ids": object_ids,
+                                "canonical_knowledge_id": canonical_id,
+                                "reason": "Reviewed soft duplicate candidate and selected the canonical memory.",
+                            },
+                            "options": {"apply": True},
+                            "editable_fields": [
+                                "input_data.outcome",
+                                "input_data.canonical_knowledge_id",
+                                "input_data.reason",
+                                "input_data.updates",
+                            ],
+                        },
+                        "next_actions": [
+                            "review_duplicate_pair",
+                            "choose_supersede_keep_both_or_contest",
+                            "call_memory_maintain_resolve_duplicates_if_actionable",
+                        ],
                     }
                 )
         groups.sort(key=lambda group: (-group["score"], group["object_ids"]))
         return groups
+
+    def _suggested_canonical_id(self, items: list[dict]) -> str:
+        status_rank = {
+            "active": 3,
+            "candidate": 2,
+            "stale": 1,
+            "contested": 0,
+        }
+        winner = max(
+            items,
+            key=lambda item: (
+                status_rank.get(str(item.get("status", "")), 0),
+                float(item.get("confidence", 0.0)),
+                str(item.get("last_verified_at") or item.get("created_at") or ""),
+                str(item.get("title") or item["id"]),
+            ),
+        )
+        return str(winner["id"])
+
+    def _review_guidance(self) -> dict:
+        return {
+            "required_checks": [
+                "read_both_knowledge_items",
+                "compare_scope_refs",
+                "compare_evidence_refs",
+                "decide_whether_meaning_is_same_distinct_or_conflicting",
+            ],
+            "outcomes": [
+                {
+                    "action": "supersede",
+                    "when": "one item carries the same meaning and should replace the others",
+                    "tool": "memory_maintain",
+                    "mode": "resolve_duplicates",
+                },
+                {
+                    "action": "keep_both",
+                    "when": "items are distinct after clarifying summaries or scopes",
+                    "tool": "memory_maintain",
+                    "mode": "resolve_duplicates",
+                },
+                {
+                    "action": "contest",
+                    "when": "items conflict or need human review before reuse",
+                    "tool": "memory_maintain",
+                    "mode": "resolve_duplicates",
+                },
+            ],
+        }
 
     def _structured_signature(self, item: dict) -> tuple[str, str] | None:
         payload = item.get("payload", {})

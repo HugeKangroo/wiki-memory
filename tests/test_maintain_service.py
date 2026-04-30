@@ -511,7 +511,18 @@ class MaintenanceLifecycleTest(unittest.TestCase):
                 set(report["data"]["soft_duplicate_candidates"][0]["object_ids"]),
                 {first["knowledge_id"], second["knowledge_id"]},
             )
-            self.assertIn("title_overlap", report["data"]["soft_duplicate_candidates"][0]["reasons"])
+            candidate = report["data"]["soft_duplicate_candidates"][0]
+            self.assertIn("title_overlap", candidate["reasons"])
+            self.assertEqual(
+                {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]},
+                {"supersede", "keep_both", "contest"},
+            )
+            self.assertEqual(candidate["suggested_resolution"]["tool"], "memory_maintain")
+            self.assertEqual(candidate["suggested_resolution"]["mode"], "resolve_duplicates")
+            self.assertEqual(candidate["suggested_resolution"]["input_data"]["knowledge_ids"], candidate["object_ids"])
+            self.assertEqual(candidate["suggested_resolution"]["input_data"]["outcome"], "supersede")
+            self.assertEqual(candidate["suggested_resolution"]["input_data"]["canonical_knowledge_id"], first["knowledge_id"])
+            self.assertIn("review_duplicate_pair", candidate["next_actions"])
 
     def test_report_surfaces_fact_checker_lifecycle_issues(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

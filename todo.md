@@ -335,3 +335,20 @@ Deliverables:
 Verification:
 - [x] Add lifecycle tests for supersede, keep_both, and rejecting non-candidate pairs.
 - [x] Add MCP dispatch/schema/apply guard tests.
+
+### MS-15: Soft Duplicate Report Guidance
+
+Status: `completed`
+
+Goal: make soft duplicate report entries self-guiding so agents can safely review and resolve them.
+
+Boundary: response guidance only. Do not auto-resolve duplicates and do not add an LLM reviewer.
+
+Deliverables:
+- [x] Add `review_guidance` to each soft duplicate candidate.
+- [x] Add editable `suggested_resolution` payloads for `memory_maintain resolve_duplicates`.
+- [x] Add `next_actions` for review, outcome selection, and explicit resolution.
+- [x] Update MCP docs, agent usage docs, and built-in resources.
+
+Verification:
+- [x] Add maintain report coverage for guidance and suggested resolution payloads.

@@ -29,7 +29,7 @@ Required domain mappings include todo/work item, decision, preference, procedure
 
 ## Maintenance Policy
 
-`memory_maintain report` may surface soft duplicate candidates. `merge_duplicates` is limited to deterministic structured duplicates. Use `memory_maintain resolve_duplicates` with `options.apply=true` after explicit review to supersede a duplicate, keep both with clarified summaries or scopes, or contest the listed items.
+`memory_maintain report` may surface soft duplicate candidates with `review_guidance`, editable `suggested_resolution`, and `next_actions`. `merge_duplicates` is limited to deterministic structured duplicates. Use `memory_maintain resolve_duplicates` with `options.apply=true` after explicit review to supersede a duplicate, keep both with clarified summaries or scopes, or contest the listed items.
 
 `memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory. Treat `candidate_type` and `ranking_signals` as triage aids. Treat `suggested_memory.input_data` as an editable skeleton; read evidence, query for existing memory, rewrite summary, and choose concept/procedure/decision/merge/skip. Use `candidate_diagnostics` to understand skipped document artifacts, format markers, action phrases, shortcut fragments, generic terms, long terms, or weak terms.
 """
