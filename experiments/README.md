@@ -71,3 +71,15 @@ result = run_planted_needle_benchmark("/tmp/memory-benchmark")
 ```
 
 The default smoke path reports lexical recall and marks semantic/hybrid streams as `not_configured`. Pass a configured semantic service only when intentionally evaluating hybrid retrieval.
+
+## Maintenance Dogfood Benchmark
+
+The maintenance benchmark helper seeds a temporary/local memory root with deterministic lifecycle cases and runs read-only `memory_maintain report` logic. It checks promotable candidates, low-evidence candidates, stale candidates, structured duplicate groups, and soft duplicate candidates without network access or optional semantic models:
+
+```python
+from memory_substrate.experiments.maintenance_benchmark import run_maintenance_dogfood_benchmark
+
+result = run_maintenance_dogfood_benchmark("/tmp/memory-maintenance-benchmark")
+```
+
+The helper does not mutate maintenance state beyond seeding the benchmark root. Use it as a local regression signal when changing lifecycle, duplicate, or report logic.

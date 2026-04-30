@@ -409,3 +409,21 @@ Deliverables:
 Verification:
 - [x] Add acceptance coverage for the extraction protocol shape.
 - [x] Run candidate suggestion regression coverage.
+
+### MS-19: Maintenance Dogfood Benchmark
+
+Status: `completed`
+
+Goal: provide a deterministic local benchmark for long-term maintenance signals.
+
+Boundary: local read-only report benchmark only. Do not require network, optional embedding models, or real user memory roots.
+
+Deliverables:
+- [x] Add `run_maintenance_dogfood_benchmark` under packaged experiment helpers.
+- [x] Seed synthetic cases for promotable candidates, low-evidence candidates, stale candidates, structured duplicate groups, and soft duplicate candidates.
+- [x] Return expected counts, observed counts, per-case checks, reference time, and mutation flag.
+- [x] Document the benchmark entrypoint in `experiments/README.md`.
+
+Verification:
+- [x] Add benchmark test coverage.
+- [x] Run retrieval and maintenance benchmark tests.
