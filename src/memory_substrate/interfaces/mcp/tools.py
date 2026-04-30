@@ -21,6 +21,7 @@ MUTATING_MAINTAIN_MODES = {
     "promote_candidates",
     "merge_duplicates",
     "resolve_duplicates",
+    "archive_source",
     "decay_stale",
     "cycle",
 }
@@ -287,6 +288,11 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
                 canonical_knowledge_id=input_data.get("canonical_knowledge_id"),
                 reason=input_data.get("reason", ""),
                 updates=input_data.get("updates"),
+            )
+        if mode == "archive_source":
+            return service.archive_source(
+                source_id=input_data.get("source_id", ""),
+                reason=input_data.get("reason", ""),
             )
         if mode == "decay_stale":
             return service.decay_stale(

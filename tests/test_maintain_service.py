@@ -186,6 +186,67 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertEqual(second["status"], "noop")
             self.assertEqual(second["merged"], 0)
 
+    def test_archive_source_marks_exclusively_supported_knowledge_stale(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            subject_id = self._seed_node(root)
+            retired_source = self._seed_source(root, "src:retired")
+            active_source = self._seed_source(root, "src:active")
+            remember = RememberService(root)
+            maintain = MaintenanceLifecycle(root)
+            repository = FsObjectRepository(root)
+
+            exclusive = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Retired-source-only fact",
+                    "summary": "This fact only cites the source being archived.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [{"source_id": retired_source, "segment_id": "seg-1"}],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "retired_source_only",
+                        "value": "yes",
+                        "object": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+            mixed = remember.create_knowledge(
+                {
+                    "kind": "fact",
+                    "title": "Mixed-evidence fact",
+                    "summary": "This fact cites both archived and still-active evidence.",
+                    "subject_refs": [subject_id],
+                    "evidence_refs": [
+                        {"source_id": retired_source, "segment_id": "seg-1"},
+                        {"source_id": active_source, "segment_id": "seg-1"},
+                    ],
+                    "payload": {
+                        "subject": subject_id,
+                        "predicate": "mixed_evidence",
+                        "value": "yes",
+                        "object": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+
+            result = maintain.archive_source(retired_source, reason="Retire invalid import.")
+
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["archived_source_id"], retired_source)
+            self.assertEqual(result["stale_knowledge_ids"], [exclusive["knowledge_id"]])
+            self.assertEqual(result["partially_affected_knowledge_ids"], [mixed["knowledge_id"]])
+            self.assertEqual(repository.get("source", retired_source)["status"], "archived")
+            exclusive_stored = repository.get("knowledge", exclusive["knowledge_id"])
+            mixed_stored = repository.get("knowledge", mixed["knowledge_id"])
+            self.assertEqual(exclusive_stored["status"], "stale")
+            self.assertEqual(exclusive_stored["reason"], f"maintain_archive_source:{retired_source}:Retire invalid import.")
+            self.assertEqual(mixed_stored["status"], "active")
+
     def test_merge_duplicates_does_not_merge_facts_with_different_object_values(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

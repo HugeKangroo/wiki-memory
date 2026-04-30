@@ -102,6 +102,8 @@ Maintenance may report soft duplicate candidates, but automatic merge must stay 
 - contest one or both items
 - promote a curated replacement and supersede the originals through an explicit replacement write followed by `memory_remember supersede`
 
+Source retirement must preserve audit history. Use `memory_maintain archive_source`, not physical deletion, when a source was imported incorrectly or should no longer support claims. Only knowledge whose evidence depends entirely on the archived source should be marked `stale` automatically; mixed-evidence knowledge requires explicit review.
+
 ## Query Policy
 
 Query should return work-ready context, not just raw string matches.

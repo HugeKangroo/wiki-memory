@@ -649,6 +649,7 @@ Allowed lifecycle modes:
 - `promote_candidates`
 - `merge_duplicates`
 - `resolve_duplicates`
+- `archive_source`
 - `decay_stale`
 - `cycle`
 - `report`
@@ -797,6 +798,25 @@ Use `outcome: "keep_both"` when the items are distinct but need clarified summar
 ```
 
 Use `outcome: "contest"` when the relationship is unclear or conflicting and the items should not be treated as clean active memories.
+
+`archive_source`:
+
+```json
+{
+  "args": {
+    "mode": "archive_source",
+    "input_data": {
+      "source_id": "src:retired",
+      "reason": "Retired because the import captured local agent state."
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+`archive_source` marks the source archived, marks knowledge as `stale` when all of its evidence refs point to that source, and reports mixed-evidence knowledge in `partially_affected_knowledge_ids` without automatically downgrading it.
 
 `repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
 

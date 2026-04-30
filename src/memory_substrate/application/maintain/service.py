@@ -149,6 +149,18 @@ class MaintainService:
             updates=updates,
         )
 
+    def archive_source(self, *, source_id: str, reason: str) -> dict:
+        """Archive one source and report knowledge affected by its evidence.
+
+        Args:
+            source_id: Source object id to archive.
+            reason: Durable audit reason explaining why the source is retired.
+
+        Returns:
+            Maintenance mutation result with archived source and affected knowledge ids.
+        """
+        return self.lifecycle.archive_source(source_id=source_id, reason=reason)
+
     def decay_stale(self, reference_time: str | None = None, stale_after_days: int = 30) -> dict:
         """Mark old active or candidate knowledge as stale.
 

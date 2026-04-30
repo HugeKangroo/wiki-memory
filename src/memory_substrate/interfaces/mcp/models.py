@@ -497,6 +497,13 @@ class MaintainLifecycleDecayStaleInput(StrictModel):
     stale_after_days: int | None = None
 
 
+class MaintainLifecycleArchiveSourceInput(StrictModel):
+    """Input payload for archiving a source and reporting affected knowledge."""
+
+    source_id: str = Field(description="Source object id to archive, normally prefixed with src:.")
+    reason: str = Field(min_length=1, description="Durable audit reason explaining why this source is retired.")
+
+
 class MaintainLifecycleCycleInput(StrictModel):
     """Input payload for running the full memory maintenance cycle."""
 
@@ -561,6 +568,13 @@ class MaintainLifecycleDecayStaleArgs(MaintainApplyArgs):
 
     mode: Literal["decay_stale"]
     input_data: MaintainLifecycleDecayStaleInput
+
+
+class MaintainLifecycleArchiveSourceArgs(MaintainApplyArgs):
+    """MCP arguments for memory_maintain archive_source mode."""
+
+    mode: Literal["archive_source"]
+    input_data: MaintainLifecycleArchiveSourceInput
 
 
 class MaintainLifecycleCycleArgs(MaintainApplyArgs):
@@ -640,6 +654,7 @@ MaintainToolArgs = Annotated[
     | MaintainLifecyclePromoteCandidatesArgs
     | MaintainLifecycleMergeDuplicatesArgs
     | MaintainLifecycleResolveDuplicatesArgs
+    | MaintainLifecycleArchiveSourceArgs
     | MaintainLifecycleDecayStaleArgs
     | MaintainLifecycleCycleArgs
     | MaintainLifecycleReportArgs,

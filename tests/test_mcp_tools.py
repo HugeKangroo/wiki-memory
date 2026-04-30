@@ -25,6 +25,7 @@ class McpToolsTest(unittest.TestCase):
             service.promote_candidates.return_value = {"status": "completed", "promoted": 1}
             service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
             service.resolve_duplicates.return_value = {"status": "completed", "outcome": "supersede", "resolved": 2}
+            service.archive_source.return_value = {"status": "completed", "archived_source_id": "src:retired"}
             service.decay_stale.return_value = {"status": "completed", "decayed": 1}
             service.cycle.return_value = {"status": "completed", "promoted": 1, "merged": 1, "decayed": 1}
 
@@ -56,6 +57,15 @@ class McpToolsTest(unittest.TestCase):
                 )["decayed"],
                 1,
             )
+            self.assertEqual(
+                memory_maintain(
+                    ".",
+                    "archive_source",
+                    {"source_id": "src:retired", "reason": "Retire invalid import."},
+                    {"apply": True},
+                )["archived_source_id"],
+                "src:retired",
+            )
             self.assertEqual(memory_maintain(".", "cycle", {"reference_time": "2026-04-24T00:00:00+00:00"}, {"apply": True})["merged"], 1)
 
             service.promote_candidates.assert_called_once_with(min_confidence=0.8, min_evidence=2)
@@ -70,6 +80,10 @@ class McpToolsTest(unittest.TestCase):
             service.decay_stale.assert_called_once_with(
                 reference_time="2026-04-24T00:00:00+00:00",
                 stale_after_days=10,
+            )
+            service.archive_source.assert_called_once_with(
+                source_id="src:retired",
+                reason="Retire invalid import.",
             )
             service.cycle.assert_called_once_with(
                 min_confidence=0.75,
@@ -146,6 +160,9 @@ class McpToolsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "options.apply=true"):
             memory_maintain(".", "resolve_duplicates", {})
+
+        with self.assertRaisesRegex(ValueError, "options.apply=true"):
+            memory_maintain(".", "archive_source", {"source_id": "src:x", "reason": "test"})
 
 
 if __name__ == "__main__":

@@ -31,6 +31,8 @@ Required domain mappings include todo/work item, decision, preference, procedure
 
 `memory_maintain report` may surface soft duplicate candidates with `review_guidance`, editable `suggested_resolution`, and `next_actions`. `merge_duplicates` is limited to deterministic structured duplicates. Use `memory_maintain resolve_duplicates` with `options.apply=true` after explicit review to supersede a duplicate, keep both with clarified summaries or scopes, or contest the listed items.
 
+Use `memory_maintain archive_source` with `options.apply=true` to retire a bad source without deleting audit history. It archives the source, marks knowledge stale only when all evidence depends on that source, and reports mixed-evidence knowledge for explicit review.
+
 `memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory. Treat `candidate_type` and `ranking_signals` as triage aids. Treat `suggested_memory.input_data` as an editable skeleton; read evidence, query for existing memory, rewrite summary, and choose concept/procedure/decision/merge/skip. Use `candidate_diagnostics` to understand skipped document artifacts, format markers, action phrases, shortcut fragments, generic terms, long terms, or weak terms.
 """
 
@@ -68,6 +70,8 @@ Inspect `possible_duplicates` after knowledge writes. Similar unstructured items
 Use `memory_maintain report` for read-only review. Mutating maintenance requires `options.apply=true`.
 
 Treat graph health, derived index diagnostics, soft duplicate candidates, `concept_candidates`, and `fact_check_issues` as review signals. They should guide explicit remember/maintain actions, not automatic mutation.
+
+Use `memory_maintain archive_source` only for bad imports or untrusted evidence sources. Review `partially_affected_knowledge_ids` before changing mixed-evidence memories.
 """
 
 

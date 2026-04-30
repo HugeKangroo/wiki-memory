@@ -241,6 +241,69 @@ class MaintenanceLifecycle:
             "decayed": len(operations),
         }
 
+    def archive_source(self, source_id: str, reason: str) -> dict:
+        """Archive one source and stale knowledge whose evidence depends only on it.
+
+        Args:
+            source_id: Source object id to archive.
+            reason: Durable audit reason explaining why the source is retired.
+
+        Returns:
+            Maintenance mutation result with affected knowledge diagnostics.
+        """
+        source_id = str(source_id or "").strip()
+        reason = str(reason or "").strip()
+        if not source_id:
+            raise ValueError("archive_source requires source_id")
+        if not reason:
+            raise ValueError("archive_source requires a non-empty reason")
+        if self.object_repository.get("source", source_id) is None:
+            raise ValueError(f"Source not found: {source_id}")
+
+        stale_knowledge_ids: list[str] = []
+        partially_affected_knowledge_ids: list[str] = []
+        operations = [
+            PatchOperation(
+                op="update_object",
+                object_type="source",
+                object_id=source_id,
+                changes={
+                    "status": "archived",
+                    "reason": f"maintain_archive_source:{source_id}:{reason}",
+                },
+            )
+        ]
+
+        for item in self.object_repository.list("knowledge"):
+            if item.get("status") in {"superseded", "archived"}:
+                continue
+            evidence_source_ids = self._evidence_source_ids(item)
+            if source_id not in evidence_source_ids:
+                continue
+            if evidence_source_ids <= {source_id}:
+                stale_knowledge_ids.append(item["id"])
+                operations.append(
+                    PatchOperation(
+                        op="update_object",
+                        object_type="knowledge",
+                        object_id=item["id"],
+                        changes={
+                            "status": "stale",
+                            "reason": f"maintain_archive_source:{source_id}:{reason}",
+                        },
+                    )
+                )
+            else:
+                partially_affected_knowledge_ids.append(item["id"])
+
+        result = self._apply_operations(operations)
+        return {
+            **result,
+            "archived_source_id": source_id,
+            "stale_knowledge_ids": sorted(stale_knowledge_ids),
+            "partially_affected_knowledge_ids": sorted(partially_affected_knowledge_ids),
+        }
+
     def report(
         self,
         min_confidence: float = 0.75,
@@ -559,6 +622,13 @@ class MaintenanceLifecycle:
                 seen.add(key)
                 merged.append({"source_id": source_id, "segment_id": segment_id})
         return merged
+
+    def _evidence_source_ids(self, item: dict) -> set[str]:
+        source_ids: set[str] = set()
+        for evidence in item.get("evidence_refs", []):
+            if isinstance(evidence, dict) and evidence.get("source_id"):
+                source_ids.add(str(evidence["source_id"]))
+        return source_ids
 
     def _pick_winner(self, duplicates: list[dict]) -> dict:
         def sort_key(item: dict) -> tuple[int, float, datetime, float]:

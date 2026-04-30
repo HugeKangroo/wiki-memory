@@ -170,6 +170,8 @@ When a graph backend is configured, `memory_maintain report` also returns graph-
 
 `memory_maintain repair` may return `derived_indexes` diagnostics when semantic or graph backends are configured. Treat missing or stale derived-index counts as a reason to run `memory_maintain reindex` with explicit apply/configuration controls, not as canonical data loss.
 
+Use `memory_maintain archive_source` only when a stored source should stop serving as trusted evidence, such as a bad import or captured local agent state. It requires `source_id`, non-empty `reason`, and `options.apply=true`. It does not delete canonical history: it archives the source, marks knowledge `stale` only when all evidence depends on that source, and returns `partially_affected_knowledge_ids` for mixed-evidence memories that need review.
+
 ## Memory Review Gate
 
 Agents should run this review before calling `memory_remember`:

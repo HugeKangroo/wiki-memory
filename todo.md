@@ -352,3 +352,22 @@ Deliverables:
 
 Verification:
 - [x] Add maintain report coverage for guidance and suggested resolution payloads.
+
+### MS-16: Source Archive And Cascade Diagnostics
+
+Status: `completed`
+
+Goal: retire bad or untrusted sources without deleting canonical history, while making affected knowledge explicit.
+
+Boundary: safe archive semantics only. Do not physically delete sources or automatically downgrade mixed-evidence knowledge.
+
+Deliverables:
+- [x] Add `memory_maintain archive_source` with required `source_id`, `reason`, and `options.apply=true`.
+- [x] Mark the source `archived` with an audit reason.
+- [x] Mark knowledge `stale` only when all evidence refs depend on the archived source.
+- [x] Return `partially_affected_knowledge_ids` for mixed-evidence knowledge requiring review.
+- [x] Update MCP docs, agent usage docs, policy, and built-in resources.
+
+Verification:
+- [x] Add lifecycle coverage for archive and cascade behavior.
+- [x] Add MCP dispatch/schema/apply guard coverage.
