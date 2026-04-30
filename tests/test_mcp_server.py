@@ -57,6 +57,7 @@ class McpServerTest(unittest.TestCase):
                 "repair",
                 "promote_candidates",
                 "merge_duplicates",
+                "resolve_duplicates",
                 "decay_stale",
                 "cycle",
                 "report",

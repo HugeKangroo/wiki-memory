@@ -15,7 +15,15 @@ from memory_substrate.infrastructure.semantic.factory import create_semantic_ind
 from memory_substrate.interfaces.mcp.models import QueryToolArgs
 
 
-MUTATING_MAINTAIN_MODES = {"configure", "repair", "promote_candidates", "merge_duplicates", "decay_stale", "cycle"}
+MUTATING_MAINTAIN_MODES = {
+    "configure",
+    "repair",
+    "promote_candidates",
+    "merge_duplicates",
+    "resolve_duplicates",
+    "decay_stale",
+    "cycle",
+}
 _QUERY_TOOL_ARGS_ADAPTER = TypeAdapter(QueryToolArgs)
 
 
@@ -272,6 +280,14 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
             )
         if mode == "merge_duplicates":
             return service.merge_duplicates()
+        if mode == "resolve_duplicates":
+            return service.resolve_duplicates(
+                outcome=input_data.get("outcome", ""),
+                knowledge_ids=input_data.get("knowledge_ids", []),
+                canonical_knowledge_id=input_data.get("canonical_knowledge_id"),
+                reason=input_data.get("reason", ""),
+                updates=input_data.get("updates"),
+            )
         if mode == "decay_stale":
             return service.decay_stale(
                 reference_time=input_data.get("reference_time"),

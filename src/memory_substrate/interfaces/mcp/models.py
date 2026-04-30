@@ -469,6 +469,27 @@ class MaintainLifecycleMergeDuplicatesInput(StrictModel):
     pass
 
 
+class MaintainDuplicateResolutionUpdate(StrictModel):
+    """One keep_both clarification for a reviewed soft duplicate."""
+
+    knowledge_id: str = Field(description="Knowledge object id to update.")
+    summary: str | None = Field(default=None, description="Optional clarified summary.")
+    scope_refs: list[str] | None = Field(default=None, description="Optional clarified durable scope refs.")
+
+
+class MaintainLifecycleResolveDuplicatesInput(StrictModel):
+    """Input payload for explicitly resolving a soft duplicate candidate."""
+
+    outcome: Literal["supersede", "keep_both", "contest"] = Field(description="Explicit review outcome for the candidate.")
+    knowledge_ids: list[str] = Field(min_length=2, description="Knowledge ids from a reported soft duplicate candidate.")
+    reason: str = Field(min_length=1, description="Audit reason explaining the reviewed outcome.")
+    canonical_knowledge_id: str | None = Field(default=None, description="Required winner id when outcome is supersede.")
+    updates: list[MaintainDuplicateResolutionUpdate] | None = Field(
+        default=None,
+        description="Required for keep_both when summaries or scopes need clarification.",
+    )
+
+
 class MaintainLifecycleDecayStaleInput(StrictModel):
     """Input payload for marking stale knowledge by age."""
 
@@ -526,6 +547,13 @@ class MaintainLifecycleMergeDuplicatesArgs(MaintainApplyArgs):
 
     mode: Literal["merge_duplicates"]
     input_data: MaintainLifecycleMergeDuplicatesInput
+
+
+class MaintainLifecycleResolveDuplicatesArgs(MaintainApplyArgs):
+    """MCP arguments for memory_maintain resolve_duplicates mode."""
+
+    mode: Literal["resolve_duplicates"]
+    input_data: MaintainLifecycleResolveDuplicatesInput
 
 
 class MaintainLifecycleDecayStaleArgs(MaintainApplyArgs):
@@ -611,6 +639,7 @@ MaintainToolArgs = Annotated[
     | MaintainStructureRepairArgs
     | MaintainLifecyclePromoteCandidatesArgs
     | MaintainLifecycleMergeDuplicatesArgs
+    | MaintainLifecycleResolveDuplicatesArgs
     | MaintainLifecycleDecayStaleArgs
     | MaintainLifecycleCycleArgs
     | MaintainLifecycleReportArgs,

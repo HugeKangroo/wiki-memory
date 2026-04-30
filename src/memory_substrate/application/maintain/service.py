@@ -120,6 +120,35 @@ class MaintainService:
         """
         return self.lifecycle.merge_duplicates()
 
+    def resolve_duplicates(
+        self,
+        *,
+        outcome: str,
+        knowledge_ids: list[str],
+        reason: str,
+        canonical_knowledge_id: str | None = None,
+        updates: list[dict] | None = None,
+    ) -> dict:
+        """Apply an explicit review outcome for advisory soft duplicate candidates.
+
+        Args:
+            outcome: Resolution outcome, such as supersede, keep_both, or contest.
+            knowledge_ids: Knowledge ids from a reported soft duplicate candidate.
+            reason: Durable audit reason for the resolution.
+            canonical_knowledge_id: Winner id for supersede outcomes.
+            updates: Optional summary or scope clarifications for keep_both.
+
+        Returns:
+            Maintenance mutation result with patch metadata and resolved ids.
+        """
+        return self.lifecycle.resolve_duplicates(
+            outcome=outcome,
+            knowledge_ids=knowledge_ids,
+            canonical_knowledge_id=canonical_knowledge_id,
+            reason=reason,
+            updates=updates,
+        )
+
     def decay_stale(self, reference_time: str | None = None, stale_after_days: int = 30) -> dict:
         """Mark old active or candidate knowledge as stale.
 

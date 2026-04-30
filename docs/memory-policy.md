@@ -95,12 +95,12 @@ This avoids corrupting memory when two similar descriptions are actually a decis
 
 Soft duplicate candidates are advisory response data. They should be recomputable by maintenance flows instead of treated as permanent truth.
 
-Maintenance may report soft duplicate candidates, but automatic merge must stay limited to deterministic structured duplicates until an explicit review/resolve mode exists. A safe resolve flow should require one of these explicit outcomes:
+Maintenance may report soft duplicate candidates, but automatic merge must stay limited to deterministic structured duplicates. Soft duplicate mutation must go through an explicit review/resolve flow such as `memory_maintain resolve_duplicates`, using one of these explicit outcomes:
 
 - mark one item superseded by another
 - keep both with clarified scopes or summaries
 - contest one or both items
-- promote a curated replacement and supersede the originals
+- promote a curated replacement and supersede the originals through an explicit replacement write followed by `memory_remember supersede`
 
 ## Query Policy
 

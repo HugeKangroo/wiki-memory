@@ -142,7 +142,13 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 - if it is a refinement, consider superseding or updating in a later maintenance step
 - if it is genuinely distinct, keep it and preserve the scope/reason that explains why
 
-`memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically; use explicit review, supersession, or contesting once the relationship is clear.
+`memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically. After reviewing the listed ids, use `memory_maintain resolve_duplicates` with `options.apply=true` and one explicit outcome:
+
+- `supersede`: one listed item is canonical and the others should become superseded.
+- `keep_both`: both listed items are distinct after clarifying summaries or scopes.
+- `contest`: the listed items conflict or need human review before reuse.
+
+For a curated replacement, first create the replacement with `memory_remember knowledge`, then call `memory_remember supersede` for each original item that the replacement supersedes.
 
 `memory_maintain report` also surfaces advisory `concept_candidates`. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
 

@@ -125,6 +125,84 @@ class MaintenanceLifecycle:
             "merged": merged,
         }
 
+    def resolve_duplicates(
+        self,
+        *,
+        outcome: str,
+        knowledge_ids: list[str],
+        reason: str,
+        canonical_knowledge_id: str | None = None,
+        updates: list[dict] | None = None,
+    ) -> dict:
+        """Apply an explicit review outcome for an advisory soft duplicate candidate."""
+        outcome = str(outcome)
+        reason = str(reason or "").strip()
+        if not reason:
+            raise ValueError("resolve_duplicates requires a non-empty reason")
+        ids = self._validated_resolution_ids(knowledge_ids)
+        self._ensure_soft_duplicate_candidate(ids)
+        timestamp = utc_now_iso()
+        operations: list[PatchOperation] = []
+
+        if outcome == "supersede":
+            if canonical_knowledge_id not in ids:
+                raise ValueError("canonical_knowledge_id must be one of knowledge_ids")
+            for knowledge_id in ids:
+                if knowledge_id == canonical_knowledge_id:
+                    existing = self.object_repository.get("knowledge", knowledge_id) or {}
+                    operations.append(
+                        PatchOperation(
+                            op="update_object",
+                            object_type="knowledge",
+                            object_id=knowledge_id,
+                            changes={
+                                "status": "active",
+                                "valid_from": existing.get("valid_from") or timestamp,
+                                "last_verified_at": timestamp,
+                                "reason": f"maintain_resolve_duplicates:supersede:{reason}",
+                            },
+                        )
+                    )
+                    continue
+                operations.append(
+                    PatchOperation(
+                        op="update_object",
+                        object_type="knowledge",
+                        object_id=knowledge_id,
+                        changes={
+                            "status": "superseded",
+                            "valid_until": timestamp,
+                            "reason": f"maintain_resolve_duplicates:superseded_by:{canonical_knowledge_id}:{reason}",
+                        },
+                    )
+                )
+        elif outcome == "keep_both":
+            operations.extend(self._keep_both_resolution_operations(ids, updates or [], reason, timestamp))
+        elif outcome == "contest":
+            for knowledge_id in ids:
+                operations.append(
+                    PatchOperation(
+                        op="update_object",
+                        object_type="knowledge",
+                        object_id=knowledge_id,
+                        changes={
+                            "status": "contested",
+                            "reason": f"maintain_resolve_duplicates:contest:{reason}",
+                            "last_verified_at": timestamp,
+                        },
+                    )
+                )
+        else:
+            raise ValueError(f"Unsupported duplicate resolution outcome: {outcome}")
+
+        result = self._apply_operations(operations)
+        return {
+            **result,
+            "outcome": outcome,
+            "resolved": len(ids),
+            "knowledge_ids": ids,
+        }
+
     def decay_stale(self, reference_time: str | None = None, stale_after_days: int = 30) -> dict:
         """Mark old active or candidate knowledge as stale.
 
@@ -517,6 +595,74 @@ class MaintenanceLifecycle:
             (str(item.get("status", "candidate")) for item in duplicates),
             key=lambda status: status_rank.get(status, 0),
         )
+
+    def _validated_resolution_ids(self, knowledge_ids: list[str]) -> list[str]:
+        ids = [str(knowledge_id) for knowledge_id in knowledge_ids if str(knowledge_id)]
+        if len(set(ids)) != len(ids):
+            raise ValueError("knowledge_ids must not contain duplicates")
+        if len(ids) < 2:
+            raise ValueError("resolve_duplicates requires at least two knowledge_ids")
+        for knowledge_id in ids:
+            item = self.object_repository.get("knowledge", knowledge_id)
+            if item is None:
+                raise ValueError(f"Knowledge not found: {knowledge_id}")
+            if item.get("status") in {"superseded", "archived"}:
+                raise ValueError(f"Knowledge is not resolvable: {knowledge_id}")
+        return ids
+
+    def _ensure_soft_duplicate_candidate(self, knowledge_ids: list[str]) -> None:
+        requested = set(knowledge_ids)
+        candidate_sets = [set(group["object_ids"]) for group in self.soft_duplicates.groups(self.object_repository.list("knowledge"))]
+        if requested in candidate_sets:
+            return
+        covered: set[str] = set()
+        for candidate_set in candidate_sets:
+            if candidate_set <= requested:
+                covered.update(candidate_set)
+        if requested <= covered:
+            return
+        raise ValueError("knowledge_ids are not a current soft duplicate candidate")
+
+    def _keep_both_resolution_operations(
+        self,
+        knowledge_ids: list[str],
+        updates: list[dict],
+        reason: str,
+        timestamp: str,
+    ) -> list[PatchOperation]:
+        if not updates:
+            raise ValueError("keep_both requires updates that clarify summary or scope_refs")
+        allowed_ids = set(knowledge_ids)
+        operations: list[PatchOperation] = []
+        for update in updates:
+            knowledge_id = str(update.get("knowledge_id") or "")
+            if knowledge_id not in allowed_ids:
+                raise ValueError("keep_both updates must target only knowledge_ids")
+            changes: dict[str, object] = {
+                "reason": f"maintain_resolve_duplicates:keep_both:{reason}",
+                "last_verified_at": timestamp,
+            }
+            if "summary" in update:
+                summary = str(update.get("summary") or "").strip()
+                if not summary:
+                    raise ValueError("keep_both summary updates must be non-empty")
+                changes["summary"] = summary
+            if "scope_refs" in update:
+                scope_refs = [str(ref) for ref in update.get("scope_refs", []) if str(ref)]
+                if not scope_refs:
+                    raise ValueError("keep_both scope_refs updates must be non-empty")
+                changes["scope_refs"] = scope_refs
+            if set(changes) == {"reason", "last_verified_at"}:
+                raise ValueError("keep_both updates must include summary or scope_refs")
+            operations.append(
+                PatchOperation(
+                    op="update_object",
+                    object_type="knowledge",
+                    object_id=knowledge_id,
+                    changes=changes,
+                )
+            )
+        return operations
 
     def _parse_time(self, value: str | None) -> datetime:
         if not value:

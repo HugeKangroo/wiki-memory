@@ -36,7 +36,7 @@ class KnowledgeSoftDuplicateDetector:
             return []
         candidates: list[dict] = []
         for item in existing_items:
-            if item.get("status") in {"superseded", "archived"}:
+            if item.get("status") in {"contested", "superseded", "archived"}:
                 continue
             if self._structured_signature(item) is not None:
                 continue
@@ -59,7 +59,7 @@ class KnowledgeSoftDuplicateDetector:
         return candidates[:limit]
 
     def groups(self, items: list[dict]) -> list[dict]:
-        active_items = [item for item in items if item.get("status") not in {"superseded", "archived"}]
+        active_items = [item for item in items if item.get("status") not in {"contested", "superseded", "archived"}]
         groups: list[dict] = []
         seen: set[tuple[str, str]] = set()
         for index, item in enumerate(active_items):

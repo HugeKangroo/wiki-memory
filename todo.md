@@ -316,3 +316,22 @@ Deliverables:
 Verification:
 - [x] Add tests for classification, ranking, diagnostics, and ingest response shape.
 - [x] Dogfood against `wiki-memory`, `llm_wiki`, and `mempalace`.
+
+### MS-14: Soft Duplicate Review Resolve
+
+Status: `completed`
+
+Goal: turn advisory soft duplicate candidates into an explicit reviewed maintenance workflow.
+
+Boundary: explicit review outcomes only. Do not let `merge_duplicates` auto-merge unstructured soft duplicates.
+
+Deliverables:
+- [x] Add `memory_maintain resolve_duplicates` for reviewed soft duplicate candidates.
+- [x] Support `supersede`, `keep_both`, and `contest` outcomes.
+- [x] Require non-empty review reasons and current soft duplicate candidate ids.
+- [x] Keep curated replacement as an explicit `memory_remember knowledge` write followed by `memory_remember supersede`.
+- [x] Update MCP docs, agent usage docs, and built-in resources.
+
+Verification:
+- [x] Add lifecycle tests for supersede, keep_both, and rejecting non-candidate pairs.
+- [x] Add MCP dispatch/schema/apply guard tests.

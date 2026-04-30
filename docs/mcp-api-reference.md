@@ -648,6 +648,7 @@ Allowed lifecycle modes:
 
 - `promote_candidates`
 - `merge_duplicates`
+- `resolve_duplicates`
 - `decay_stale`
 - `cycle`
 - `report`
@@ -754,6 +755,49 @@ Semantic model loading is lazy and process-local. MCP startup does not load BGE-
 }
 ```
 
+`resolve_duplicates`:
+
+```json
+{
+  "args": {
+    "mode": "resolve_duplicates",
+    "input_data": {
+      "outcome": "supersede",
+      "knowledge_ids": ["know:older", "know:newer"],
+      "canonical_knowledge_id": "know:newer",
+      "reason": "Reviewed the soft duplicate candidate and selected the newer scoped decision."
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+Use `outcome: "keep_both"` when the items are distinct but need clarified summaries or scopes:
+
+```json
+{
+  "args": {
+    "mode": "resolve_duplicates",
+    "input_data": {
+      "outcome": "keep_both",
+      "knowledge_ids": ["know:a", "know:b"],
+      "reason": "Same phrasing, but different project scopes.",
+      "updates": [
+        {"knowledge_id": "know:a", "scope_refs": ["scope:project-a"]},
+        {"knowledge_id": "know:b", "scope_refs": ["scope:project-b"]}
+      ]
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+Use `outcome: "contest"` when the relationship is unclear or conflicting and the items should not be treated as clean active memories.
+
 `repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
 
 `report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, candidate diagnostics, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` write after review; they are not persisted automatically. Each candidate includes `candidate_type`, `ranking_signals`, `review_guidance`, and a `suggested_memory.input_data` skeleton with inferred `scope_refs`, evidence refs, `reason`, `memory_source`, `status`, and confidence. Agents must review evidence and rewrite the summary before using it. Candidate diagnostics list skipped terms with reasons such as `document_artifact`, `format_marker`, `action_phrase`, `shortcut_marker`, `generic_term`, `too_long`, or `weak_term`. Fact-check issues are advisory and currently include:
@@ -779,7 +823,7 @@ Soft duplicate report entries use this shape:
 }
 ```
 
-`merge_duplicates` intentionally merges only deterministic structured duplicates. It does not automatically merge soft duplicate candidates.
+`merge_duplicates` intentionally merges only deterministic structured duplicates. It does not automatically merge soft duplicate candidates. `resolve_duplicates` only accepts ids that are still reported as current soft duplicate candidates, requires a non-empty reason, and records the chosen outcome through normal patch/audit/projection updates.
 
 ## Error Behavior
 

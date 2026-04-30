@@ -1000,6 +1000,203 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertEqual(repository.get("knowledge", first["knowledge_id"])["status"], "active")
             self.assertEqual(repository.get("knowledge", second["knowledge_id"])["status"], "candidate")
 
+    def test_resolve_duplicates_supersedes_reviewed_soft_duplicate_loser(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            repository = FsObjectRepository(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu as the local graph backend",
+                    "summary": "Kuzu is the selected local graph backend for lightweight prototypes.",
+                    "reason": "This decision should guide backend work.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Choose Kuzu for local graph storage",
+                    "summary": "The local prototype graph backend should stay on Kuzu.",
+                    "reason": "This duplicate should be explicitly reviewed.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "candidate",
+                    "confidence": 0.8,
+                }
+            )
+
+            result = MaintenanceLifecycle(root).resolve_duplicates(
+                outcome="supersede",
+                knowledge_ids=[first["knowledge_id"], second["knowledge_id"]],
+                canonical_knowledge_id=first["knowledge_id"],
+                reason="Reviewed soft duplicate; first item is the canonical decision.",
+            )
+
+            winner = repository.get("knowledge", first["knowledge_id"])
+            loser = repository.get("knowledge", second["knowledge_id"])
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["outcome"], "supersede")
+            self.assertEqual(result["resolved"], 2)
+            self.assertEqual(winner["status"], "active")
+            self.assertEqual(loser["status"], "superseded")
+            self.assertEqual(loser["valid_until"], winner["last_verified_at"])
+            self.assertIn("Reviewed soft duplicate", loser["reason"])
+            soft_duplicate_sets = [
+                set(group["object_ids"]) for group in MaintenanceLifecycle(root).report()["data"]["soft_duplicate_candidates"]
+            ]
+            self.assertNotIn({first["knowledge_id"], second["knowledge_id"]}, soft_duplicate_sets)
+
+    def test_resolve_duplicates_keeps_both_after_scope_clarification(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            repository = FsObjectRepository(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "procedure",
+                    "title": "Memory review workflow",
+                    "summary": "Review memory candidates before writing durable memory.",
+                    "reason": "This workflow applies to project A.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:shared"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "procedure",
+                    "title": "Memory review process",
+                    "summary": "Review memory candidates before writing durable memory.",
+                    "reason": "This workflow applies to project B.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:shared"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+
+            result = MaintenanceLifecycle(root).resolve_duplicates(
+                outcome="keep_both",
+                knowledge_ids=[first["knowledge_id"], second["knowledge_id"]],
+                reason="Same words but different project scopes.",
+                updates=[
+                    {
+                        "knowledge_id": first["knowledge_id"],
+                        "summary": "Project A memory review workflow.",
+                        "scope_refs": ["scope:project-a"],
+                    },
+                    {
+                        "knowledge_id": second["knowledge_id"],
+                        "summary": "Project B memory review workflow.",
+                        "scope_refs": ["scope:project-b"],
+                    },
+                ],
+            )
+
+            updated_first = repository.get("knowledge", first["knowledge_id"])
+            updated_second = repository.get("knowledge", second["knowledge_id"])
+            self.assertEqual(result["status"], "completed")
+            self.assertEqual(result["outcome"], "keep_both")
+            self.assertEqual(updated_first["status"], "active")
+            self.assertEqual(updated_second["status"], "active")
+            self.assertEqual(updated_first["scope_refs"], ["scope:project-a"])
+            self.assertEqual(updated_second["scope_refs"], ["scope:project-b"])
+            self.assertEqual(updated_first["summary"], "Project A memory review workflow.")
+            self.assertEqual(updated_second["summary"], "Project B memory review workflow.")
+            self.assertIn("different project scopes", updated_first["reason"])
+            self.assertEqual(MaintenanceLifecycle(root).report()["data"]["soft_duplicate_candidates"], [])
+
+    def test_resolve_duplicates_rejects_non_soft_duplicate_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Use Kuzu",
+                    "summary": "Kuzu backs local graph storage.",
+                    "reason": "This decision should guide graph work.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:graph"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Prefer compact context",
+                    "summary": "Context packs should avoid duplicated summaries.",
+                    "reason": "This preference should guide MCP responses.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:query"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.9,
+                }
+            )
+
+            with self.assertRaisesRegex(ValueError, "not a current soft duplicate candidate"):
+                MaintenanceLifecycle(root).resolve_duplicates(
+                    outcome="contest",
+                    knowledge_ids=[first["knowledge_id"], second["knowledge_id"]],
+                    reason="These are unrelated.",
+                )
+
+    def test_resolve_duplicates_contests_reviewed_soft_duplicate_pair(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            remember = RememberService(root)
+            repository = FsObjectRepository(root)
+            first = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu graph backend decision",
+                    "summary": "Kuzu is the selected local graph backend.",
+                    "reason": "This decision may conflict with another memory.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.8,
+                }
+            )
+            second = remember.create_knowledge(
+                {
+                    "kind": "decision",
+                    "title": "Kuzu graph backend choice",
+                    "summary": "Kuzu is the selected local graph backend.",
+                    "reason": "This may be a duplicate or a conflict.",
+                    "memory_source": "human_curated",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "payload": {},
+                    "status": "active",
+                    "confidence": 0.8,
+                }
+            )
+
+            result = MaintenanceLifecycle(root).resolve_duplicates(
+                outcome="contest",
+                knowledge_ids=[first["knowledge_id"], second["knowledge_id"]],
+                reason="The pair needs human review before reuse.",
+            )
+
+            self.assertEqual(result["outcome"], "contest")
+            self.assertEqual(repository.get("knowledge", first["knowledge_id"])["status"], "contested")
+            self.assertEqual(repository.get("knowledge", second["knowledge_id"])["status"], "contested")
+            self.assertEqual(MaintenanceLifecycle(root).report()["data"]["soft_duplicate_candidates"], [])
+
     def test_cycle_runs_all_maintain_steps_and_rebuilds_projection(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

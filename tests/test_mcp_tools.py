@@ -24,6 +24,7 @@ class McpToolsTest(unittest.TestCase):
             service = maintain_service.return_value
             service.promote_candidates.return_value = {"status": "completed", "promoted": 1}
             service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
+            service.resolve_duplicates.return_value = {"status": "completed", "outcome": "supersede", "resolved": 2}
             service.decay_stale.return_value = {"status": "completed", "decayed": 1}
             service.cycle.return_value = {"status": "completed", "promoted": 1, "merged": 1, "decayed": 1}
 
@@ -32,6 +33,20 @@ class McpToolsTest(unittest.TestCase):
                 1,
             )
             self.assertEqual(memory_maintain(".", "merge_duplicates", {}, {"apply": True})["merged"], 1)
+            self.assertEqual(
+                memory_maintain(
+                    ".",
+                    "resolve_duplicates",
+                    {
+                        "outcome": "supersede",
+                        "knowledge_ids": ["know:a", "know:b"],
+                        "canonical_knowledge_id": "know:a",
+                        "reason": "Reviewed duplicate pair.",
+                    },
+                    {"apply": True},
+                )["resolved"],
+                2,
+            )
             self.assertEqual(
                 memory_maintain(
                     ".",
@@ -45,6 +60,13 @@ class McpToolsTest(unittest.TestCase):
 
             service.promote_candidates.assert_called_once_with(min_confidence=0.8, min_evidence=2)
             service.merge_duplicates.assert_called_once_with()
+            service.resolve_duplicates.assert_called_once_with(
+                outcome="supersede",
+                knowledge_ids=["know:a", "know:b"],
+                canonical_knowledge_id="know:a",
+                reason="Reviewed duplicate pair.",
+                updates=None,
+            )
             service.decay_stale.assert_called_once_with(
                 reference_time="2026-04-24T00:00:00+00:00",
                 stale_after_days=10,
@@ -121,6 +143,9 @@ class McpToolsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "options.apply=true"):
             memory_maintain(".", "repair", {}, {"apply": False})
+
+        with self.assertRaisesRegex(ValueError, "options.apply=true"):
+            memory_maintain(".", "resolve_duplicates", {})
 
 
 if __name__ == "__main__":
