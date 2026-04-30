@@ -6,6 +6,12 @@ from pathlib import Path
 from memory_substrate.interfaces.mcp.tools import memory_ingest, memory_maintain, memory_query, memory_remember
 
 
+PAYLOAD_BUDGETS = {
+    "compact_candidate_chars": 2200,
+    "context_chars": 8000,
+}
+
+
 def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
     """Run a deterministic local acceptance flow through the MCP dispatch layer."""
     root = Path(root)
@@ -63,6 +69,10 @@ def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
         "reindex_result_type": reindex["result_type"],
         "context_item_ids": [item["id"] for item in context["data"]["items"]],
     }
+    payload_sizes = {
+        "compact_candidate_chars": len(json.dumps(candidate, ensure_ascii=False)),
+        "context_chars": len(json.dumps(context, ensure_ascii=False)),
+    }
     checks = [
         _check("repo_ingest_completed", "completed", observed["ingest_status"]),
         _check("ingest_candidate_is_compact", "compact", observed["candidate_detail"]),
@@ -76,9 +86,16 @@ def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
         _check_contains("maintain_report_sees_promotable_memory", observed["promote_candidate_ids"], knowledge_id),
         _check("reindex_completed", "reindex_result", observed["reindex_result_type"]),
         _check_contains("context_returns_remembered_memory", observed["context_item_ids"], knowledge_id),
+        _check_at_most(
+            "compact_candidate_under_budget",
+            PAYLOAD_BUDGETS["compact_candidate_chars"],
+            payload_sizes["compact_candidate_chars"],
+        ),
+        _check_at_most("context_under_budget", PAYLOAD_BUDGETS["context_chars"], payload_sizes["context_chars"]),
     ]
+    failed_checks = [check for check in checks if not check["passed"]]
     return {
-        "status": "completed" if all(check["passed"] for check in checks) else "failed",
+        "status": "completed" if not failed_checks else "failed",
         "case_count": len(checks),
         "mutated": True,
         "object_ids": {
@@ -86,12 +103,16 @@ def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
             "knowledge_id": knowledge_id,
             "candidate_title": candidate["title"],
         },
-        "payload_sizes": {
-            "compact_candidate_chars": len(json.dumps(candidate, ensure_ascii=False)),
-            "context_chars": len(json.dumps(context, ensure_ascii=False)),
-        },
+        "payload_sizes": payload_sizes,
+        "payload_budgets": PAYLOAD_BUDGETS,
         "observed": observed,
         "checks": checks,
+        "failed_checks": failed_checks,
+        "next_actions": (
+            ["dogfood_acceptance_passed"]
+            if not failed_checks
+            else ["inspect_failed_checks", "inspect_observed_values", "tighten_or_fix_mcp_contract"]
+        ),
     }
 
 
@@ -138,4 +159,13 @@ def _check_contains(name: str, values: list[str], expected: str) -> dict:
         "expected": expected,
         "actual": values,
         "passed": expected in values,
+    }
+
+
+def _check_at_most(name: str, budget: int, actual: int) -> dict:
+    return {
+        "name": name,
+        "expected": {"max": budget},
+        "actual": actual,
+        "passed": actual <= budget,
     }

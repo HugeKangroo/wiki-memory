@@ -53,7 +53,9 @@ class RetrievalBenchmarkTest(unittest.TestCase):
 
             self.assertEqual(result["status"], "completed")
             self.assertTrue(result["mutated"])
-            self.assertEqual(result["case_count"], 8)
+            self.assertEqual(result["case_count"], 10)
+            self.assertEqual(result["failed_checks"], [])
+            self.assertEqual(result["next_actions"], ["dogfood_acceptance_passed"])
             self.assertTrue(all(check["passed"] for check in result["checks"]))
             self.assertEqual(
                 {check["name"] for check in result["checks"]},
@@ -66,11 +68,16 @@ class RetrievalBenchmarkTest(unittest.TestCase):
                     "maintain_report_sees_promotable_memory",
                     "reindex_completed",
                     "context_returns_remembered_memory",
+                    "compact_candidate_under_budget",
+                    "context_under_budget",
                 },
             )
             self.assertEqual(result["object_ids"]["candidate_title"], "Context Pack")
             self.assertIn(result["object_ids"]["knowledge_id"], result["observed"]["context_item_ids"])
+            self.assertEqual(result["payload_budgets"]["compact_candidate_chars"], 2200)
+            self.assertEqual(result["payload_budgets"]["context_chars"], 8000)
             self.assertLess(result["payload_sizes"]["compact_candidate_chars"], 2200)
+            self.assertLess(result["payload_sizes"]["context_chars"], 8000)
 
 
 if __name__ == "__main__":

@@ -468,3 +468,21 @@ Deliverables:
 Verification:
 - [x] Add benchmark coverage for the end-to-end MCP memory loop.
 - [x] Run retrieval benchmark tests and full test suite.
+
+### MS-22: Dogfood Findings Hardening
+
+Status: `completed`
+
+Goal: make the end-to-end dogfood helper actionable when it fails and enforce compact response budgets as part of acceptance.
+
+Boundary: dogfood helper diagnostics only. Do not add new production MCP modes or optional backends.
+
+Deliverables:
+- [x] Add `failed_checks` and diagnostic `next_actions` to the dogfood acceptance result.
+- [x] Add explicit `payload_budgets` for compact candidates and context payloads.
+- [x] Promote compact candidate and context payload budgets into acceptance checks.
+- [x] Document the diagnostic fields in `experiments/README.md`.
+
+Verification:
+- [x] Add benchmark assertions for failed check summaries, next actions, and payload budgets.
+- [x] Run retrieval benchmark tests and full test suite.
