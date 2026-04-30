@@ -92,7 +92,7 @@ class QueryContextOptions(StrictModel):
 class QuerySearchOptions(StrictModel):
     """Options for memory_query search mode."""
 
-    max_items: int | None = Field(default=None, ge=1, description="Maximum search hits. Default: 20.")
+    max_items: int | None = Field(default=None, ge=1, description="Maximum search hits. Default: 10.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
     graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override.")
     semantic_backend: SemanticBackendName | None = Field(default=None, description="Optional semantic backend override.")
@@ -118,14 +118,14 @@ class QueryPageOptions(StrictModel):
 class QueryRecentOptions(StrictModel):
     """Options for memory_query recent mode."""
 
-    max_items: int | None = Field(default=None, ge=1, description="Maximum recent items. Default: 20.")
+    max_items: int | None = Field(default=None, ge=1, description="Maximum recent items. Default: 10.")
     filters: QueryFilters | None = Field(default=None, description="Optional structured result filters.")
 
 
 class QueryGraphOptions(StrictModel):
     """Options for memory_query graph mode."""
 
-    max_items: int | None = Field(default=None, ge=1, description="Maximum graph nodes. Default: 20.")
+    max_items: int | None = Field(default=None, ge=1, description="Maximum graph nodes. Default: 10.")
     graph_backend: GraphBackendName | None = Field(default=None, description="Optional graph backend override.")
 
 

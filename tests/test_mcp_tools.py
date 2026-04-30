@@ -151,6 +151,30 @@ class McpToolsTest(unittest.TestCase):
         with self.assertRaisesRegex(Exception, "Extra inputs are not permitted"):
             memory_query(".", "search", {"query": "memory"}, {"detail": "full"})
 
+    def test_memory_query_uses_compact_defaults_for_unbounded_reads(self) -> None:
+        with patch("memory_substrate.interfaces.mcp.tools.QueryService") as query_service:
+            service = query_service.return_value
+            service.search.return_value = {"result_type": "search_results"}
+            service.recent.return_value = {"result_type": "recent"}
+            service.graph.return_value = {"result_type": "graph"}
+
+            memory_query(".", "search", {"query": "memory"})
+            memory_query(".", "recent", {})
+            memory_query(".", "graph", {"id": "node:test"})
+
+            service.search.assert_called_once_with(query="memory", max_items=10, filters=None)
+            service.recent.assert_called_once_with(max_items=10, filters=None)
+            service.graph.assert_called_once_with(object_id="node:test", max_items=10)
+
+    def test_memory_query_preserves_explicit_max_items(self) -> None:
+        with patch("memory_substrate.interfaces.mcp.tools.QueryService") as query_service:
+            service = query_service.return_value
+            service.search.return_value = {"result_type": "search_results"}
+
+            memory_query(".", "search", {"query": "memory"}, {"max_items": 20})
+
+            service.search.assert_called_once_with(query="memory", max_items=20, filters=None)
+
     def test_memory_maintain_requires_apply_for_mutating_modes(self) -> None:
         with self.assertRaisesRegex(ValueError, "options.apply=true"):
             memory_maintain(".", "merge_duplicates", {})

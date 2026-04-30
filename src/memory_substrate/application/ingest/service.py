@@ -305,43 +305,17 @@ class IngestService:
         return {
             "protocol": "agent_extraction.v1",
             "source_id": source_id,
-            "boundary": {
-                "ingest": "capture_citable_evidence",
-                "agent": "analyze_evidence_and_prepare_durable_candidates",
-                "remember": "commit_governed_memory_after_review",
-            },
+            "resource": "memory://agent-playbook",
+            "summary": "Ingest captured evidence; agent analyzes it and uses memory_remember for durable writes.",
             "required_steps": [
-                {
-                    "action": "inspect_source",
-                    "tool": "memory_query",
-                    "mode": "page",
-                    "input_data": {"id": source_id},
-                    "options": {"detail": "compact", "include_segments": True},
-                },
-                {
-                    "action": "query_existing_memory",
-                    "tool": "memory_query",
-                    "mode": "search",
-                    "input_data": {"query": "<candidate title, synonym, or claim>"},
-                    "options": {"max_items": 10},
-                },
-                {
-                    "action": "prepare_durable_candidates",
-                    "owner": "agent_or_human",
-                    "candidate_kinds": ["fact", "decision", "procedure", "concept", "preference", "work_item"],
-                },
-                {
-                    "action": "commit_reviewed_memory",
-                    "tool": "memory_remember",
-                    "modes": ["knowledge", "work_item", "activity"],
-                },
+                "inspect_source",
+                "query_existing_memory",
+                "prepare_durable_candidates",
+                "commit_reviewed_memory",
             ],
             "remember_write_contract": {
-                "tool": "memory_remember",
                 "required_fields": ["kind", "title", "summary", "reason", "memory_source", "scope_refs"],
                 "recommended_fields": ["subject_refs", "evidence_refs", "payload", "confidence", "status"],
-                "evidence_rule": "Use evidence_refs from the ingested source when the durable memory is inferred from source content.",
-                "dedupe_rule": "Run memory_query before writing and inspect possible_duplicates after writing.",
             },
             "next_actions": [
                 "inspect_source",

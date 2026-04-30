@@ -195,6 +195,28 @@ class QueryService:
             obj = self.repository.get(object_type, object_id)
             if obj is not None:
                 if detail == "full":
+                    if object_type == "source" and obj.get("kind") == "repo":
+                        compact = self._compact_object_page(
+                            object_type=object_type,
+                            obj=obj,
+                            max_items=max_items or 10,
+                            include_segments=False if include_segments is None else include_segments,
+                            snippet_chars=snippet_chars or 360,
+                        )
+                        return {
+                            "result_type": "page",
+                            "data": {
+                                "object_type": object_type,
+                                "object": compact["object"],
+                                "detail": "compact",
+                                "requested_detail": "full",
+                                "full_detail_blocked": "repo_source",
+                                "truncated": compact["truncated"],
+                            },
+                            "warnings": [
+                                "Full repo source pages are blocked to protect context budget. Use compact page indexes and local file reads for full source.",
+                            ],
+                        }
                     return {
                         "result_type": "page",
                         "data": {

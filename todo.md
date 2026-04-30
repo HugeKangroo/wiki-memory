@@ -427,3 +427,23 @@ Deliverables:
 Verification:
 - [x] Add benchmark test coverage.
 - [x] Run retrieval and maintenance benchmark tests.
+
+### MS-20: Context Budget Optimization
+
+Status: `completed`
+
+Goal: reduce accidental context consumption from common MCP calls while keeping explicit expansion paths available.
+
+Boundary: response-size controls only. Do not remove compact repo indexes, evidence locators, or explicit caller overrides for bounded non-repo objects.
+
+Deliverables:
+- [x] Block `memory_query page` `detail=full` for repo sources and return compact indexes with a warning.
+- [x] Keep full detail available for bounded non-repo objects.
+- [x] Compress `memory_suggestions.agent_extraction` into a compact protocol with a resource pointer.
+- [x] Lower MCP default `search`, `recent`, and `graph` `max_items` from 20 to 10 while preserving explicit overrides.
+- [x] Update API docs, agent usage docs, policy, and MCP resources.
+
+Verification:
+- [x] Add regression coverage for repo full-page blocking.
+- [x] Add regression coverage for compact extraction protocol.
+- [x] Add MCP dispatch coverage for compact defaults and explicit `max_items`.

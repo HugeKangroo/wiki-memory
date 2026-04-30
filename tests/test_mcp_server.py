@@ -417,7 +417,7 @@ class McpServerTest(unittest.TestCase):
                         "args": {
                             "mode": "page",
                             "input_data": {"id": pending_payload["source_id"]},
-                            "options": {"detail": "full"},
+                            "options": {"include_segments": True},
                         }
                     },
                 )

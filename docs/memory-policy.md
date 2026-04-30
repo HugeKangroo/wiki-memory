@@ -42,7 +42,7 @@ Durable writes should go through `memory_remember` or controlled `memory_maintai
 
 Ingest and maintain may return advisory `concept_candidates`. These candidates help callers notice repeated ideas that may deserve crystallization, but they are not canonical memory until an agent or human reviews evidence and calls `memory_remember`.
 
-Ingest responses should also return an `agent_extraction` protocol block. The protocol is a handoff contract, not an embedded LLM pipeline: ingest captures evidence, the caller analyzes it, and `memory_remember` commits reviewed durable memory.
+Ingest responses should also return a compact `agent_extraction` protocol block. The protocol is a handoff contract, not an embedded LLM pipeline: ingest captures evidence, the caller analyzes it, and `memory_remember` commits reviewed durable memory. Detailed instructions belong in MCP resources or documentation, not repeated in every ingest result.
 
 Concept candidates may include a `suggested_memory.input_data` skeleton. This skeleton is a review aid, not an instruction to write automatically. Callers must read evidence, query for existing related memory, rewrite the summary, and choose the correct outcome: remember as concept, procedure, decision, merge with existing memory, or skip.
 
@@ -181,6 +181,6 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 
 These fields should be test-covered when added.
 
-Query responses should be compact by default. Full stored objects, full repo maps, long source segments, and large audit/report payloads should require explicit caller options such as `detail: "full"` or bounded `max_items` / snippet controls.
+Query responses should be compact by default. Full stored objects, long source segments, and large audit/report payloads should require explicit caller options such as `detail: "full"` or bounded `max_items` / snippet controls. Repo source pages should block full detail because full repo maps are too large for normal agent context; callers should use compact locators and local file reads.
 
 The MCP server should also expose compact policy and playbook resources for hosts that can read MCP resources directly. Repository-local `AGENTS.md` or `CLAUDE.md` files are adapters, not the policy source of truth.

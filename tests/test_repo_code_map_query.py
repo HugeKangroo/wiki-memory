@@ -290,8 +290,11 @@ class RepoCodeMapQueryTest(unittest.TestCase):
             self.assertEqual(len(compact_page["data"]["object"]["payload"]["document_sections"]), 1)
             self.assertEqual(len(compact_page["data"]["object"]["segments"]), 1)
             self.assertIn("payload.document_sections", compact_page["data"]["truncated"])
-            self.assertEqual(full_page["data"]["detail"], "full")
-            self.assertGreaterEqual(len(full_page["data"]["object"]["payload"]["document_sections"]), 2)
+            self.assertEqual(full_page["data"]["detail"], "compact")
+            self.assertEqual(full_page["data"]["requested_detail"], "full")
+            self.assertEqual(full_page["data"]["full_detail_blocked"], "repo_source")
+            self.assertNotIn("segments", full_page["data"]["object"])
+            self.assertIn("blocked", " ".join(full_page["warnings"]).lower())
 
 
 if __name__ == "__main__":

@@ -162,11 +162,11 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
                 snippet_chars=options.get("snippet_chars"),
             )
         if mode == "recent":
-            return service.recent(max_items=options.get("max_items", 20), filters=options.get("filters"))
+            return service.recent(max_items=options.get("max_items", 10), filters=options.get("filters"))
         if mode == "search":
-            return service.search(query=input_data["query"], max_items=options.get("max_items", 20), filters=options.get("filters"))
+            return service.search(query=input_data["query"], max_items=options.get("max_items", 10), filters=options.get("filters"))
         if mode == "graph":
-            return service.graph(object_id=input_data["id"], max_items=options.get("max_items", 20))
+            return service.graph(object_id=input_data["id"], max_items=options.get("max_items", 10))
         raise ValueError(f"Unsupported query mode: {mode}")
     finally:
         _close_graph_backend(graph_backend)

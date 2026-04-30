@@ -157,14 +157,17 @@ class Phase1AcceptanceTest(unittest.TestCase):
 
             self.assertEqual(protocol["protocol"], "agent_extraction.v1")
             self.assertEqual(protocol["source_id"], result["source_id"])
-            self.assertEqual(protocol["boundary"]["ingest"], "capture_citable_evidence")
-            self.assertEqual(protocol["boundary"]["agent"], "analyze_evidence_and_prepare_durable_candidates")
-            self.assertEqual(protocol["boundary"]["remember"], "commit_governed_memory_after_review")
-            self.assertIn("inspect_source", [step["action"] for step in protocol["required_steps"]])
-            self.assertIn("query_existing_memory", [step["action"] for step in protocol["required_steps"]])
+            self.assertEqual(protocol["resource"], "memory://agent-playbook")
+            self.assertEqual(
+                protocol["summary"],
+                "Ingest captured evidence; agent analyzes it and uses memory_remember for durable writes.",
+            )
+            self.assertEqual(
+                protocol["required_steps"],
+                ["inspect_source", "query_existing_memory", "prepare_durable_candidates", "commit_reviewed_memory"],
+            )
             self.assertIn("call_memory_remember_if_durable", protocol["next_actions"])
             write_contract = protocol["remember_write_contract"]
-            self.assertEqual(write_contract["tool"], "memory_remember")
             self.assertIn("reason", write_contract["required_fields"])
             self.assertIn("memory_source", write_contract["required_fields"])
             self.assertIn("scope_refs", write_contract["required_fields"])

@@ -233,19 +233,15 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
     "agent_extraction": {
       "protocol": "agent_extraction.v1",
       "source_id": "src:...",
-      "boundary": {
-        "ingest": "capture_citable_evidence",
-        "agent": "analyze_evidence_and_prepare_durable_candidates",
-        "remember": "commit_governed_memory_after_review"
-      },
+      "resource": "memory://agent-playbook",
+      "summary": "Ingest captured evidence; agent analyzes it and uses memory_remember for durable writes.",
       "required_steps": [
-        {"action": "inspect_source", "tool": "memory_query", "mode": "page"},
-        {"action": "query_existing_memory", "tool": "memory_query", "mode": "search"},
-        {"action": "prepare_durable_candidates", "owner": "agent_or_human"},
-        {"action": "commit_reviewed_memory", "tool": "memory_remember"}
+        "inspect_source",
+        "query_existing_memory",
+        "prepare_durable_candidates",
+        "commit_reviewed_memory"
       ],
       "remember_write_contract": {
-        "tool": "memory_remember",
         "required_fields": ["kind", "title", "summary", "reason", "memory_source", "scope_refs"],
         "recommended_fields": ["subject_refs", "evidence_refs", "payload", "confidence", "status"]
       }
@@ -265,7 +261,7 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
 }
 ```
 
-`agent_extraction` is the machine-readable handoff from ingest to the caller. It is not a second extraction engine. It tells the agent to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and use `memory_remember` only after review.
+`agent_extraction` is the compact machine-readable handoff from ingest to the caller. It is not a second extraction engine. It tells the agent to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and use `memory_remember` only after review. Use the `resource` field for the detailed playbook instead of expecting every ingest result to repeat the full protocol.
 
 ## `memory_query`
 
@@ -363,11 +359,14 @@ Supported query filters:
       "id": "src:..."
     },
     "options": {
-      "detail": "full"
+      "include_segments": true,
+      "max_items": 10
     }
   }
 }
 ```
+
+`detail: "full"` still works for bounded non-repo objects. Repo source pages block full detail and return compact indexes plus a warning to protect context budget. Use compact locators and local file reads for full repo code or documents.
 
 Compact query options:
 

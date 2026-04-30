@@ -55,7 +55,7 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
-6. Follow `memory_suggestions.agent_extraction` to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
+6. Follow compact `memory_suggestions.agent_extraction` to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
 7. Inspect `memory_suggestions.concept_candidates`; prefer high-ranking concept/procedure/decision candidates, follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip.
 8. Analyze outside ingest.
 9. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
@@ -109,7 +109,7 @@ Repo ingest statuses:
 - `noop`: repo fingerprint is unchanged from the active stored source; no patch, audit, or projection data is written.
 - `completed`: source material was written or updated.
 
-Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; request `options.detail: "full"` only when bounded locators and snippets are insufficient. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
+Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; repo source pages block `options.detail: "full"` to protect context budget. Use compact locators and local file reads for full repo code or documents. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
 
 `memory_query search` and `context` return `query_sanitizer` diagnostics when prompt-like query text is shortened before retrieval.
 
