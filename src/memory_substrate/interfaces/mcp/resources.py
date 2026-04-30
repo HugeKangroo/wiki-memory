@@ -31,7 +31,7 @@ Required domain mappings include todo/work item, decision, preference, procedure
 
 `memory_maintain report` may surface soft duplicate candidates. `merge_duplicates` is limited to deterministic structured duplicates until an explicit review/resolve mode exists.
 
-`memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory.
+`memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory. Treat `suggested_memory.input_data` as an editable skeleton; read evidence, query for existing memory, rewrite summary, and choose concept/procedure/decision/merge/skip.
 """
 
 
@@ -51,13 +51,15 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
-6. Inspect `memory_suggestions.concept_candidates`; review cited evidence before deciding whether to call `memory_remember` with `kind: "concept"`.
+6. Inspect `memory_suggestions.concept_candidates`; follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip.
 7. Analyze outside ingest.
 8. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
 ## Durable Writes
 
 Use `memory_remember` only when the item should survive future sessions. Create writes need `reason`, `memory_source`, and `scope_refs`.
+
+For concept candidates, edit `suggested_memory.input_data` before writing. At minimum, replace the generated summary with a bounded definition grounded in evidence and verify the suggested `scope_refs`.
 
 Inspect `possible_duplicates` after knowledge writes. Similar unstructured items are advisory candidates, not automatic merge decisions.
 

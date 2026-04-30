@@ -131,7 +131,18 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertNotIn("Concept Repo", {candidate["title"] for candidate in candidates})
             candidate = next(item for item in candidates if item["title"] == "Context Pack")
             self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
+            self.assertIn("review_guidance", candidate)
+            self.assertIn("remember_as_concept", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})
+            self.assertIn("skip_candidate", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})
             self.assertTrue(candidate["evidence_refs"])
+            suggested_input = candidate["suggested_memory"]["input_data"]
+            self.assertEqual(suggested_input["kind"], "concept")
+            self.assertEqual(suggested_input["title"], "Context Pack")
+            self.assertEqual(suggested_input["status"], "candidate")
+            self.assertEqual(suggested_input["memory_source"], "agent_inferred")
+            self.assertIn(result["node_ids"][0], suggested_input["scope_refs"])
+            self.assertEqual(suggested_input["evidence_refs"], candidate["evidence_refs"])
+            self.assertIn("reviewed candidate", suggested_input["reason"])
 
     def test_repo_ingest_labels_non_python_modules_by_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

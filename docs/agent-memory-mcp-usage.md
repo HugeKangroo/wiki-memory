@@ -90,7 +90,7 @@ When new material appears:
 1. Call `memory_ingest` to capture the material as evidence.
 2. Inspect returned `status`, `warnings`, and `pending_decisions`. If `status` is `completed_with_pending_decisions`, use the clean ingested source normally and decide separately whether any pending entry deserves a later explicit `options.force: true` ingest.
 3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
-4. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve a durable `kind: "concept"` memory after review.
+4. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve durable memory after review. Use each candidate's `review_guidance` and `suggested_memory.input_data` as a starting point, not as an automatic write.
 5. Analyze the ingested evidence outside ingest.
 6. Decide whether anything should become durable memory.
 7. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
@@ -145,6 +145,16 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 `memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically; use explicit review, supersession, or contesting once the relationship is clear.
 
 `memory_maintain report` also surfaces advisory `concept_candidates`. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
+
+Candidate review outcomes should be explicit:
+
+- `remember_as_concept`: use when the candidate names a reusable abstraction with stable meaning.
+- `remember_as_procedure`: use when the evidence describes a reusable ordered workflow or operating rule.
+- `remember_as_decision`: use when the evidence records a selected direction, tradeoff, or rejected alternative.
+- `merge_with_existing`: use when query finds an existing memory with the same meaning.
+- `skip_candidate`: use when the term is a project title, generic heading, temporary task phrase, or weakly evidenced.
+
+Before turning any candidate into memory, read the cited evidence, query for the candidate title and synonyms, rewrite the generated summary, and verify `scope_refs`. `suggested_memory.input_data` contains a valid skeleton for `memory_remember`, but the agent is expected to edit the summary and scope when needed.
 
 When a graph backend is configured, `memory_maintain report` also returns graph-health insights. Treat `isolated_nodes`, `sparse_clusters`, `bridge_nodes`, and `weakly_connected_scopes` as maintenance signals: they suggest where memory may need typed relations, consolidation, evidence review, or scope cleanup, not automatic mutation instructions.
 

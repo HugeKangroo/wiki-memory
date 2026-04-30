@@ -42,6 +42,8 @@ Durable writes should go through `memory_remember` or controlled `memory_maintai
 
 Ingest and maintain may return advisory `concept_candidates`. These candidates help callers notice repeated ideas that may deserve crystallization, but they are not canonical memory until an agent or human reviews evidence and calls `memory_remember`.
 
+Concept candidates may include a `suggested_memory.input_data` skeleton. This skeleton is a review aid, not an instruction to write automatically. Callers must read evidence, query for existing related memory, rewrite the summary, and choose the correct outcome: remember as concept, procedure, decision, merge with existing memory, or skip.
+
 ## Governance Fields
 
 Governed create operations require:

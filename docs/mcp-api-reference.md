@@ -200,7 +200,26 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
         "suggested_memory": {
           "mode": "knowledge",
           "kind": "concept",
-          "status": "candidate"
+          "status": "candidate",
+          "input_data": {
+            "kind": "concept",
+            "title": "Context Pack",
+            "summary": "Candidate concept. Review evidence and replace this summary before writing.",
+            "reason": "Agent reviewed candidate concept 'Context Pack' from repeated source evidence and judged it durable.",
+            "memory_source": "agent_inferred",
+            "scope_refs": ["node:..."],
+            "evidence_refs": [{"source_id": "src:...", "segment_id": "..."}],
+            "status": "candidate"
+          },
+          "editable_fields": ["summary", "reason", "scope_refs", "payload"]
+        },
+        "review_guidance": {
+          "required_checks": [
+            "read_evidence_refs",
+            "query_existing_memory_for_title_and_synonyms",
+            "choose_scope_refs_before_write",
+            "rewrite_summary_from_evidence"
+          ]
         },
         "next_actions": ["review_and_remember", "attach_evidence_refs", "skip_if_project_specific_noise"]
       }
@@ -725,7 +744,7 @@ Semantic model loading is lazy and process-local. MCP startup does not load BGE-
 
 `repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
 
-`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` `kind: "concept"` write after review; they are not persisted automatically. Fact-check issues are advisory and currently include:
+`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` write after review; they are not persisted automatically. Each candidate includes `review_guidance` and a `suggested_memory.input_data` skeleton with inferred `scope_refs`, evidence refs, `reason`, `memory_source`, `status`, and confidence. Agents must review evidence and rewrite the summary before using it. Fact-check issues are advisory and currently include:
 
 - `similar_entity_name`: multiple nodes normalize to the same name key.
 - `stale_fact`: active facts past their validity window.

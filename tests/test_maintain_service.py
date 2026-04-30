@@ -613,12 +613,22 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             candidate = next(item for item in candidates if item["title"] == "Memory Substrate")
             self.assertEqual(candidate["kind"], "concept_candidate")
             self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
+            self.assertIn("review_guidance", candidate)
+            self.assertIn("remember_as_concept", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})
+            self.assertIn("remember_as_procedure", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})
             self.assertEqual(candidate["source_count"], 1)
             self.assertGreaterEqual(candidate["occurrences"], 2)
             self.assertEqual(
                 {evidence["segment_id"] for evidence in candidate["evidence_refs"]},
                 {"seg-1", "seg-2"},
             )
+            suggested_input = candidate["suggested_memory"]["input_data"]
+            self.assertEqual(suggested_input["kind"], "concept")
+            self.assertEqual(suggested_input["title"], "Memory Substrate")
+            self.assertEqual(suggested_input["status"], "candidate")
+            self.assertEqual(suggested_input["memory_source"], "agent_inferred")
+            self.assertEqual(suggested_input["scope_refs"], ["src:concept-notes"])
+            self.assertEqual(suggested_input["evidence_refs"], candidate["evidence_refs"])
             self.assertIn("review_and_remember", candidate["next_actions"])
             self.assertEqual(report["data"]["counts"]["concept_candidates"], len(candidates))
 
@@ -677,6 +687,76 @@ class MaintenanceLifecycleTest(unittest.TestCase):
                 "Retrieval Fusion",
                 {candidate["title"] for candidate in report["data"]["concept_candidates"]},
             )
+
+    def test_report_filters_generic_document_noise_from_concept_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repository = FsObjectRepository(root)
+            repository.save(
+                "source",
+                {
+                    "id": "src:noisy-doc",
+                    "kind": "markdown",
+                    "origin": {"path": "/tmp/noisy.md"},
+                    "title": "Noisy Doc",
+                    "identity_key": "source|test|noisy-doc",
+                    "fingerprint": "noisy-doc",
+                    "content_type": "markdown",
+                    "payload": {"title": "Noisy Doc"},
+                    "segments": [
+                        {
+                            "segment_id": "seg-title",
+                            "locator": {"kind": "source", "line_start": 1, "heading_path": ["Agent Memory MCP Usage"]},
+                            "excerpt": "Agent Memory MCP Usage describes how agents call memory tools.",
+                            "hash": "seg-title",
+                        },
+                        {
+                            "segment_id": "seg-noise",
+                            "locator": {"kind": "source", "line_start": 10, "heading_path": ["Bug Fixes"]},
+                            "excerpt": "Bug Fixes include Content-Type cleanup and END FILE marker removal.",
+                            "hash": "seg-noise",
+                        },
+                        {
+                            "segment_id": "seg-usage-repeat",
+                            "locator": {"kind": "source", "line_start": 14},
+                            "excerpt": "Agent Memory MCP Usage is a documentation page title, not a durable concept.",
+                            "hash": "seg-usage-repeat",
+                        },
+                        {
+                            "segment_id": "seg-todo",
+                            "locator": {"kind": "source", "line_start": 16, "heading_path": ["Current Todo"]},
+                            "excerpt": "Current Todo lists temporary execution items.",
+                            "hash": "seg-todo",
+                        },
+                        {
+                            "segment_id": "seg-concept",
+                            "locator": {"kind": "source", "line_start": 20, "heading_path": ["Memory Substrate"]},
+                            "excerpt": "Memory Substrate captures source evidence before durable memory.",
+                            "hash": "seg-concept",
+                        },
+                        {
+                            "segment_id": "seg-concept-2",
+                            "locator": {"kind": "source", "line_start": 24},
+                            "excerpt": "Memory Substrate uses memory_remember only after review.",
+                            "hash": "seg-concept-2",
+                        },
+                    ],
+                    "metadata": {},
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+
+            report = MaintenanceLifecycle(root).report()
+
+            titles = {candidate["title"] for candidate in report["data"]["concept_candidates"]}
+            self.assertIn("Memory Substrate", titles)
+            self.assertNotIn("Agent Memory MCP Usage", titles)
+            self.assertNotIn("Bug Fixes", titles)
+            self.assertNotIn("Content-Type", titles)
+            self.assertNotIn("END FILE", titles)
+            self.assertNotIn("Current Todo", titles)
 
     def test_merge_duplicates_does_not_merge_unstructured_soft_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -278,3 +278,22 @@ Verification:
 - [x] Add maintain report tests for repeated uncrystallized concepts and existing concept suppression.
 - [x] Add repo ingest test proving source-local advisory concept candidates are returned.
 - [x] Run focused red-green tests for the new behavior.
+
+### MS-12: Candidate Review And Crystallization Flow
+
+Status: `completed`
+
+Goal: make advisory candidates actionable for agents without letting candidates become automatic canonical memory.
+
+Boundary: response guidance and agent workflow only. Do not add an automatic write path, mandatory LLM key, or background agent.
+
+Deliverables:
+- [x] Add `review_guidance` outcomes for concept, procedure, decision, merge, and skip.
+- [x] Add `suggested_memory.input_data` with reason, memory source, scope refs, evidence refs, status, confidence, and editable fields.
+- [x] Infer candidate scope refs from repo/document nodes when available and fall back to source ids.
+- [x] Document the candidate review flow in MCP docs, agent resources, and memory policy.
+- [x] Dogfood candidate discovery on `wiki-memory`, `llm_wiki`, and `mempalace` using a temporary memory root.
+
+Verification:
+- [x] Add regression coverage for executable candidate review payloads.
+- [x] Run focused red-green tests for candidate review payloads.

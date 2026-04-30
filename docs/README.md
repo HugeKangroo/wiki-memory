@@ -19,6 +19,7 @@ This repository has three kinds of documentation. Keep them separate so the curr
 - [Source Extraction Dependency Decision](research/2026-04-29-source-extraction-dependency-decision.md)
 - [Graph Health Dependency Decision](research/2026-04-29-graph-health-dependency-decision.md)
 - [MemPalace Design Review](research/2026-04-30-mempalace-design-review.md)
+- [Candidate Crystallization Dogfood](research/2026-04-30-candidate-crystallization-dogfood.md)
 - [Source Notes](research/source-notes/): imported source material such as `argue.md` and `llmwiki.md`.
 
 Research notes are evidence and reasoning history. They are not the current product contract unless a current canonical doc cites a decision from them.
