@@ -2,7 +2,21 @@
 
 Date: 2026-04-28
 
-Status: In progress
+Status: Historical spike, superseded by current backend policy
+
+## Outcome
+
+This spike is retained as research history, not as an active execution item.
+The current backend policy is in `docs/project-development-policy.md`:
+
+- Memory Substrate owns canonical ingest, remember, query, maintain, governance, and projections.
+- `file` remains the deterministic graph contract and test backend.
+- Kuzu is the local-first graph prototype behind the project-owned `GraphBackend` contract.
+- Graphiti remains a temporal graph reference and possible low-level adapter, not the high-level canonical ingest path.
+- Cognee and LlamaIndex remain future adapter candidates only if a later MS item proves they fit behind Memory Substrate governance.
+- Neo4j remains optional until local contracts, migration, and lifecycle semantics are stable.
+
+The unfinished comparison rows below are intentionally left as an unexecuted spike snapshot. Do not treat them as current work without adding a new `todo.md` MS item.
 
 ## Decision Context
 
@@ -25,7 +39,7 @@ Hard constraint:
 
 - The memory core must not require a second LLM API key. Codex, Claude Code, a human, or another caller may perform analysis and extraction, but the backend must be able to store and retrieve structured memory without making its own mandatory LLM call.
 
-## Current Decision
+## Historical Decision At Time Of Spike
 
 Do not treat Graphiti as the only option yet.
 
@@ -371,7 +385,7 @@ Score each candidate 1 to 5.
 | Migration/rebuild story | 4 | 3 | TBD | TBD | 4 |
 | Dependency risk | 3 | 3 | TBD | TBD | 5 |
 
-The `TBD` values should be filled by implementation spike results, not by reading docs alone.
+The `TBD` values were never executed in this spike. They should not be filled opportunistically from docs alone; create a new implementation spike if these candidates become active again.
 
 ## Initial Hypothesis
 

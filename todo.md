@@ -486,3 +486,19 @@ Deliverables:
 Verification:
 - [x] Add benchmark assertions for failed check summaries, next actions, and payload budgets.
 - [x] Run retrieval benchmark tests and full test suite.
+
+### MS-23: Dogfood Repeatability
+
+Status: `completed`
+
+Goal: make the end-to-end dogfood helper safe to run repeatedly under the same local parent directory.
+
+Boundary: experiment helper isolation only. Do not change production MCP storage roots or canonical object identity semantics.
+
+Deliverables:
+- [x] Create an isolated `dogfood-runs/run-NNNN` directory for each helper invocation.
+- [x] Return `run_root` in the dogfood acceptance result for diagnostics.
+- [x] Document repeatable run behavior in `experiments/README.md`.
+
+Verification:
+- [x] Add coverage that the helper can run twice in the same parent root.

@@ -79,6 +79,15 @@ class RetrievalBenchmarkTest(unittest.TestCase):
             self.assertLess(result["payload_sizes"]["compact_candidate_chars"], 2200)
             self.assertLess(result["payload_sizes"]["context_chars"], 8000)
 
+    def test_end_to_end_dogfood_acceptance_can_run_twice_in_same_root(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            first = run_end_to_end_dogfood_acceptance(tmp)
+            second = run_end_to_end_dogfood_acceptance(tmp)
+
+            self.assertEqual(first["status"], "completed")
+            self.assertEqual(second["status"], "completed")
+            self.assertNotEqual(first["run_root"], second["run_root"])
+
 
 if __name__ == "__main__":
     unittest.main()

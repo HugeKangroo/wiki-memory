@@ -96,4 +96,4 @@ result = run_end_to_end_dogfood_acceptance("/tmp/memory-e2e-dogfood")
 
 Use it as a deterministic local acceptance signal when changing MCP schemas, compact response policies, ingest suggestions, durable write governance, maintenance reports, or context assembly. The helper mutates only the supplied temporary/local root and does not require network access or optional semantic models.
 
-The result includes per-step `checks`, `failed_checks`, `next_actions`, `payload_sizes`, and `payload_budgets` so failures are diagnosable without replaying the whole run.
+Each call creates an isolated `dogfood-runs/run-NNNN` directory under the supplied root, so the helper can be run repeatedly against the same local parent directory. The result includes `run_root`, per-step `checks`, `failed_checks`, `next_actions`, `payload_sizes`, and `payload_budgets` so failures are diagnosable without replaying the whole run.

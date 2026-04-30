@@ -14,9 +14,9 @@ PAYLOAD_BUDGETS = {
 
 def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
     """Run a deterministic local acceptance flow through the MCP dispatch layer."""
-    root = Path(root)
-    memory_root = root / "memory"
-    repo_path = root / "input-repo"
+    run_root = _next_run_root(Path(root))
+    memory_root = run_root / "memory"
+    repo_path = run_root / "input-repo"
     _seed_repo(repo_path)
 
     ingest = memory_ingest(memory_root, "repo", {"path": str(repo_path)})
@@ -98,6 +98,7 @@ def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
         "status": "completed" if not failed_checks else "failed",
         "case_count": len(checks),
         "mutated": True,
+        "run_root": str(run_root),
         "object_ids": {
             "source_id": ingest["source_id"],
             "knowledge_id": knowledge_id,
@@ -114,6 +115,19 @@ def run_end_to_end_dogfood_acceptance(root: str | Path) -> dict:
             else ["inspect_failed_checks", "inspect_observed_values", "tighten_or_fix_mcp_contract"]
         ),
     }
+
+
+def _next_run_root(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    runs_root = root / "dogfood-runs"
+    runs_root.mkdir(exist_ok=True)
+    index = 1
+    while True:
+        candidate = runs_root / f"run-{index:04d}"
+        if not candidate.exists():
+            candidate.mkdir()
+            return candidate
+        index += 1
 
 
 def _seed_repo(repo_path: Path) -> None:
