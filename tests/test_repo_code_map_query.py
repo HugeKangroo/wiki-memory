@@ -290,11 +290,19 @@ class RepoCodeMapQueryTest(unittest.TestCase):
             self.assertEqual(len(compact_page["data"]["object"]["payload"]["document_sections"]), 1)
             self.assertEqual(len(compact_page["data"]["object"]["segments"]), 1)
             self.assertIn("payload.document_sections", compact_page["data"]["truncated"])
-            self.assertEqual(full_page["data"]["detail"], "compact")
+            self.assertNotIn("detail='full'", " ".join(compact_page["warnings"]))
+            self.assertNotIn("blocked", json.dumps(compact_page).lower())
+            self.assertIn("local file reads", " ".join(compact_page["warnings"]))
+            self.assertEqual(full_page["result_type"], "page_unavailable")
+            self.assertEqual(full_page["status"], "unsupported")
+            self.assertEqual(full_page["data"]["object_type"], "source")
+            self.assertEqual(full_page["data"]["object_id"], result["source_id"])
             self.assertEqual(full_page["data"]["requested_detail"], "full")
-            self.assertEqual(full_page["data"]["full_detail_blocked"], "repo_source")
-            self.assertNotIn("segments", full_page["data"]["object"])
-            self.assertIn("blocked", " ".join(full_page["warnings"]).lower())
+            self.assertEqual(full_page["data"]["unsupported_detail"], "repo_source_full")
+            self.assertEqual(full_page["data"]["supported_details"], ["compact"])
+            self.assertNotIn("object", full_page["data"])
+            self.assertNotIn("full_detail_blocked", full_page["data"])
+            self.assertNotIn("blocked", json.dumps(full_page).lower())
 
 
 if __name__ == "__main__":

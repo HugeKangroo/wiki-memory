@@ -366,7 +366,7 @@ Supported query filters:
 }
 ```
 
-`detail: "full"` still works for bounded non-repo objects. Repo source pages block full detail and return compact indexes plus a warning to protect context budget. Use compact locators and local file reads for full repo code or documents.
+`detail: "full"` still works for bounded non-repo objects. Repo source pages with full detail return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read from local files by locator. Use compact locators and local file reads for full repo code or documents.
 
 Compact query options:
 

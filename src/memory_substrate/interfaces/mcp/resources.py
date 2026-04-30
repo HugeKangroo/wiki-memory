@@ -109,7 +109,7 @@ Repo ingest statuses:
 - `noop`: repo fingerprint is unchanged from the active stored source; no patch, audit, or projection data is written.
 - `completed`: source material was written or updated.
 
-Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; repo source pages block `options.detail: "full"` to protect context budget. Use compact locators and local file reads for full repo code or documents. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
+Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read from local files by locator. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
 
 `memory_query search` and `context` return `query_sanitizer` diagnostics when prompt-like query text is shortened before retrieval.
 

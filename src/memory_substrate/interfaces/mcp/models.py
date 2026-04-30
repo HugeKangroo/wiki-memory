@@ -109,7 +109,10 @@ class QueryExpandOptions(StrictModel):
 class QueryPageOptions(StrictModel):
     """Options for memory_query page mode."""
 
-    detail: QueryDetailName | None = Field(default=None, description="Use compact by default; set full only when the complete stored object is required.")
+    detail: QueryDetailName | None = Field(
+        default=None,
+        description="Use compact by default. Set full only for bounded non-repo objects; repo sources return page_unavailable.",
+    )
     max_items: int | None = Field(default=None, ge=1, description="For compact pages, maximum entries per returned list. Default: 10.")
     include_segments: bool | None = Field(default=None, description="For compact source pages, include source segment snippets. Default: false.")
     snippet_chars: int | None = Field(default=None, ge=40, le=4000, description="Maximum compact excerpt length. Default: 360.")

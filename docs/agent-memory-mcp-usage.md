@@ -116,7 +116,7 @@ Current search behavior includes deterministic query normalization, lexical matc
 - search for both natural-language terms and canonical memory terms
 - prefer `context` when answering a task and `search` when checking existence
 - for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `doc_index`, and `document_sections`; read local files by locator when needed
-- repo source pages block `options.detail: "full"` and return compact indexes with a warning; use compact locators plus local file reads for full code or documents
+- repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"`; use compact locators plus local file reads for full code or documents
 - query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`
 
 Examples:

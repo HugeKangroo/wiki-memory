@@ -183,7 +183,8 @@ class QueryService:
 
         Args:
             object_id: Source, node, knowledge, activity, or work item identifier to fetch.
-            detail: `compact` by default, or `full` to return the complete stored object.
+            detail: `compact` by default, or `full` to return complete bounded objects.
+                Repo sources do not support full detail because their payloads are intended as compact locators.
             max_items: Maximum list entries in compact object previews.
             include_segments: Whether compact source pages include segment snippets.
             snippet_chars: Maximum excerpt length in compact previews.
@@ -196,25 +197,25 @@ class QueryService:
             if obj is not None:
                 if detail == "full":
                     if object_type == "source" and obj.get("kind") == "repo":
-                        compact = self._compact_object_page(
-                            object_type=object_type,
-                            obj=obj,
-                            max_items=max_items or 10,
-                            include_segments=False if include_segments is None else include_segments,
-                            snippet_chars=snippet_chars or 360,
-                        )
                         return {
-                            "result_type": "page",
+                            "result_type": "page_unavailable",
+                            "status": "unsupported",
                             "data": {
                                 "object_type": object_type,
-                                "object": compact["object"],
-                                "detail": "compact",
+                                "object_id": obj["id"],
+                                "kind": obj.get("kind"),
                                 "requested_detail": "full",
-                                "full_detail_blocked": "repo_source",
-                                "truncated": compact["truncated"],
+                                "unsupported_detail": "repo_source_full",
+                                "supported_details": ["compact"],
+                                "reason": "repo_sources_expose_compact_locators_not_full_payloads",
+                                "next_actions": [
+                                    "call_memory_query_page_without_full_detail",
+                                    "use_compact_locators_to_choose_files",
+                                    "read_local_files_for_complete_source",
+                                ],
                             },
                             "warnings": [
-                                "Full repo source pages are blocked to protect context budget. Use compact page indexes and local file reads for full source.",
+                                "Repo source full detail is unavailable through memory_query page. Use compact page indexes and local file reads for complete source.",
                             ],
                         }
                     return {
@@ -233,6 +234,11 @@ class QueryService:
                     include_segments=False if include_segments is None else include_segments,
                     snippet_chars=snippet_chars or 360,
                 )
+                warnings = ["Compact page returned. Use options.detail='full' only when the complete stored object is required."]
+                if object_type == "source" and obj.get("kind") == "repo":
+                    warnings = [
+                        "Compact repo source page returned. Use returned locators and local file reads for complete code or documents; full repo source pages are unavailable through memory_query page.",
+                    ]
                 return {
                     "result_type": "page",
                     "data": {
@@ -241,7 +247,7 @@ class QueryService:
                         "detail": "compact",
                         "truncated": compact["truncated"],
                     },
-                    "warnings": ["Compact page returned. Use options.detail='full' only when the complete stored object is required."],
+                    "warnings": warnings,
                 }
         return {
             "result_type": "page",
