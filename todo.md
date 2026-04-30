@@ -258,3 +258,23 @@ Verification:
 - [x] Add regression coverage that context tiers do not duplicate section summaries.
 - [x] Add payload budget coverage for large context responses.
 - [x] Measure sample context payload reduction from about 16.2 KB to about 7.2 KB.
+
+### MS-11: Advisory Concept Candidate Discovery
+
+Status: `completed`
+
+Goal: reconnect the LLM Wiki crystallization loop by surfacing repeated source concepts without automatically mutating durable memory.
+
+Boundary: deterministic advisory discovery only. Do not add a required LLM API key and do not auto-promote candidates into canonical memory.
+
+Deliverables:
+- [x] Add reusable concept candidate discovery over source segments, headings, and existing memory text.
+- [x] Surface global `concept_candidates` from `memory_maintain report`.
+- [x] Surface current-source `memory_suggestions.concept_candidates` from `memory_ingest`.
+- [x] Suppress candidates already represented by concept knowledge or concept nodes.
+- [x] Document that candidates require agent/human review before `memory_remember`.
+
+Verification:
+- [x] Add maintain report tests for repeated uncrystallized concepts and existing concept suppression.
+- [x] Add repo ingest test proving source-local advisory concept candidates are returned.
+- [x] Run focused red-green tests for the new behavior.

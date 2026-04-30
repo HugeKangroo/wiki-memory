@@ -90,11 +90,12 @@ When new material appears:
 1. Call `memory_ingest` to capture the material as evidence.
 2. Inspect returned `status`, `warnings`, and `pending_decisions`. If `status` is `completed_with_pending_decisions`, use the clean ingested source normally and decide separately whether any pending entry deserves a later explicit `options.force: true` ingest.
 3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
-4. Analyze the ingested evidence outside ingest.
-5. Decide whether anything should become durable memory.
-6. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
-7. Call `memory_remember` only for information that should survive future sessions.
-8. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
+4. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve a durable `kind: "concept"` memory after review.
+5. Analyze the ingested evidence outside ingest.
+6. Decide whether anything should become durable memory.
+7. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
+8. Call `memory_remember` only for information that should survive future sessions.
+9. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
 Before ending substantial work:
 
@@ -142,6 +143,8 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 - if it is genuinely distinct, keep it and preserve the scope/reason that explains why
 
 `memory_maintain report` also surfaces soft duplicate candidates. `memory_maintain merge_duplicates` does not merge them automatically; use explicit review, supersession, or contesting once the relationship is clear.
+
+`memory_maintain report` also surfaces advisory `concept_candidates`. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
 
 When a graph backend is configured, `memory_maintain report` also returns graph-health insights. Treat `isolated_nodes`, `sparse_clusters`, `bridge_nodes`, and `weakly_connected_scopes` as maintenance signals: they suggest where memory may need typed relations, consolidation, evidence review, or scope cleanup, not automatic mutation instructions.
 

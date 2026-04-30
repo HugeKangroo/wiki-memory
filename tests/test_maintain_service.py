@@ -570,6 +570,114 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertIn("contest", mismatch["next_actions"])
             self.assertEqual(report["data"]["counts"]["fact_check_issues"], len(issues))
 
+    def test_report_surfaces_repeated_uncrystallized_concept_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repository = FsObjectRepository(root)
+            repository.save(
+                "source",
+                {
+                    "id": "src:concept-notes",
+                    "kind": "markdown",
+                    "origin": {"path": "/tmp/concept-notes.md"},
+                    "title": "Concept Notes",
+                    "identity_key": "source|test|concept-notes",
+                    "fingerprint": "concept-notes",
+                    "content_type": "markdown",
+                    "payload": {"title": "Concept Notes"},
+                    "segments": [
+                        {
+                            "segment_id": "seg-1",
+                            "locator": {"kind": "source", "line_start": 1, "heading_path": ["Memory Substrate"]},
+                            "excerpt": "Memory Substrate captures evidence before durable memory writes.",
+                            "hash": "seg-1",
+                        },
+                        {
+                            "segment_id": "seg-2",
+                            "locator": {"kind": "source", "line_start": 5},
+                            "excerpt": "The Memory Substrate should surface concept candidates before agents call memory_remember.",
+                            "hash": "seg-2",
+                        },
+                    ],
+                    "metadata": {},
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+            maintain = MaintenanceLifecycle(root)
+
+            report = maintain.report()
+
+            candidates = report["data"]["concept_candidates"]
+            candidate = next(item for item in candidates if item["title"] == "Memory Substrate")
+            self.assertEqual(candidate["kind"], "concept_candidate")
+            self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
+            self.assertEqual(candidate["source_count"], 1)
+            self.assertGreaterEqual(candidate["occurrences"], 2)
+            self.assertEqual(
+                {evidence["segment_id"] for evidence in candidate["evidence_refs"]},
+                {"seg-1", "seg-2"},
+            )
+            self.assertIn("review_and_remember", candidate["next_actions"])
+            self.assertEqual(report["data"]["counts"]["concept_candidates"], len(candidates))
+
+    def test_report_suppresses_concept_candidates_already_in_memory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repository = FsObjectRepository(root)
+            repository.save(
+                "source",
+                {
+                    "id": "src:retrieval-notes",
+                    "kind": "markdown",
+                    "origin": {"path": "/tmp/retrieval-notes.md"},
+                    "title": "Retrieval Notes",
+                    "identity_key": "source|test|retrieval-notes",
+                    "fingerprint": "retrieval-notes",
+                    "content_type": "markdown",
+                    "payload": {"title": "Retrieval Notes"},
+                    "segments": [
+                        {
+                            "segment_id": "seg-1",
+                            "locator": {"kind": "source", "line_start": 1, "heading_path": ["Retrieval Fusion"]},
+                            "excerpt": "Retrieval Fusion combines lexical and semantic ranking.",
+                            "hash": "seg-1",
+                        },
+                        {
+                            "segment_id": "seg-2",
+                            "locator": {"kind": "source", "line_start": 4},
+                            "excerpt": "Retrieval Fusion should stay a derived query strategy, not canonical memory.",
+                            "hash": "seg-2",
+                        },
+                    ],
+                    "metadata": {},
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+            RememberService(root).create_knowledge(
+                {
+                    "kind": "concept",
+                    "title": "Retrieval Fusion",
+                    "summary": "Retrieval Fusion combines multiple ranking streams before query results are returned.",
+                    "reason": "Existing crystallized concept should suppress duplicate concept candidates.",
+                    "scope_refs": ["scope:test"],
+                    "status": "active",
+                    "memory_source": "user_declared",
+                    "confidence": 1.0,
+                }
+            )
+            maintain = MaintenanceLifecycle(root)
+
+            report = maintain.report()
+
+            self.assertNotIn(
+                "Retrieval Fusion",
+                {candidate["title"] for candidate in report["data"]["concept_candidates"]},
+            )
+
     def test_merge_duplicates_does_not_merge_unstructured_soft_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

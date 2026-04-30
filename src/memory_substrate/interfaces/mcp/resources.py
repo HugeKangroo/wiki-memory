@@ -30,6 +30,8 @@ Required domain mappings include todo/work item, decision, preference, procedure
 ## Maintenance Policy
 
 `memory_maintain report` may surface soft duplicate candidates. `merge_duplicates` is limited to deterministic structured duplicates until an explicit review/resolve mode exists.
+
+`memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory.
 """
 
 
@@ -49,8 +51,9 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
-6. Analyze outside ingest.
-7. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
+6. Inspect `memory_suggestions.concept_candidates`; review cited evidence before deciding whether to call `memory_remember` with `kind: "concept"`.
+7. Analyze outside ingest.
+8. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
 ## Durable Writes
 
@@ -62,7 +65,7 @@ Inspect `possible_duplicates` after knowledge writes. Similar unstructured items
 
 Use `memory_maintain report` for read-only review. Mutating maintenance requires `options.apply=true`.
 
-Treat graph health, derived index diagnostics, and `fact_check_issues` as review signals. They should guide explicit remember/maintain actions, not automatic mutation.
+Treat graph health, derived index diagnostics, `concept_candidates`, and `fact_check_issues` as review signals. They should guide explicit remember/maintain actions, not automatic mutation.
 """
 
 

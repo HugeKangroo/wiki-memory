@@ -103,6 +103,36 @@ class Phase1AcceptanceTest(unittest.TestCase):
             self.assertNotIn("primary_language", predicates)
             self.assertNotIn("module_summary", predicates)
 
+    def test_repo_ingest_returns_advisory_concept_candidates_for_agent_review(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "concept-repo"
+            repo.mkdir()
+            (repo / "README.md").write_text(
+                "# Concept Repo\n"
+                "\n"
+                "Context Pack is the working set that agents should load before implementation.\n"
+                "\n"
+                "## Context Pack\n"
+                "\n"
+                "The Context Pack contains decisions, procedures, evidence, and open work.\n",
+                encoding="utf-8",
+            )
+            src = repo / "src"
+            src.mkdir()
+            (src / "main.py").write_text("def build_context_pack():\n    return {}\n", encoding="utf-8")
+
+            result = IngestService(root).ingest_repo(repo)
+
+            suggestions = result["memory_suggestions"]
+            candidates = suggestions["concept_candidates"]
+            self.assertIn("run_memory_maintain_report_for_cross_source_candidates", suggestions["next_actions"])
+            self.assertIn("Context Pack", {candidate["title"] for candidate in candidates})
+            self.assertNotIn("Concept Repo", {candidate["title"] for candidate in candidates})
+            candidate = next(item for item in candidates if item["title"] == "Context Pack")
+            self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
+            self.assertTrue(candidate["evidence_refs"])
+
     def test_repo_ingest_labels_non_python_modules_by_language(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

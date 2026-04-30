@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.services.concept_candidates import ConceptCandidateDiscovery
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
 from memory_substrate.domain.services.soft_duplicates import KnowledgeSoftDuplicateDetector
@@ -35,6 +36,7 @@ class MaintenanceLifecycle:
         )
         self.projector = MarkdownProjector(self.root)
         self.soft_duplicates = KnowledgeSoftDuplicateDetector()
+        self.concept_candidates = ConceptCandidateDiscovery()
 
     def promote_candidates(self, min_confidence: float = 0.75, min_evidence: int = 1) -> dict:
         """Promote eligible candidate knowledge items to active status.
@@ -207,7 +209,13 @@ class MaintenanceLifecycle:
             if len(group) > 1
         ]
         duplicate_groups.sort(key=lambda group: group[0])
-        soft_duplicate_candidates = self.soft_duplicates.groups(self.object_repository.list("knowledge"))
+        knowledge_items = self.object_repository.list("knowledge")
+        soft_duplicate_candidates = self.soft_duplicates.groups(knowledge_items)
+        concept_candidates = self.concept_candidates.discover(
+            sources=self.object_repository.list("source"),
+            knowledge_items=knowledge_items,
+            nodes=self.object_repository.list("node"),
+        )
 
         return {
             "result_type": "maintain_report",
@@ -217,6 +225,7 @@ class MaintenanceLifecycle:
                 "stale_candidate_ids": sorted(stale_candidate_ids),
                 "duplicate_groups": duplicate_groups,
                 "soft_duplicate_candidates": soft_duplicate_candidates,
+                "concept_candidates": concept_candidates,
                 "fact_check_issues": fact_check_issues,
                 "governance_violations": sorted(governance_violations, key=lambda item: item["object_id"]),
                 "counts": {
@@ -225,6 +234,7 @@ class MaintenanceLifecycle:
                     "stale_candidates": len(stale_candidate_ids),
                     "duplicate_groups": len(duplicate_groups),
                     "soft_duplicate_candidates": len(soft_duplicate_candidates),
+                    "concept_candidates": len(concept_candidates),
                     "fact_check_issues": len(fact_check_issues),
                     "governance_violations": len(governance_violations),
                 },

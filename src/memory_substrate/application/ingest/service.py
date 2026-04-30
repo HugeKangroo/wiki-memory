@@ -11,6 +11,7 @@ from memory_substrate.domain.objects.activity import Activity
 from memory_substrate.domain.objects.node import Node
 from memory_substrate.domain.objects.source import Source, SourceSegment
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.services.concept_candidates import ConceptCandidateDiscovery
 from memory_substrate.domain.services.document_chunker import DocumentChunker
 from memory_substrate.domain.services.ids import new_id, slugify, stable_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
@@ -40,6 +41,7 @@ class IngestService:
             audit_repository=self.audit_repository,
         )
         self.document_chunker = DocumentChunker()
+        self.concept_candidates = ConceptCandidateDiscovery()
         self.repo_adapter = RepoAdapter()
         self.projector = MarkdownProjector(self.root)
 
@@ -216,6 +218,7 @@ class IngestService:
             "suggested_exclude_patterns": suggested_exclude_patterns,
             "pending_decisions": pending_decisions,
             "excluded_by_preflight": excluded_by_preflight,
+            "memory_suggestions": self._memory_suggestions(output.source.id),
             "next_actions": self._ingest_next_actions(),
         }
 
@@ -264,6 +267,7 @@ class IngestService:
             "pending_decisions": pending_decisions,
             "excluded_by_preflight": excluded_by_preflight,
             "reason": "repo_fingerprint_unchanged",
+            "memory_suggestions": self._memory_suggestions(output.source.id),
             "next_actions": self._ingest_next_actions(),
         }
 
@@ -271,8 +275,27 @@ class IngestService:
         return [
             "query_related_context",
             "analyze_evidence_outside_ingest",
+            "review_memory_suggestions",
             "call_memory_remember_if_durable",
         ]
+
+    def _memory_suggestions(self, source_id: str, limit: int = 5) -> dict:
+        concept_candidates = self.concept_candidates.discover(
+            sources=self.object_repository.list("source"),
+            knowledge_items=self.object_repository.list("knowledge"),
+            nodes=self.object_repository.list("node"),
+            source_ids={source_id},
+            limit=limit,
+        )
+        return {
+            "concept_candidates": concept_candidates,
+            "counts": {"concept_candidates": len(concept_candidates)},
+            "next_actions": [
+                "review_concept_candidates",
+                "run_memory_maintain_report_for_cross_source_candidates",
+                "call_memory_remember_if_durable",
+            ],
+        }
 
     def _repo_pending_decisions(self, preflight: RepoPreflightOutput, force: bool) -> list[dict]:
         if force:
@@ -675,6 +698,7 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
+            "memory_suggestions": self._memory_suggestions(source.id),
             "next_actions": self._ingest_next_actions(),
         }
 
@@ -751,6 +775,7 @@ class IngestService:
             "applied_operations": apply_result.applied_operations,
             "audit_event_ids": apply_result.audit_event_ids,
             "projection_count": projection_result["count"],
+            "memory_suggestions": self._memory_suggestions(source.id),
             "next_actions": self._ingest_next_actions(),
         }
 

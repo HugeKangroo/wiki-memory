@@ -185,6 +185,35 @@ When repo preflight passes but the computed repo fingerprint is unchanged from t
 
 `memory_ingest` captures evidence. It does not decide what should become durable memory.
 
+Ingest responses include advisory `memory_suggestions`. These suggestions are derived from the current source and are not canonical memory. `concept_candidates` indicate repeated headings or technical terms that may deserve a later `memory_remember` write after agent review:
+
+```json
+{
+  "memory_suggestions": {
+    "concept_candidates": [
+      {
+        "kind": "concept_candidate",
+        "title": "Context Pack",
+        "score": 0.75,
+        "occurrences": 2,
+        "evidence_refs": [{"source_id": "src:...", "segment_id": "..."}],
+        "suggested_memory": {
+          "mode": "knowledge",
+          "kind": "concept",
+          "status": "candidate"
+        },
+        "next_actions": ["review_and_remember", "attach_evidence_refs", "skip_if_project_specific_noise"]
+      }
+    ],
+    "next_actions": [
+      "review_concept_candidates",
+      "run_memory_maintain_report_for_cross_source_candidates",
+      "call_memory_remember_if_durable"
+    ]
+  }
+}
+```
+
 ## `memory_query`
 
 Allowed modes:
@@ -696,7 +725,7 @@ Semantic model loading is lazy and process-local. MCP startup does not load BGE-
 
 `repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
 
-`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, fact-check issues, counts, and graph health when a graph backend is configured. Fact-check issues are advisory and currently include:
+`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` `kind: "concept"` write after review; they are not persisted automatically. Fact-check issues are advisory and currently include:
 
 - `similar_entity_name`: multiple nodes normalize to the same name key.
 - `stale_fact`: active facts past their validity window.

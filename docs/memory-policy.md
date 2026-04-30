@@ -40,6 +40,8 @@ Durable writes should go through `memory_remember` or controlled `memory_maintai
 - `memory_remember` is the governed durable write path.
 - `memory_maintain` validates, repairs, reindexes, reports, and performs lifecycle consolidation.
 
+Ingest and maintain may return advisory `concept_candidates`. These candidates help callers notice repeated ideas that may deserve crystallization, but they are not canonical memory until an agent or human reviews evidence and calls `memory_remember`.
+
 ## Governance Fields
 
 Governed create operations require:
@@ -155,6 +157,8 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 - `adapter`
 - `freshness`
 - `possible_duplicates`
+- `concept_candidates`
+- `memory_suggestions`
 - `fact_check_issues`
 - `conflicts_with`
 - `requires_decision`
