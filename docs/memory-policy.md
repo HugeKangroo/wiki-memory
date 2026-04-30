@@ -44,6 +44,8 @@ Ingest and maintain may return advisory `concept_candidates`. These candidates h
 
 Concept candidates may include a `suggested_memory.input_data` skeleton. This skeleton is a review aid, not an instruction to write automatically. Callers must read evidence, query for existing related memory, rewrite the summary, and choose the correct outcome: remember as concept, procedure, decision, merge with existing memory, or skip.
 
+Candidate ranking is advisory. `candidate_type` and `ranking_signals` should help agents prioritize stable concepts, procedures, and decisions above tool names or implementation details, but they must not replace evidence review. `candidate_diagnostics` may expose skipped terms for tuning; skipped terms are not remembered automatically.
+
 ## Governance Fields
 
 Governed create operations require:

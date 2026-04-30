@@ -211,11 +211,12 @@ class MaintenanceLifecycle:
         duplicate_groups.sort(key=lambda group: group[0])
         knowledge_items = self.object_repository.list("knowledge")
         soft_duplicate_candidates = self.soft_duplicates.groups(knowledge_items)
-        concept_candidates = self.concept_candidates.discover(
+        candidate_analysis = self.concept_candidates.analyze(
             sources=self.object_repository.list("source"),
             knowledge_items=knowledge_items,
             nodes=self.object_repository.list("node"),
         )
+        concept_candidates = candidate_analysis["candidates"]
 
         return {
             "result_type": "maintain_report",
@@ -226,6 +227,7 @@ class MaintenanceLifecycle:
                 "duplicate_groups": duplicate_groups,
                 "soft_duplicate_candidates": soft_duplicate_candidates,
                 "concept_candidates": concept_candidates,
+                "candidate_diagnostics": candidate_analysis["candidate_diagnostics"],
                 "fact_check_issues": fact_check_issues,
                 "governance_violations": sorted(governance_violations, key=lambda item: item["object_id"]),
                 "counts": {

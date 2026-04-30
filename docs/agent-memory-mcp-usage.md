@@ -146,6 +146,8 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 
 `memory_maintain report` also surfaces advisory `concept_candidates`. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
 
+Use `candidate_type` and `ranking_signals` for triage. Prefer high-ranking `concept`, `procedure`, and `decision` candidates over `tool_library` or `implementation_detail` candidates unless the current task specifically concerns that tool or implementation detail. Use `candidate_diagnostics.skipped` to understand why headings or phrases were suppressed, including document artifacts, action phrases, shortcut fragments, and format markers; diagnostics are for tuning and review, not durable memory.
+
 Candidate review outcomes should be explicit:
 
 - `remember_as_concept`: use when the candidate names a reusable abstraction with stable meaning.

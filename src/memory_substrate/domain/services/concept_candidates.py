@@ -11,6 +11,13 @@ class ConceptCandidateDiscovery:
     _TITLE_PHRASE_RE = re.compile(
         r"\b(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})(?:[\s/-]+(?:[A-Z][A-Za-z0-9]+|[A-Z]{2,})){1,5}\b"
     )
+    _TOOL_MODE_RE = re.compile(r"\bmemory_[a-z_]+(?:\s+[a-z_]+)?\b")
+    _COMMAND_PREFIXES = {"mempalace", "memory-substrate", "codex", "claude"}
+    _COMMAND_PHRASE_RE = re.compile(
+        r"\b(?:mempalace|memory-substrate|codex|claude)\s+[a-z][a-z0-9_-]*"
+        r"(?:\s+--?[a-z][a-z0-9_-]*(?:=[^\s`.,;:)]+)?){0,3}\b"
+    )
+    _FORMAT_MARKER_RE = re.compile(r"\b[a-z]{2}-[a-z]{2}\b")
     _CJK_RE = re.compile(
         r"[\u4e00-\u9fff]{0,8}(?:知识图谱|记忆系统|向量数据库|图数据库|概念候选|策略检索|知识沉淀|证据链|生命周期|上下文包)[\u4e00-\u9fff]{0,4}"
     )
@@ -46,8 +53,36 @@ class ConceptCandidateDiscovery:
         "callexamples",
         "contenttype",
         "endfile",
+        "mandatoryoutputlanguage",
+        "newfeatures",
+        "writtenbefore",
+        "yyyymmdd",
     }
-    _DOC_ARTIFACT_SUFFIXES = {"examples", "reference", "references", "todo", "usage"}
+    _ACTION_PHRASE_VERBS = {
+        "builds",
+        "converts",
+        "creates",
+        "displays",
+        "evaluates",
+        "generates",
+        "includes",
+        "loads",
+        "manages",
+        "parses",
+        "provides",
+        "queries",
+        "reads",
+        "returns",
+        "runs",
+        "saves",
+        "stores",
+        "supports",
+        "tracks",
+        "uses",
+        "writes",
+    }
+    _SHORTCUT_MARKERS = {"alt", "cmd", "ctrl", "esc", "shift"}
+    _DOC_ARTIFACT_SUFFIXES = {"examples", "features", "reference", "references", "tasks", "todo", "usage"}
 
     def discover(
         self,
@@ -59,22 +94,46 @@ class ConceptCandidateDiscovery:
         limit: int = 10,
     ) -> list[dict[str, Any]]:
         """Return advisory candidates for concepts that may deserve durable memory."""
+        return self.analyze(
+            sources=sources,
+            knowledge_items=knowledge_items,
+            nodes=nodes,
+            source_ids=source_ids,
+            limit=limit,
+        )["candidates"]
+
+    def analyze(
+        self,
+        *,
+        sources: list[dict[str, Any]],
+        knowledge_items: list[dict[str, Any]],
+        nodes: list[dict[str, Any]],
+        source_ids: set[str] | None = None,
+        limit: int = 10,
+    ) -> dict[str, Any]:
+        """Return candidates plus diagnostics for advisory concept discovery."""
         existing_concepts = self._existing_concept_keys(knowledge_items, nodes)
         source_scope_refs = self._source_scope_refs_by_id(sources, nodes)
         buckets: dict[str, dict[str, Any]] = {}
+        skipped: dict[str, dict[str, Any]] = {}
 
         for source in sources:
             source_id = str(source.get("id", ""))
             if source_ids is not None and source_id not in source_ids:
                 continue
-            self._collect_source_terms(buckets, source, scope_refs=source_scope_refs.get(source_id, [source_id]))
+            self._collect_source_terms(
+                buckets,
+                source,
+                skipped=skipped,
+                scope_refs=source_scope_refs.get(source_id, [source_id]),
+            )
 
         for item in knowledge_items:
             if str(item.get("kind", "")) == "concept":
                 continue
             if source_ids is not None and not self._knowledge_refs_sources(item, source_ids):
                 continue
-            self._collect_knowledge_terms(buckets, item)
+            self._collect_knowledge_terms(buckets, item, skipped=skipped)
 
         candidates = [
             self._candidate_from_bucket(bucket)
@@ -82,9 +141,21 @@ class ConceptCandidateDiscovery:
             if normalized_key not in existing_concepts and self._has_enough_support(bucket)
         ]
         candidates.sort(key=lambda item: (-item["score"], item["title"], item["normalized_key"]))
-        return candidates[:limit]
+        diagnostics = self._candidate_diagnostics(skipped)
+        diagnostics["counts"]["returned"] = min(len(candidates), limit)
+        return {
+            "candidates": candidates[:limit],
+            "candidate_diagnostics": diagnostics,
+        }
 
-    def _collect_source_terms(self, buckets: dict[str, dict[str, Any]], source: dict[str, Any], *, scope_refs: list[str]) -> None:
+    def _collect_source_terms(
+        self,
+        buckets: dict[str, dict[str, Any]],
+        source: dict[str, Any],
+        *,
+        skipped: dict[str, dict[str, Any]],
+        scope_refs: list[str],
+    ) -> None:
         source_id = str(source.get("id", ""))
         source_title_key = self._normalize_key(str(source.get("title", "")))
         for segment in source.get("segments", []) or []:
@@ -115,15 +186,35 @@ class ConceptCandidateDiscovery:
                     locator=locator,
                     scope_refs=scope_refs,
                 )
+            self._record_skipped_terms(skipped, str(segment.get("excerpt", "")))
+            for heading in self._raw_heading_terms(locator):
+                if self._normalize_key(heading) == source_title_key:
+                    continue
+                self._record_skipped_terms(skipped, heading, include_whole=True)
 
-    def _collect_knowledge_terms(self, buckets: dict[str, dict[str, Any]], item: dict[str, Any]) -> None:
+    def _collect_knowledge_terms(
+        self,
+        buckets: dict[str, dict[str, Any]],
+        item: dict[str, Any],
+        *,
+        skipped: dict[str, dict[str, Any]],
+    ) -> None:
         object_id = str(item.get("id", ""))
         object_ref = {"object_type": "knowledge", "object_id": object_id}
         scope_refs = self._knowledge_scope_refs(item)
-        for term in self._extract_terms(f"{item.get('title', '')}\n{item.get('summary', '')}"):
+        text = f"{item.get('title', '')}\n{item.get('summary', '')}"
+        for term in self._extract_terms(text):
             self._add(buckets, term, reason="knowledge_text", object_ref=object_ref, scope_refs=scope_refs)
+        self._record_skipped_terms(skipped, text)
 
     def _heading_terms(self, locator: Any) -> list[str]:
+        return [
+            term
+            for heading in self._raw_heading_terms(locator)
+            for term in self._extract_terms(heading, include_whole=True)
+        ]
+
+    def _raw_heading_terms(self, locator: Any) -> list[str]:
         if not isinstance(locator, dict):
             return []
         headings = locator.get("heading_path", [])
@@ -133,7 +224,7 @@ class ConceptCandidateDiscovery:
             return []
         if not headings:
             return []
-        return self._extract_terms(str(headings[-1]), include_whole=True)
+        return [str(headings[-1])]
 
     def _is_top_level_title_locator(self, locator: Any) -> bool:
         if not isinstance(locator, dict):
@@ -148,8 +239,35 @@ class ConceptCandidateDiscovery:
             terms.append(text)
         terms.extend(match.group(1) for match in self._BACKTICK_RE.finditer(text))
         terms.extend(match.group(0) for match in self._TITLE_PHRASE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._TOOL_MODE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._COMMAND_PHRASE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._FORMAT_MARKER_RE.finditer(text))
         terms.extend(match.group(0) for match in self._CJK_RE.finditer(text))
         return [term for term in (self._clean_title(term) for term in terms) if self._is_valid_term(term)]
+
+    def _record_skipped_terms(self, skipped: dict[str, dict[str, Any]], text: str, *, include_whole: bool = False) -> None:
+        terms: list[str] = []
+        if include_whole:
+            terms.append(text)
+        terms.extend(match.group(1) for match in self._BACKTICK_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._TITLE_PHRASE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._TOOL_MODE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._COMMAND_PHRASE_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._FORMAT_MARKER_RE.finditer(text))
+        terms.extend(match.group(0) for match in self._CJK_RE.finditer(text))
+        for raw_term in terms:
+            term = self._clean_title(raw_term)
+            reason = self._skip_reason(term)
+            if not reason:
+                continue
+            normalized_key = self._normalize_key(term)
+            if not normalized_key:
+                continue
+            entry = skipped.setdefault(
+                normalized_key,
+                {"title": term, "normalized_key": normalized_key, "reason": reason, "occurrences": 0},
+            )
+            entry["occurrences"] += 1
 
     def _add(
         self,
@@ -209,14 +327,22 @@ class ConceptCandidateDiscovery:
             key=lambda item: (item["object_type"], item["object_id"]),
         )[:5]
         support_count = len(bucket["evidence_refs"]) + len(bucket["object_refs"])
-        score = min(1.0, 0.35 + 0.08 * bucket["occurrences"] + 0.12 * support_count + 0.08 * source_count)
+        classification = self._classify_candidate(bucket)
+        ranking_signals = self._ranking_signals(bucket, classification)
+        raw_score = (
+            0.28
+            + min(0.24, 0.04 * bucket["occurrences"])
+            + min(0.24, 0.08 * support_count)
+            + min(0.12, 0.06 * source_count)
+        )
+        score = max(0.0, min(1.0, raw_score + ranking_signals["score_adjustment"]))
         confidence = min(0.85, 0.45 + 0.05 * bucket["occurrences"] + 0.08 * support_count)
         scope_refs = sorted(bucket["scope_refs"]) or [item["source_id"] for item in evidence_refs[:1]]
         suggested_input = {
-            "kind": "concept",
+            "kind": classification["suggested_kind"],
             "title": bucket["title"],
             "summary": (
-                f"Candidate concept '{bucket['title']}'. Review the cited evidence and replace this summary with "
+                f"Candidate {classification['candidate_type']} '{bucket['title']}'. Review the cited evidence and replace this summary with "
                 "a bounded durable definition before writing."
             ),
             "reason": f"Agent reviewed candidate concept '{bucket['title']}' from repeated source evidence and judged it durable.",
@@ -237,6 +363,7 @@ class ConceptCandidateDiscovery:
         }
         return {
             "kind": "concept_candidate",
+            "candidate_type": classification["candidate_type"],
             "title": bucket["title"],
             "normalized_key": bucket["normalized_key"],
             "score": round(score, 3),
@@ -246,9 +373,10 @@ class ConceptCandidateDiscovery:
             "evidence_refs": evidence_refs,
             "object_refs": object_refs,
             "reasons": sorted(bucket["reasons"]),
+            "ranking_signals": ranking_signals,
             "suggested_memory": {
                 "mode": "knowledge",
-                "kind": "concept",
+                "kind": classification["suggested_kind"],
                 "title": bucket["title"],
                 "status": "candidate",
                 "confidence": round(confidence, 3),
@@ -263,6 +391,47 @@ class ConceptCandidateDiscovery:
                 "skip_if_project_specific_noise",
             ],
         }
+
+    def _classify_candidate(self, bucket: dict[str, Any]) -> dict[str, str]:
+        title = str(bucket["title"])
+        lower = title.lower()
+        if self._looks_like_memory_tool_mode(title) or self._looks_like_command_phrase(title) or self._looks_like_schema_fragment(title):
+            return {"candidate_type": "implementation_detail", "suggested_kind": "concept"}
+        if self._looks_like_tool_or_library(title):
+            return {"candidate_type": "tool_library", "suggested_kind": "concept"}
+        if any(marker in lower for marker in ("workflow", "process", "procedure", "protocol", "lifecycle", "pipeline")):
+            return {"candidate_type": "procedure", "suggested_kind": "procedure"}
+        if lower.startswith(("use ", "adopt ", "choose ", "select ", "prefer ")) or "decision" in lower:
+            return {"candidate_type": "decision", "suggested_kind": "decision"}
+        if any(marker in lower for marker in ("jsonl", "content-type", "file format", "config")):
+            return {"candidate_type": "implementation_detail", "suggested_kind": "concept"}
+        return {"candidate_type": "concept", "suggested_kind": "concept"}
+
+    def _ranking_signals(self, bucket: dict[str, Any], classification: dict[str, str]) -> dict[str, Any]:
+        bonuses: list[str] = []
+        penalties: list[str] = []
+        title = str(bucket["title"])
+        lower = title.lower()
+        adjustment = 0.0
+        if classification["candidate_type"] in {"concept", "procedure", "decision"}:
+            bonuses.append("durable_memory_candidate")
+            adjustment += 0.08
+        if classification["candidate_type"] == "procedure":
+            bonuses.append("workflow_or_process")
+            adjustment += 0.04
+        if any(marker in lower for marker in ("principle", "design", "architecture", "memory", "wiki")):
+            bonuses.append("core_abstraction_term")
+            adjustment += 0.06
+        if classification["candidate_type"] == "tool_library":
+            penalties.append("tool_or_library_name")
+            adjustment -= 0.22
+        if classification["candidate_type"] == "implementation_detail":
+            penalties.append("implementation_detail")
+            adjustment -= 0.2
+        if any(character.isdigit() for character in title) or "/" in title:
+            penalties.append("version_or_package_marker")
+            adjustment -= 0.04
+        return {"bonuses": bonuses, "penalties": penalties, "score_adjustment": round(adjustment, 3)}
 
     def _knowledge_refs_sources(self, item: dict[str, Any], source_ids: set[str]) -> bool:
         for evidence_ref in item.get("evidence_refs", []) or []:
@@ -367,21 +536,7 @@ class ConceptCandidateDiscovery:
         return " ".join(words)
 
     def _is_valid_term(self, term: str) -> bool:
-        if not term:
-            return False
-        lowered = term.lower()
-        if lowered in self._STOP_TERMS:
-            return False
-        if self._normalize_key(term) in self._STOP_KEYS:
-            return False
-        if self._looks_like_document_artifact_title(term):
-            return False
-        if len(term) > 80:
-            return False
-        if any(character.isalpha() for character in term):
-            alpha_words = [word for word in re.split(r"[\s/-]+", term) if any(char.isalpha() for char in word)]
-            return len(alpha_words) >= 2 or bool(re.search(r"[\u4e00-\u9fff]", term))
-        return False
+        return self._skip_reason(term) is None
 
     def _normalize_key(self, term: str) -> str:
         cleaned = self._clean_title(term).lower()
@@ -390,3 +545,77 @@ class ConceptCandidateDiscovery:
     def _looks_like_document_artifact_title(self, term: str) -> bool:
         words = [word.lower() for word in re.split(r"[\s/-]+", term) if word]
         return len(words) >= 2 and words[-1] in self._DOC_ARTIFACT_SUFFIXES
+
+    def _looks_like_tool_or_library(self, term: str) -> bool:
+        lower = term.lower()
+        return (
+            "/" in term
+            or lower.endswith(("-mcp", " mcp"))
+            or lower.startswith(("claude code", "lm studio", "openai", "neo4j", "kuzu", "lancedb", "bge"))
+            or any(marker in lower for marker in ("embedding model", "jsonl", "sdk", "api"))
+        )
+
+    def _looks_like_memory_tool_mode(self, term: str) -> bool:
+        return bool(re.search(r"\bmemory_[a-z_]+(?:\s+[a-z_]+)?\b", term))
+
+    def _looks_like_command_phrase(self, term: str) -> bool:
+        words = [word for word in re.split(r"[\s]+", term.strip()) if word]
+        if len(words) < 2 or len(words) > 5:
+            return False
+        if words[0].lower() in self._COMMAND_PREFIXES:
+            command_like = re.fullmatch(r"[a-z][a-z0-9_-]*", words[1]) and all(
+                re.fullmatch(r"(?:[a-z][a-z0-9_-]*|--?[a-z][a-z0-9_-]*(?:=[^\s`]+)?)", word)
+                for word in words[2:]
+            )
+            return bool(command_like)
+        command_like = words[0].islower() and all(re.fullmatch(r"[a-z][a-z0-9_-]*", word) for word in words)
+        return bool(command_like)
+
+    def _looks_like_schema_fragment(self, term: str) -> bool:
+        lower = term.lower()
+        return any(marker in lower for marker in (" not null", " primary key", " foreign key", " varchar", " integer"))
+
+    def _looks_like_action_phrase(self, term: str) -> bool:
+        words = [word.lower() for word in re.split(r"[\s/-]+", term.strip()) if word]
+        return len(words) >= 2 and words[0] in self._ACTION_PHRASE_VERBS
+
+    def _looks_like_shortcut_marker(self, term: str) -> bool:
+        words = {word.lower() for word in re.split(r"[\s/+:-]+", term.strip()) if word}
+        return bool(words & self._SHORTCUT_MARKERS)
+
+    def _skip_reason(self, term: str) -> str | None:
+        if not term:
+            return "empty"
+        lowered = term.lower()
+        if lowered in self._STOP_TERMS:
+            return "generic_term"
+        if self._normalize_key(term) in self._STOP_KEYS:
+            return "document_artifact"
+        if self._looks_like_document_artifact_title(term):
+            return "document_artifact"
+        if self._looks_like_format_marker(term):
+            return "format_marker"
+        if self._looks_like_action_phrase(term):
+            return "action_phrase"
+        if self._looks_like_shortcut_marker(term):
+            return "shortcut_marker"
+        if len(term) > 80:
+            return "too_long"
+        if any(character.isalpha() for character in term):
+            alpha_words = [word for word in re.split(r"[\s/-]+", term) if any(char.isalpha() for char in word)]
+            if len(alpha_words) >= 2 or bool(re.search(r"[\u4e00-\u9fff]", term)):
+                return None
+        return "weak_term"
+
+    def _candidate_diagnostics(self, skipped: dict[str, dict[str, Any]]) -> dict[str, Any]:
+        entries = sorted(skipped.values(), key=lambda item: (-item["occurrences"], item["title"]))[:20]
+        return {
+            "skipped": entries,
+            "counts": {
+                "skipped": len(skipped),
+                "returned": 0,
+            },
+        }
+
+    def _looks_like_format_marker(self, term: str) -> bool:
+        return bool(re.fullmatch(r"[a-z]{2}-[a-z]{2}", term.lower()))

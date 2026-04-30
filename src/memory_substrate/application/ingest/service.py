@@ -280,15 +280,17 @@ class IngestService:
         ]
 
     def _memory_suggestions(self, source_id: str, limit: int = 5) -> dict:
-        concept_candidates = self.concept_candidates.discover(
+        analysis = self.concept_candidates.analyze(
             sources=self.object_repository.list("source"),
             knowledge_items=self.object_repository.list("knowledge"),
             nodes=self.object_repository.list("node"),
             source_ids={source_id},
             limit=limit,
         )
+        concept_candidates = analysis["candidates"]
         return {
             "concept_candidates": concept_candidates,
+            "candidate_diagnostics": analysis["candidate_diagnostics"],
             "counts": {"concept_candidates": len(concept_candidates)},
             "next_actions": [
                 "review_concept_candidates",

@@ -729,6 +729,36 @@ class MaintenanceLifecycleTest(unittest.TestCase):
                             "hash": "seg-todo",
                         },
                         {
+                            "segment_id": "seg-format",
+                            "locator": {"kind": "source", "line_start": 18, "heading_path": ["MANDATORY OUTPUT LANGUAGE"]},
+                            "excerpt": "MANDATORY OUTPUT LANGUAGE, Written BEFORE, and YYYY-MM-DD are prompt or format instructions.",
+                            "hash": "seg-format",
+                        },
+                        {
+                            "segment_id": "seg-before",
+                            "locator": {"kind": "source", "line_start": 18, "heading_path": ["Written BEFORE"]},
+                            "excerpt": "Written BEFORE is a prompt instruction marker.",
+                            "hash": "seg-before",
+                        },
+                        {
+                            "segment_id": "seg-features",
+                            "locator": {"kind": "source", "line_start": 19, "heading_path": ["New Features"]},
+                            "excerpt": "New Features is a changelog heading and pt-br is a locale marker.",
+                            "hash": "seg-features",
+                        },
+                        {
+                            "segment_id": "seg-action",
+                            "locator": {"kind": "source", "line_start": 19, "heading_path": ["Evaluates MemPal"]},
+                            "excerpt": "Evaluates MemPal is a feature-style action phrase, not a durable concept.",
+                            "hash": "seg-action",
+                        },
+                        {
+                            "segment_id": "seg-shortcut",
+                            "locator": {"kind": "source", "line_start": 19, "heading_path": ["Graceful Ctrl"]},
+                            "excerpt": "Graceful Ctrl+C handling is terminal behavior, not a durable concept.",
+                            "hash": "seg-shortcut",
+                        },
+                        {
                             "segment_id": "seg-concept",
                             "locator": {"kind": "source", "line_start": 20, "heading_path": ["Memory Substrate"]},
                             "excerpt": "Memory Substrate captures source evidence before durable memory.",
@@ -757,6 +787,179 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertNotIn("Content-Type", titles)
             self.assertNotIn("END FILE", titles)
             self.assertNotIn("Current Todo", titles)
+            self.assertNotIn("MANDATORY OUTPUT LANGUAGE", titles)
+            self.assertNotIn("Written BEFORE", titles)
+            self.assertNotIn("YYYY-MM-DD", titles)
+            self.assertNotIn("New Features", titles)
+            self.assertNotIn("Evaluates MemPal", titles)
+            self.assertNotIn("Graceful Ctrl", titles)
+            self.assertNotIn("pt-br", titles)
+            skipped = report["data"]["candidate_diagnostics"]["skipped"]
+            skipped_by_title = {item["title"]: item["reason"] for item in skipped}
+            self.assertEqual(skipped_by_title["Bug Fixes"], "document_artifact")
+            self.assertEqual(skipped_by_title["Current Todo"], "document_artifact")
+            self.assertEqual(skipped_by_title["YYYY-MM-DD"], "document_artifact")
+            self.assertEqual(skipped_by_title["Evaluates MemPal"], "action_phrase")
+            self.assertEqual(skipped_by_title["Graceful Ctrl"], "shortcut_marker")
+            self.assertEqual(skipped_by_title["pt-br"], "format_marker")
+
+    def test_report_classifies_and_ranks_core_candidates_before_tool_details(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repository = FsObjectRepository(root)
+            repository.save(
+                "source",
+                {
+                    "id": "src:ranking",
+                    "kind": "markdown",
+                    "origin": {"path": "/tmp/ranking.md"},
+                    "title": "Ranking Notes",
+                    "identity_key": "source|test|ranking",
+                    "fingerprint": "ranking",
+                    "content_type": "markdown",
+                    "payload": {"title": "Ranking Notes"},
+                    "segments": [
+                        {
+                            "segment_id": "seg-design",
+                            "locator": {"kind": "source", "line_start": 2, "heading_path": ["Design Principles"]},
+                            "excerpt": "Design Principles guide future memory architecture choices.",
+                            "hash": "seg-design",
+                        },
+                        {
+                            "segment_id": "seg-design-2",
+                            "locator": {"kind": "source", "line_start": 5},
+                            "excerpt": "Design Principles should rank ahead of tool-specific implementation details.",
+                            "hash": "seg-design-2",
+                        },
+                        {
+                            "segment_id": "seg-tool",
+                            "locator": {"kind": "source", "line_start": 10, "heading_path": ["BAAI/bge-m3"]},
+                            "excerpt": "`BAAI/bge-m3` is an embedding model used by semantic retrieval.",
+                            "hash": "seg-tool",
+                        },
+                        {
+                            "segment_id": "seg-tool-2",
+                            "locator": {"kind": "source", "line_start": 14},
+                            "excerpt": "The `BAAI/bge-m3` model is a replaceable implementation dependency.",
+                            "hash": "seg-tool-2",
+                        },
+                        {
+                            "segment_id": "seg-procedure",
+                            "locator": {"kind": "source", "line_start": 20, "heading_path": ["Candidate Review Workflow"]},
+                            "excerpt": "Candidate Review Workflow requires evidence reading, query checks, then memory_remember.",
+                            "hash": "seg-procedure",
+                        },
+                        {
+                            "segment_id": "seg-procedure-2",
+                            "locator": {"kind": "source", "line_start": 24},
+                            "excerpt": "Candidate Review Workflow prevents automatic writes from advisory suggestions.",
+                            "hash": "seg-procedure-2",
+                        },
+                        {
+                            "segment_id": "seg-tool-mode",
+                            "locator": {"kind": "source", "line_start": 28, "heading_path": ["memory_query search"]},
+                            "excerpt": "memory_query search is an MCP operation mode rather than a durable concept.",
+                            "hash": "seg-tool-mode",
+                        },
+                        {
+                            "segment_id": "seg-tool-mode-2",
+                            "locator": {"kind": "source", "line_start": 32},
+                            "excerpt": "memory_query search should rank below Design Principles.",
+                            "hash": "seg-tool-mode-2",
+                        },
+                        {
+                            "segment_id": "seg-command",
+                            "locator": {"kind": "source", "line_start": 36, "heading_path": ["mempalace init"]},
+                            "excerpt": "mempalace init is a command phrase and should not outrank Design Principles.",
+                            "hash": "seg-command",
+                        },
+                        {
+                            "segment_id": "seg-command-2",
+                            "locator": {"kind": "source", "line_start": 40},
+                            "excerpt": "mempalace init configures local command state.",
+                            "hash": "seg-command-2",
+                        },
+                        {
+                            "segment_id": "seg-command-option",
+                            "locator": {"kind": "source", "line_start": 42, "heading_path": ["mempalace init --llm"]},
+                            "excerpt": "`mempalace init --llm` is a command invocation with a local model flag.",
+                            "hash": "seg-command-option",
+                        },
+                        {
+                            "segment_id": "seg-command-option-2",
+                            "locator": {"kind": "source", "line_start": 43},
+                            "excerpt": "mempalace init --llm should rank below durable memory concepts.",
+                            "hash": "seg-command-option-2",
+                        },
+                        {
+                            "segment_id": "seg-lm-studio",
+                            "locator": {"kind": "source", "line_start": 44, "heading_path": ["LM Studio"]},
+                            "excerpt": "LM Studio is a local model tool used in experiments.",
+                            "hash": "seg-lm-studio",
+                        },
+                        {
+                            "segment_id": "seg-lm-studio-2",
+                            "locator": {"kind": "source", "line_start": 48},
+                            "excerpt": "LM Studio remains a replaceable tool dependency.",
+                            "hash": "seg-lm-studio-2",
+                        },
+                        {
+                            "segment_id": "seg-mcp-package",
+                            "locator": {"kind": "source", "line_start": 50, "heading_path": ["mempalace-mcp"]},
+                            "excerpt": "`mempalace-mcp` is a tool package name rather than a reusable memory concept.",
+                            "hash": "seg-mcp-package",
+                        },
+                        {
+                            "segment_id": "seg-mcp-package-2",
+                            "locator": {"kind": "source", "line_start": 51},
+                            "excerpt": "mempalace-mcp should rank below durable memory concepts.",
+                            "hash": "seg-mcp-package-2",
+                        },
+                        {
+                            "segment_id": "seg-sql",
+                            "locator": {"kind": "source", "line_start": 52, "heading_path": ["TEXT NOT NULL"]},
+                            "excerpt": "TEXT NOT NULL is a schema fragment and implementation detail.",
+                            "hash": "seg-sql",
+                        },
+                        {
+                            "segment_id": "seg-sql-2",
+                            "locator": {"kind": "source", "line_start": 56},
+                            "excerpt": "TEXT NOT NULL should rank below Design Principles.",
+                            "hash": "seg-sql-2",
+                        },
+                    ],
+                    "metadata": {},
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+
+            report = MaintenanceLifecycle(root).report()
+
+            candidates = report["data"]["concept_candidates"]
+            by_title = {candidate["title"]: candidate for candidate in candidates}
+            titles = [candidate["title"] for candidate in candidates]
+
+            self.assertLess(titles.index("Design Principles"), titles.index("BAAI/bge-m3"))
+            self.assertEqual(by_title["Design Principles"]["candidate_type"], "concept")
+            self.assertEqual(by_title["BAAI/bge-m3"]["candidate_type"], "tool_library")
+            self.assertEqual(by_title["BAAI/bge-m3"]["suggested_memory"]["kind"], "concept")
+            self.assertIn("tool_or_library_name", by_title["BAAI/bge-m3"]["ranking_signals"]["penalties"])
+            self.assertEqual(by_title["Candidate Review Workflow"]["candidate_type"], "procedure")
+            self.assertEqual(by_title["Candidate Review Workflow"]["suggested_memory"]["kind"], "procedure")
+            self.assertEqual(by_title["memory_query search"]["candidate_type"], "implementation_detail")
+            self.assertLess(titles.index("Design Principles"), titles.index("memory_query search"))
+            self.assertEqual(by_title["mempalace init"]["candidate_type"], "implementation_detail")
+            self.assertLess(titles.index("Design Principles"), titles.index("mempalace init"))
+            self.assertEqual(by_title["mempalace init --llm"]["candidate_type"], "implementation_detail")
+            self.assertLess(titles.index("Design Principles"), titles.index("mempalace init --llm"))
+            self.assertEqual(by_title["LM Studio"]["candidate_type"], "tool_library")
+            self.assertLess(titles.index("Design Principles"), titles.index("LM Studio"))
+            self.assertEqual(by_title["mempalace-mcp"]["candidate_type"], "tool_library")
+            self.assertLess(titles.index("Design Principles"), titles.index("mempalace-mcp"))
+            self.assertEqual(by_title["TEXT NOT NULL"]["candidate_type"], "implementation_detail")
+            self.assertLess(titles.index("Design Principles"), titles.index("TEXT NOT NULL"))
 
     def test_merge_duplicates_does_not_merge_unstructured_soft_duplicates(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

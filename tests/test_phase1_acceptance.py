@@ -127,9 +127,12 @@ class Phase1AcceptanceTest(unittest.TestCase):
             suggestions = result["memory_suggestions"]
             candidates = suggestions["concept_candidates"]
             self.assertIn("run_memory_maintain_report_for_cross_source_candidates", suggestions["next_actions"])
+            self.assertIn("candidate_diagnostics", suggestions)
             self.assertIn("Context Pack", {candidate["title"] for candidate in candidates})
             self.assertNotIn("Concept Repo", {candidate["title"] for candidate in candidates})
             candidate = next(item for item in candidates if item["title"] == "Context Pack")
+            self.assertEqual(candidate["candidate_type"], "concept")
+            self.assertIn("ranking_signals", candidate)
             self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
             self.assertIn("review_guidance", candidate)
             self.assertIn("remember_as_concept", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})

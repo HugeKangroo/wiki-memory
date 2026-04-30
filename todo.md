@@ -297,3 +297,22 @@ Deliverables:
 Verification:
 - [x] Add regression coverage for executable candidate review payloads.
 - [x] Run focused red-green tests for candidate review payloads.
+
+### MS-13: Candidate Quality And Ranking
+
+Status: `completed`
+
+Goal: make candidate discovery more stable and useful by classifying, ranking, and diagnosing candidate quality.
+
+Boundary: deterministic candidate quality only. Do not add a required LLM classifier or automatic durable writes.
+
+Deliverables:
+- [x] Add `candidate_type` hints for concept, procedure, decision, tool/library, and implementation detail candidates.
+- [x] Add `ranking_signals` with score bonuses and penalties.
+- [x] Rank stable concepts/procedures/decisions ahead of tool/library and version/package details.
+- [x] Add `candidate_diagnostics.skipped` so filtered phrases are explainable.
+- [x] Update MCP docs and agent resources.
+
+Verification:
+- [x] Add tests for classification, ranking, diagnostics, and ingest response shape.
+- [x] Dogfood against `wiki-memory`, `llm_wiki`, and `mempalace`.
