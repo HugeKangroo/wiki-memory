@@ -13,6 +13,7 @@ if str(SRC_ROOT) not in sys.path:
 
 from memory_substrate.experiments.retrieval_benchmark import run_planted_needle_benchmark
 from memory_substrate.experiments.maintenance_benchmark import run_maintenance_dogfood_benchmark
+from memory_substrate.experiments.end_to_end_dogfood import run_end_to_end_dogfood_acceptance
 
 
 class RetrievalBenchmarkTest(unittest.TestCase):
@@ -45,6 +46,31 @@ class RetrievalBenchmarkTest(unittest.TestCase):
                     "soft_duplicate_candidate",
                 },
             )
+
+    def test_end_to_end_dogfood_acceptance_exercises_mcp_memory_loop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            result = run_end_to_end_dogfood_acceptance(tmp)
+
+            self.assertEqual(result["status"], "completed")
+            self.assertTrue(result["mutated"])
+            self.assertEqual(result["case_count"], 8)
+            self.assertTrue(all(check["passed"] for check in result["checks"]))
+            self.assertEqual(
+                {check["name"] for check in result["checks"]},
+                {
+                    "repo_ingest_completed",
+                    "ingest_candidate_is_compact",
+                    "search_finds_ingested_repo",
+                    "repo_full_page_is_unsupported",
+                    "remember_candidate_created",
+                    "maintain_report_sees_promotable_memory",
+                    "reindex_completed",
+                    "context_returns_remembered_memory",
+                },
+            )
+            self.assertEqual(result["object_ids"]["candidate_title"], "Context Pack")
+            self.assertIn(result["object_ids"]["knowledge_id"], result["observed"]["context_item_ids"])
+            self.assertLess(result["payload_sizes"]["compact_candidate_chars"], 2200)
 
 
 if __name__ == "__main__":

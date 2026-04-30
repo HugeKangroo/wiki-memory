@@ -83,3 +83,15 @@ result = run_maintenance_dogfood_benchmark("/tmp/memory-maintenance-benchmark")
 ```
 
 The helper does not mutate maintenance state beyond seeding the benchmark root. Use it as a local regression signal when changing lifecycle, duplicate, or report logic.
+
+## End-To-End Dogfood Acceptance
+
+The end-to-end dogfood helper seeds a small repo and exercises the MCP dispatch loop: `memory_ingest`, `memory_query`, `memory_remember`, `memory_maintain report`, `memory_maintain reindex`, then `memory_query context`.
+
+```python
+from memory_substrate.experiments.end_to_end_dogfood import run_end_to_end_dogfood_acceptance
+
+result = run_end_to_end_dogfood_acceptance("/tmp/memory-e2e-dogfood")
+```
+
+Use it as a deterministic local acceptance signal when changing MCP schemas, compact response policies, ingest suggestions, durable write governance, maintenance reports, or context assembly. The helper mutates only the supplied temporary/local root and does not require network access or optional semantic models.

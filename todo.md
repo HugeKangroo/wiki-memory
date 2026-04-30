@@ -449,3 +449,22 @@ Verification:
 - [x] Add regression coverage for compact ingest concept candidates.
 - [x] Add regression coverage for compact extraction protocol.
 - [x] Add MCP dispatch coverage for compact defaults and explicit `max_items`.
+
+### MS-21: End-To-End Dogfood Acceptance
+
+Status: `completed`
+
+Goal: provide a deterministic local acceptance signal for the core memory loop across ingest, query, remember, maintain, reindex, and context retrieval.
+
+Boundary: MCP dispatch workflow only. Do not require network access, optional embedding models, hosted services, or a real user memory root.
+
+Deliverables:
+- [x] Add `run_end_to_end_dogfood_acceptance` under packaged experiment helpers.
+- [x] Seed a small repo that produces a compact concept candidate.
+- [x] Exercise `memory_ingest`, `memory_query search`, `memory_query page`, `memory_remember knowledge`, `memory_maintain report`, `memory_maintain reindex`, and `memory_query context`.
+- [x] Return per-step checks, object ids, observed ids, and compact payload sizes.
+- [x] Document the benchmark entrypoint in `experiments/README.md`.
+
+Verification:
+- [x] Add benchmark coverage for the end-to-end MCP memory loop.
+- [x] Run retrieval benchmark tests and full test suite.
