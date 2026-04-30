@@ -230,6 +230,26 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
         "next_actions": ["review_and_remember", "attach_evidence_refs", "skip_if_project_specific_noise"]
       }
     ],
+    "agent_extraction": {
+      "protocol": "agent_extraction.v1",
+      "source_id": "src:...",
+      "boundary": {
+        "ingest": "capture_citable_evidence",
+        "agent": "analyze_evidence_and_prepare_durable_candidates",
+        "remember": "commit_governed_memory_after_review"
+      },
+      "required_steps": [
+        {"action": "inspect_source", "tool": "memory_query", "mode": "page"},
+        {"action": "query_existing_memory", "tool": "memory_query", "mode": "search"},
+        {"action": "prepare_durable_candidates", "owner": "agent_or_human"},
+        {"action": "commit_reviewed_memory", "tool": "memory_remember"}
+      ],
+      "remember_write_contract": {
+        "tool": "memory_remember",
+        "required_fields": ["kind", "title", "summary", "reason", "memory_source", "scope_refs"],
+        "recommended_fields": ["subject_refs", "evidence_refs", "payload", "confidence", "status"]
+      }
+    },
     "candidate_diagnostics": {
       "skipped": [
         {"title": "Current Todo", "reason": "document_artifact", "occurrences": 1}
@@ -244,6 +264,8 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
   }
 }
 ```
+
+`agent_extraction` is the machine-readable handoff from ingest to the caller. It is not a second extraction engine. It tells the agent to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and use `memory_remember` only after review.
 
 ## `memory_query`
 

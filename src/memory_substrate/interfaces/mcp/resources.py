@@ -55,9 +55,10 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
-6. Inspect `memory_suggestions.concept_candidates`; prefer high-ranking concept/procedure/decision candidates, follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip.
-7. Analyze outside ingest.
-8. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
+6. Follow `memory_suggestions.agent_extraction` to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
+7. Inspect `memory_suggestions.concept_candidates`; prefer high-ranking concept/procedure/decision candidates, follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip.
+8. Analyze outside ingest.
+9. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
 ## Durable Writes
 

@@ -390,3 +390,22 @@ Deliverables:
 Verification:
 - [x] Add graph sync coverage for relation provenance schema.
 - [x] Run graph sync regression tests.
+
+### MS-18: Agent-Assisted Extraction Protocol
+
+Status: `completed`
+
+Goal: make ingest return an explicit handoff from captured evidence to agent-reviewed durable memory writes.
+
+Boundary: protocol metadata only. Do not add a mandatory LLM dependency or let ingest decide what should be remembered.
+
+Deliverables:
+- [x] Add `memory_suggestions.agent_extraction` with protocol version and source id.
+- [x] Document the boundary between ingest, agent analysis, and governed remember writes.
+- [x] Include required steps for source inspection, existing-memory query, candidate preparation, and reviewed remember.
+- [x] Include a `remember_write_contract` with required and recommended fields.
+- [x] Update API docs, agent usage docs, policy, and MCP resources.
+
+Verification:
+- [x] Add acceptance coverage for the extraction protocol shape.
+- [x] Run candidate suggestion regression coverage.

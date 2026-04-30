@@ -92,12 +92,13 @@ When new material appears:
 1. Call `memory_ingest` to capture the material as evidence.
 2. Inspect returned `status`, `warnings`, and `pending_decisions`. If `status` is `completed_with_pending_decisions`, use the clean ingested source normally and decide separately whether any pending entry deserves a later explicit `options.force: true` ingest.
 3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
-4. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve durable memory after review. Use each candidate's `review_guidance` and `suggested_memory.input_data` as a starting point, not as an automatic write.
-5. Analyze the ingested evidence outside ingest.
-6. Decide whether anything should become durable memory.
-7. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
-8. Call `memory_remember` only for information that should survive future sessions.
-9. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
+4. Inspect `memory_suggestions.agent_extraction`. Follow its required steps: inspect the source, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
+5. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve durable memory after review. Use each candidate's `review_guidance` and `suggested_memory.input_data` as a starting point, not as an automatic write.
+6. Analyze the ingested evidence outside ingest.
+7. Decide whether anything should become durable memory.
+8. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
+9. Call `memory_remember` only for information that should survive future sessions.
+10. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
 Before ending substantial work:
 

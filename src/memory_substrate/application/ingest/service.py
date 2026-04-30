@@ -291,10 +291,62 @@ class IngestService:
         return {
             "concept_candidates": concept_candidates,
             "candidate_diagnostics": analysis["candidate_diagnostics"],
+            "agent_extraction": self._agent_extraction_protocol(source_id),
             "counts": {"concept_candidates": len(concept_candidates)},
             "next_actions": [
+                "follow_agent_extraction_protocol",
                 "review_concept_candidates",
                 "run_memory_maintain_report_for_cross_source_candidates",
+                "call_memory_remember_if_durable",
+            ],
+        }
+
+    def _agent_extraction_protocol(self, source_id: str) -> dict:
+        return {
+            "protocol": "agent_extraction.v1",
+            "source_id": source_id,
+            "boundary": {
+                "ingest": "capture_citable_evidence",
+                "agent": "analyze_evidence_and_prepare_durable_candidates",
+                "remember": "commit_governed_memory_after_review",
+            },
+            "required_steps": [
+                {
+                    "action": "inspect_source",
+                    "tool": "memory_query",
+                    "mode": "page",
+                    "input_data": {"id": source_id},
+                    "options": {"detail": "compact", "include_segments": True},
+                },
+                {
+                    "action": "query_existing_memory",
+                    "tool": "memory_query",
+                    "mode": "search",
+                    "input_data": {"query": "<candidate title, synonym, or claim>"},
+                    "options": {"max_items": 10},
+                },
+                {
+                    "action": "prepare_durable_candidates",
+                    "owner": "agent_or_human",
+                    "candidate_kinds": ["fact", "decision", "procedure", "concept", "preference", "work_item"],
+                },
+                {
+                    "action": "commit_reviewed_memory",
+                    "tool": "memory_remember",
+                    "modes": ["knowledge", "work_item", "activity"],
+                },
+            ],
+            "remember_write_contract": {
+                "tool": "memory_remember",
+                "required_fields": ["kind", "title", "summary", "reason", "memory_source", "scope_refs"],
+                "recommended_fields": ["subject_refs", "evidence_refs", "payload", "confidence", "status"],
+                "evidence_rule": "Use evidence_refs from the ingested source when the durable memory is inferred from source content.",
+                "dedupe_rule": "Run memory_query before writing and inspect possible_duplicates after writing.",
+            },
+            "next_actions": [
+                "inspect_source",
+                "query_existing_memory",
+                "prepare_durable_candidates",
                 "call_memory_remember_if_durable",
             ],
         }
