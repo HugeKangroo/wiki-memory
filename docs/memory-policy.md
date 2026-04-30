@@ -117,6 +117,8 @@ Near-term deterministic query behavior should include:
 - graph expansion when configured
 - clear no-match diagnostics and retry hints
 
+Graph relations are derived index records unless they are backed by a canonical `relation` object. Every derived relation should carry `payload.relation_schema` so callers can trace the origin object, origin field, derivation kind, and endpoint canonical types before trusting the edge.
+
 Required domain mappings include:
 
 - `待办`, `待办项`, `todo`, `task`, `任务` -> `work_item`

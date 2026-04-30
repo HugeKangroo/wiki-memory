@@ -11,6 +11,8 @@ Memory Substrate owns canonical objects, evidence, scopes, governed writes, life
 
 The memory core must not require a second LLM API key. Hosted LLMs, local LLMs, Graphiti, Cognee, LlamaIndex, vector indexes, and reasoner adapters are optional adapters behind project-owned contracts.
 
+Graph relations are derived index records unless backed by a canonical relation object. Inspect `payload.relation_schema` for version, derivation, origin object, origin field, and endpoint canonical types before treating a relation as reusable knowledge.
+
 ## Structured Hard Governance
 
 Structured knowledge may be governed strictly. Exact duplicate structured claims can be rejected, same-scope subject/predicate conflicts can be marked contested, and supersession must preserve audit history.
@@ -72,6 +74,8 @@ Use `memory_maintain report` for read-only review. Mutating maintenance requires
 Treat graph health, derived index diagnostics, soft duplicate candidates, `concept_candidates`, and `fact_check_issues` as review signals. They should guide explicit remember/maintain actions, not automatic mutation.
 
 Use `memory_maintain archive_source` only for bad imports or untrusted evidence sources. Review `partially_affected_knowledge_ids` before changing mixed-evidence memories.
+
+When reading graph neighborhoods, check each relation's `payload.relation_schema` and then inspect the origin object when exact provenance matters.
 """
 
 

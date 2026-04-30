@@ -371,3 +371,22 @@ Deliverables:
 Verification:
 - [x] Add lifecycle coverage for archive and cascade behavior.
 - [x] Add MCP dispatch/schema/apply guard coverage.
+
+### MS-17: Relation Graph Schema Hardening
+
+Status: `completed`
+
+Goal: make graph relation edges explainable and backend-independent without promoting derived graph data to canonical storage.
+
+Boundary: relation provenance contract only. Do not add graph-table migration complexity or make Kuzu the canonical store.
+
+Deliverables:
+- [x] Add `payload.relation_schema.version` to synced graph relations.
+- [x] Record derivation kind: canonical relation, field reference, evidence ref, or structured payload.
+- [x] Record origin object type/id, origin field, and endpoint canonical object types.
+- [x] Preserve existing relation payload fields such as `knowledge_id`.
+- [x] Document relation provenance for agents and MCP callers.
+
+Verification:
+- [x] Add graph sync coverage for relation provenance schema.
+- [x] Run graph sync regression tests.

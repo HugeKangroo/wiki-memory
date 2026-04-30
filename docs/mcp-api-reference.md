@@ -833,6 +833,24 @@ Graph health includes backend/canonical count comparisons, missing backend count
 - `bridge_nodes`: high-leverage records whose removal disconnects an existing component.
 - `weakly_connected_scopes`: scopes with multiple records but too few internal relations.
 
+Synced graph relation payloads include a stable provenance schema:
+
+```json
+{
+  "relation_schema": {
+    "version": 1,
+    "derivation": "structured_payload",
+    "origin_object_type": "knowledge",
+    "origin_object_id": "know:uses-kuzu",
+    "origin_field": "payload.object",
+    "source_object_type": "node",
+    "target_object_type": "node"
+  }
+}
+```
+
+Supported `derivation` values are `canonical_relation`, `field_reference`, `evidence_ref`, and `structured_payload`. This data is stored in the relation payload so file-backed and Kuzu-backed graphs expose the same logical contract without making derived graph records canonical storage.
+
 Soft duplicate report entries use this shape:
 
 ```json

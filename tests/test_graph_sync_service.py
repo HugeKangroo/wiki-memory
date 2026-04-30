@@ -131,6 +131,78 @@ class GraphSyncServiceTest(unittest.TestCase):
             self.assertEqual(len(predicate_edges), 1)
             self.assertEqual(predicate_edges[0]["payload"]["knowledge_id"], "know:uses-kuzu")
 
+    def test_synced_relations_include_provenance_schema_metadata(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            objects = FsObjectRepository(root)
+            backend = FileGraphBackend(root)
+            for node_id, name in (("node:memory", "memory-substrate"), ("node:kuzu", "Kuzu")):
+                objects.save(
+                    "node",
+                    {
+                        "id": node_id,
+                        "kind": "concept",
+                        "name": name,
+                        "summary": name,
+                        "created_at": "2026-04-28T00:00:00+00:00",
+                        "updated_at": "2026-04-28T00:00:00+00:00",
+                    },
+                )
+            objects.save(
+                "source",
+                {
+                    "id": "src:design",
+                    "kind": "conversation",
+                    "title": "Design discussion",
+                    "summary": "Backend design evidence.",
+                    "payload": {"text": "Kuzu runs locally."},
+                    "segments": [{"segment_id": "seg:1", "excerpt": "Kuzu runs locally."}],
+                    "created_at": "2026-04-28T00:00:00+00:00",
+                    "updated_at": "2026-04-28T00:00:00+00:00",
+                },
+            )
+            objects.save(
+                "knowledge",
+                {
+                    "id": "know:uses-kuzu",
+                    "kind": "fact",
+                    "title": "Memory substrate uses Kuzu",
+                    "summary": "Kuzu is the optional local graph backend.",
+                    "subject_refs": ["node:memory"],
+                    "evidence_refs": [{"source_id": "src:design", "segment_id": "seg:1"}],
+                    "payload": {
+                        "subject": "node:memory",
+                        "predicate": "uses",
+                        "object": "node:kuzu",
+                        "value": None,
+                    },
+                    "status": "active",
+                    "confidence": 0.9,
+                    "created_at": "2026-04-28T00:00:00+00:00",
+                    "updated_at": "2026-04-28T00:00:00+00:00",
+                },
+            )
+
+            GraphSyncService(root, backend).sync_all()
+            neighborhood = backend.neighborhood("node:memory")
+            relations_by_type = {relation["relation_type"]: relation for relation in neighborhood["relations"]}
+
+            subject_schema = relations_by_type["subject"]["payload"]["relation_schema"]
+            self.assertEqual(subject_schema["version"], 1)
+            self.assertEqual(subject_schema["derivation"], "field_reference")
+            self.assertEqual(subject_schema["origin_object_type"], "knowledge")
+            self.assertEqual(subject_schema["origin_object_id"], "know:uses-kuzu")
+            self.assertEqual(subject_schema["origin_field"], "subject_refs")
+            self.assertEqual(subject_schema["source_object_type"], "knowledge")
+            self.assertEqual(subject_schema["target_object_type"], "node")
+
+            predicate_schema = relations_by_type["uses"]["payload"]["relation_schema"]
+            self.assertEqual(predicate_schema["derivation"], "structured_payload")
+            self.assertEqual(predicate_schema["origin_field"], "payload.object")
+            self.assertEqual(predicate_schema["origin_object_id"], "know:uses-kuzu")
+            self.assertEqual(predicate_schema["source_object_type"], "node")
+            self.assertEqual(predicate_schema["target_object_type"], "node")
+
 
 if __name__ == "__main__":
     unittest.main()

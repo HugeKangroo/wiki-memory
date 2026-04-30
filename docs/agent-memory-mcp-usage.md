@@ -44,6 +44,8 @@ Graph backend usage is explicit. Agents should omit `options.graph_backend` unle
 
 When remembering unstructured title/summary-only knowledge, omit `payload` or pass `{}`. When remembering structured knowledge, prefer stable object ids in `payload.subject` and `payload.object` when the claim is a relationship. For example, `{"subject": "node:memory", "predicate": "uses", "object": "node:kuzu"}` becomes a graph edge `node:memory -uses-> node:kuzu` while the knowledge object remains the provenance-bearing claim.
 
+Synced graph relations carry provenance in `payload.relation_schema`. Agents can use it to see whether a relation came from a canonical relation object, a reference field, an evidence ref, or a structured knowledge payload. The schema includes `version`, `derivation`, `origin_object_type`, `origin_object_id`, `origin_field`, `source_object_type`, and `target_object_type`. Treat the relation as an index entry; inspect the origin object or evidence before using it as an answer.
+
 Governed `memory_remember` create operations require:
 
 - `reason`: why the memory should survive future sessions.

@@ -19,6 +19,8 @@ GRAPH_OBJECT_TYPES = (
     "relation",
 )
 
+RELATION_SCHEMA_VERSION = 1
+
 REFERENCE_FIELDS = {
     "subject_refs": "subject",
     "related_node_refs": "related_node",
@@ -106,20 +108,39 @@ class GraphSyncService:
             if not isinstance(values, list):
                 continue
             for target_id in values:
-                synced += self._sync_reference_relation(obj, relation_type, str(target_id), [])
+                synced += self._sync_reference_relation(
+                    object_type,
+                    obj,
+                    relation_type,
+                    str(target_id),
+                    [],
+                    derivation="field_reference",
+                    origin_field=field,
+                )
 
         parent_ref = obj.get("parent_ref")
         if parent_ref:
-            synced += self._sync_reference_relation(obj, "parent", str(parent_ref), [])
+            synced += self._sync_reference_relation(
+                object_type,
+                obj,
+                "parent",
+                str(parent_ref),
+                [],
+                derivation="field_reference",
+                origin_field="parent_ref",
+            )
 
         for evidence in obj.get("evidence_refs", []):
             if not isinstance(evidence, dict) or not evidence.get("source_id"):
                 continue
             synced += self._sync_reference_relation(
+                object_type,
                 obj,
                 "evidence",
                 str(evidence["source_id"]),
                 [evidence],
+                derivation="evidence_ref",
+                origin_field="evidence_refs",
             )
         synced += self._sync_payload_relation(object_type, obj)
         return synced
@@ -150,10 +171,15 @@ class GraphSyncService:
                 "confidence": obj.get("confidence"),
                 "scope_refs": obj.get("scope_refs", []),
                 "evidence_refs": obj.get("evidence_refs", []),
-                "payload": {
-                    "knowledge_id": obj["id"],
-                    "value": payload.get("value"),
-                },
+                "payload": self._relation_payload(
+                    {"knowledge_id": obj["id"], "value": payload.get("value")},
+                    origin_object_type=object_type,
+                    origin_object_id=obj["id"],
+                    derivation="structured_payload",
+                    origin_field="payload.object",
+                    source_id=subject_id,
+                    target_id=target_id,
+                ),
                 "valid_from": obj.get("valid_from"),
                 "valid_until": obj.get("valid_until"),
                 "created_at": obj.get("created_at"),
@@ -164,10 +190,14 @@ class GraphSyncService:
 
     def _sync_reference_relation(
         self,
+        object_type: str,
         source: dict[str, Any],
         relation_type: str,
         target_id: str,
         evidence_refs: list[dict[str, Any]],
+        *,
+        derivation: str,
+        origin_field: str,
     ) -> int:
         if not target_id:
             return 0
@@ -183,7 +213,15 @@ class GraphSyncService:
                 "confidence": source.get("confidence"),
                 "scope_refs": source.get("scope_refs", []),
                 "evidence_refs": evidence_refs,
-                "payload": {"derived_from_field": relation_type},
+                "payload": self._relation_payload(
+                    {"derived_from_field": origin_field},
+                    origin_object_type=object_type,
+                    origin_object_id=source["id"],
+                    derivation=derivation,
+                    origin_field=origin_field,
+                    source_id=source["id"],
+                    target_id=target_id,
+                ),
                 "valid_from": source.get("valid_from"),
                 "valid_until": source.get("valid_until"),
                 "created_at": source.get("created_at"),
@@ -245,12 +283,52 @@ class GraphSyncService:
             "confidence": obj.get("confidence"),
             "scope_refs": obj.get("scope_refs", []),
             "evidence_refs": obj.get("evidence_refs", []),
-            "payload": obj.get("payload", {}),
+            "payload": self._relation_payload(
+                obj.get("payload", {}),
+                origin_object_type="relation",
+                origin_object_id=obj["id"],
+                derivation="canonical_relation",
+                origin_field="relation",
+                source_id=str(obj.get("source_id") or obj.get("source_ref") or ""),
+                target_id=str(obj.get("target_id") or obj.get("target_ref") or ""),
+            ),
             "valid_from": obj.get("valid_from"),
             "valid_until": obj.get("valid_until"),
             "created_at": obj.get("created_at"),
             "updated_at": obj.get("updated_at"),
         }
+
+    def _relation_payload(
+        self,
+        payload: Any,
+        *,
+        origin_object_type: str,
+        origin_object_id: str,
+        derivation: str,
+        origin_field: str,
+        source_id: str,
+        target_id: str,
+    ) -> dict[str, Any]:
+        result = dict(payload) if isinstance(payload, dict) else {"value": payload}
+        existing_schema = result.get("relation_schema", {})
+        schema = dict(existing_schema) if isinstance(existing_schema, dict) else {}
+        schema.update(
+            {
+                "version": RELATION_SCHEMA_VERSION,
+                "derivation": derivation,
+                "origin_object_type": origin_object_type,
+                "origin_object_id": origin_object_id,
+                "origin_field": origin_field,
+                "source_object_type": self._canonical_object_type(source_id),
+                "target_object_type": self._canonical_object_type(target_id),
+            }
+        )
+        result["relation_schema"] = schema
+        return result
+
+    def _canonical_object_type(self, object_id: str) -> str:
+        object_type, _ = self._find_object(object_id)
+        return object_type
 
     def _summary_from_payload(self, obj: dict[str, Any]) -> str:
         payload = obj.get("payload", "")
@@ -267,8 +345,16 @@ class GraphSyncService:
     def _infer_object_type(self, object_id: str) -> str:
         if object_id.startswith("src:"):
             return "source"
+        if object_id.startswith("node:"):
+            return "node"
         if object_id.startswith("know:"):
             return "knowledge"
+        if object_id.startswith("act:"):
+            return "activity"
+        if object_id.startswith("work:"):
+            return "work_item"
+        if object_id.startswith("scope:"):
+            return "memory_scope"
         if object_id.startswith("ep:"):
             return "episode"
         if object_id.startswith("rel:"):
