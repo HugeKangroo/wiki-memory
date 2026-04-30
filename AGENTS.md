@@ -19,10 +19,4 @@ Before changing this repository, read:
 
 ## Current Focus
 
-The near-term implementation sequence is:
-
-1. keep MCP responses compact by default with explicit expansion paths
-2. run end-to-end dogfood acceptance across ingest, query, remember, maintain, and re-query
-3. use dogfood findings to harden tool guidance, payload budgets, and error semantics
-
-Use `todo.md` as the source of truth for current status.
+There is no active open execution item. Use `todo.md` as the source of truth; start the next slice by adding a new MS item there before implementation.
