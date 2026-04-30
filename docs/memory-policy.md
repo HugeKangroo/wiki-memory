@@ -44,6 +44,8 @@ Ingest and maintain may return advisory `concept_candidates`. These candidates h
 
 Ingest responses should also return a compact `agent_extraction` protocol block. The protocol is a handoff contract, not an embedded LLM pipeline: ingest captures evidence, the caller analyzes it, and `memory_remember` commits reviewed durable memory. Detailed instructions belong in MCP resources or documentation, not repeated in every ingest result.
 
+Ingest concept candidates should be compact triage records by default. Full `suggested_memory.input_data` skeletons belong in `memory_maintain report` or another explicit review path, not in every ingest response.
+
 Concept candidates may include a `suggested_memory.input_data` skeleton. This skeleton is a review aid, not an instruction to write automatically. Callers must read evidence, query for existing related memory, rewrite the summary, and choose the correct outcome: remember as concept, procedure, decision, merge with existing memory, or skip.
 
 Candidate ranking is advisory. `candidate_type` and `ranking_signals` should help agents prioritize stable concepts, procedures, and decisions above tool names or implementation details, but they must not replace evidence review. `candidate_diagnostics` may expose skipped terms for tuning; skipped terms are not remembered automatically.

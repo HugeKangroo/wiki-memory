@@ -185,7 +185,7 @@ When repo preflight passes but the computed repo fingerprint is unchanged from t
 
 `memory_ingest` captures evidence. It does not decide what should become durable memory.
 
-Ingest responses include advisory `memory_suggestions`. These suggestions are derived from the current source and are not canonical memory. `concept_candidates` indicate repeated headings or technical terms that may deserve a later `memory_remember` write after agent review:
+Ingest responses include advisory `memory_suggestions`. These suggestions are derived from the current source and are not canonical memory. `concept_candidates` are compact by default so ingest stays cheap: they indicate repeated headings or technical terms that may deserve later review, but omit the full write skeleton. Use `memory_maintain report` when a caller needs the full `suggested_memory.input_data` candidate payload.
 
 ```json
 {
@@ -193,6 +193,7 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
     "concept_candidates": [
       {
         "kind": "concept_candidate",
+        "detail": "compact",
         "candidate_type": "concept",
         "title": "Context Pack",
         "score": 0.75,
@@ -203,21 +204,13 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
           "score_adjustment": 0.08
         },
         "evidence_refs": [{"source_id": "src:...", "segment_id": "..."}],
+        "evidence_ref_count": 1,
+        "object_ref_count": 2,
         "suggested_memory": {
           "mode": "knowledge",
           "kind": "concept",
           "status": "candidate",
-          "input_data": {
-            "kind": "concept",
-            "title": "Context Pack",
-            "summary": "Candidate concept. Review evidence and replace this summary before writing.",
-            "reason": "Agent reviewed candidate concept 'Context Pack' from repeated source evidence and judged it durable.",
-            "memory_source": "agent_inferred",
-            "scope_refs": ["node:..."],
-            "evidence_refs": [{"source_id": "src:...", "segment_id": "..."}],
-            "status": "candidate"
-          },
-          "editable_fields": ["summary", "reason", "scope_refs", "payload"]
+          "input_data_available_from": "memory_maintain report"
         },
         "review_guidance": {
           "required_checks": [
@@ -225,8 +218,10 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
             "query_existing_memory_for_title_and_synonyms",
             "choose_scope_refs_before_write",
             "rewrite_summary_from_evidence"
-          ]
+          ],
+          "outcome_actions": ["remember_as_concept", "remember_as_procedure", "remember_as_decision", "merge_with_existing", "skip_candidate"]
         },
+        "omitted_fields": ["object_refs", "suggested_memory.input_data", "review_guidance.outcomes"],
         "next_actions": ["review_and_remember", "attach_evidence_refs", "skip_if_project_specific_noise"]
       }
     ],
@@ -250,8 +245,9 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
       "skipped": [
         {"title": "Current Todo", "reason": "document_artifact", "occurrences": 1}
       ],
-      "counts": {"skipped": 1, "returned": 1}
+      "counts": {"skipped": 1, "eligible": 1, "returned": 1}
     },
+    "counts": {"concept_candidates": 1, "concept_candidates_available": 1},
     "next_actions": [
       "review_concept_candidates",
       "run_memory_maintain_report_for_cross_source_candidates",

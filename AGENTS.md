@@ -21,9 +21,8 @@ Before changing this repository, read:
 
 The near-term implementation sequence is:
 
-1. query normalization and retry hints
-2. unstructured soft duplicate candidates
-3. maintain duplicate review/report support
-4. optional semantic retrieval evaluation
+1. keep MCP responses compact by default with explicit expansion paths
+2. run end-to-end dogfood acceptance across ingest, query, remember, maintain, and re-query
+3. use dogfood findings to harden tool guidance, payload budgets, and error semantics
 
 Use `todo.md` as the source of truth for current status.

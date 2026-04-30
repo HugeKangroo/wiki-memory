@@ -93,7 +93,7 @@ When new material appears:
 2. Inspect returned `status`, `warnings`, and `pending_decisions`. If `status` is `completed_with_pending_decisions`, use the clean ingested source normally and decide separately whether any pending entry deserves a later explicit `options.force: true` ingest.
 3. If `status` is `noop`, use the existing `source_id` and avoid repeating ingest.
 4. Inspect `memory_suggestions.agent_extraction`. Follow its required steps: inspect the source, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
-5. Inspect `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve durable memory after review. Use each candidate's `review_guidance` and `suggested_memory.input_data` as a starting point, not as an automatic write.
+5. Inspect compact `memory_suggestions.concept_candidates`. These are repeated source terms or headings that may deserve durable memory after review. Use each candidate's `review_guidance`, read the cited evidence, and run `memory_maintain report` when you need the full `suggested_memory.input_data` skeleton.
 6. Analyze the ingested evidence outside ingest.
 7. Decide whether anything should become durable memory.
 8. Before writing, call `memory_query` again to check related context, duplicates, and conflicts.
@@ -153,7 +153,7 @@ Unstructured title/summary-only knowledge uses soft duplicate detection. `memory
 
 For a curated replacement, first create the replacement with `memory_remember knowledge`, then call `memory_remember supersede` for each original item that the replacement supersedes.
 
-`memory_maintain report` also surfaces advisory `concept_candidates`. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
+`memory_ingest` returns compact advisory `concept_candidates` for the current source. `memory_maintain report` returns fuller cross-source candidates, including `suggested_memory.input_data` skeletons. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
 
 Use `candidate_type` and `ranking_signals` for triage. Prefer high-ranking `concept`, `procedure`, and `decision` candidates over `tool_library` or `implementation_detail` candidates unless the current task specifically concerns that tool or implementation detail. Use `candidate_diagnostics.skipped` to understand why headings or phrases were suppressed, including document artifacts, action phrases, shortcut fragments, and format markers; diagnostics are for tuning and review, not durable memory.
 
@@ -165,7 +165,7 @@ Candidate review outcomes should be explicit:
 - `merge_with_existing`: use when query finds an existing memory with the same meaning.
 - `skip_candidate`: use when the term is a project title, generic heading, temporary task phrase, or weakly evidenced.
 
-Before turning any candidate into memory, read the cited evidence, query for the candidate title and synonyms, rewrite the generated summary, and verify `scope_refs`. `suggested_memory.input_data` contains a valid skeleton for `memory_remember`, but the agent is expected to edit the summary and scope when needed.
+Before turning any candidate into memory, read the cited evidence, query for the candidate title and synonyms, rewrite the generated summary, and verify `scope_refs`. In `memory_maintain report`, `suggested_memory.input_data` contains a valid skeleton for `memory_remember`, but the agent is expected to edit the summary and scope when needed.
 
 When a graph backend is configured, `memory_maintain report` also returns graph-health insights. Treat `isolated_nodes`, `sparse_clusters`, `bridge_nodes`, and `weakly_connected_scopes` as maintenance signals: they suggest where memory may need typed relations, consolidation, evidence review, or scope cleanup, not automatic mutation instructions.
 

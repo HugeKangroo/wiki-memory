@@ -287,12 +287,15 @@ class IngestService:
             source_ids={source_id},
             limit=limit,
         )
-        concept_candidates = analysis["candidates"]
+        concept_candidates = [self._compact_concept_candidate(candidate) for candidate in analysis["candidates"]]
         return {
             "concept_candidates": concept_candidates,
-            "candidate_diagnostics": analysis["candidate_diagnostics"],
+            "candidate_diagnostics": self._compact_candidate_diagnostics(analysis["candidate_diagnostics"]),
             "agent_extraction": self._agent_extraction_protocol(source_id),
-            "counts": {"concept_candidates": len(concept_candidates)},
+            "counts": {
+                "concept_candidates": len(concept_candidates),
+                "concept_candidates_available": analysis["candidate_diagnostics"]["counts"].get("eligible", len(concept_candidates)),
+            },
             "next_actions": [
                 "follow_agent_extraction_protocol",
                 "review_concept_candidates",
@@ -323,6 +326,55 @@ class IngestService:
                 "prepare_durable_candidates",
                 "call_memory_remember_if_durable",
             ],
+        }
+
+    def _compact_concept_candidate(self, candidate: dict) -> dict:
+        evidence_refs = candidate.get("evidence_refs", [])[:2]
+        review_guidance = candidate.get("review_guidance", {})
+        suggested_memory = candidate.get("suggested_memory", {})
+        return {
+            "kind": candidate.get("kind"),
+            "detail": "compact",
+            "candidate_type": candidate.get("candidate_type"),
+            "title": candidate.get("title"),
+            "normalized_key": candidate.get("normalized_key"),
+            "score": candidate.get("score"),
+            "occurrences": candidate.get("occurrences"),
+            "source_count": candidate.get("source_count"),
+            "support_count": candidate.get("support_count"),
+            "evidence_refs": evidence_refs,
+            "evidence_ref_count": len(candidate.get("evidence_refs", [])),
+            "object_ref_count": len(candidate.get("object_refs", [])),
+            "reasons": candidate.get("reasons", []),
+            "ranking_signals": candidate.get("ranking_signals", {}),
+            "suggested_memory": {
+                "mode": suggested_memory.get("mode"),
+                "kind": suggested_memory.get("kind"),
+                "title": suggested_memory.get("title"),
+                "status": suggested_memory.get("status"),
+                "confidence": suggested_memory.get("confidence"),
+                "input_data_available_from": "memory_maintain report",
+            },
+            "review_guidance": {
+                "required_checks": review_guidance.get("required_checks", []),
+                "outcome_actions": [
+                    outcome.get("action")
+                    for outcome in review_guidance.get("outcomes", [])
+                    if outcome.get("action")
+                ],
+            },
+            "omitted_fields": [
+                "object_refs",
+                "suggested_memory.input_data",
+                "review_guidance.outcomes",
+            ],
+            "next_actions": candidate.get("next_actions", []),
+        }
+
+    def _compact_candidate_diagnostics(self, diagnostics: dict) -> dict:
+        return {
+            "skipped": diagnostics.get("skipped", [])[:5],
+            "counts": diagnostics.get("counts", {}),
         }
 
     def _repo_pending_decisions(self, preflight: RepoPreflightOutput, force: bool) -> list[dict]:

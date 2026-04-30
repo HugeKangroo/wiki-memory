@@ -35,7 +35,7 @@ Required domain mappings include todo/work item, decision, preference, procedure
 
 Use `memory_maintain archive_source` with `options.apply=true` to retire a bad source without deleting audit history. It archives the source, marks knowledge stale only when all evidence depends on that source, and reports mixed-evidence knowledge for explicit review.
 
-`memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory. Treat `candidate_type` and `ranking_signals` as triage aids. Treat `suggested_memory.input_data` as an editable skeleton; read evidence, query for existing memory, rewrite summary, and choose concept/procedure/decision/merge/skip. Use `candidate_diagnostics` to understand skipped document artifacts, format markers, action phrases, shortcut fragments, generic terms, long terms, or weak terms.
+`memory_ingest` and `memory_maintain report` may surface advisory `concept_candidates`. They are review signals for possible LLM Wiki-style crystallization, not automatic durable memory. Ingest candidates are compact triage records; run `memory_maintain report` when the full `suggested_memory.input_data` skeleton is needed. Treat `candidate_type` and `ranking_signals` as triage aids. Read evidence, query for existing memory, rewrite summary, and choose concept/procedure/decision/merge/skip. Use `candidate_diagnostics` to understand skipped document artifacts, format markers, action phrases, shortcut fragments, generic terms, long terms, or weak terms.
 """
 
 
@@ -56,7 +56,7 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
 6. Follow compact `memory_suggestions.agent_extraction` to inspect source evidence, query existing memory, prepare durable candidates outside ingest, and call `memory_remember` only after review.
-7. Inspect `memory_suggestions.concept_candidates`; prefer high-ranking concept/procedure/decision candidates, follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip.
+7. Inspect compact `memory_suggestions.concept_candidates`; prefer high-ranking concept/procedure/decision candidates, follow `review_guidance`, review cited evidence, query for existing memory, then decide whether to remember as concept/procedure/decision, merge, or skip. Run `memory_maintain report` when you need the full `suggested_memory.input_data` skeleton.
 8. Analyze outside ingest.
 9. Before durable writes, call `memory_query` again to check related context, duplicates, and conflicts.
 
@@ -64,7 +64,7 @@ AGENT_PLAYBOOK = """# Agent Memory Playbook
 
 Use `memory_remember` only when the item should survive future sessions. Create writes need `reason`, `memory_source`, and `scope_refs`.
 
-For concept candidates, edit `suggested_memory.input_data` before writing. At minimum, replace the generated summary with a bounded definition grounded in evidence and verify the suggested `scope_refs`.
+For concept candidates from `memory_maintain report`, edit `suggested_memory.input_data` before writing. At minimum, replace the generated summary with a bounded definition grounded in evidence and verify the suggested `scope_refs`.
 
 Inspect `possible_duplicates` after knowledge writes. Similar unstructured items are advisory candidates, not automatic merge decisions.
 

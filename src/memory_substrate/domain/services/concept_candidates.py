@@ -142,6 +142,7 @@ class ConceptCandidateDiscovery:
         ]
         candidates.sort(key=lambda item: (-item["score"], item["title"], item["normalized_key"]))
         diagnostics = self._candidate_diagnostics(skipped)
+        diagnostics["counts"]["eligible"] = len(candidates)
         diagnostics["counts"]["returned"] = min(len(candidates), limit)
         return {
             "candidates": candidates[:limit],
