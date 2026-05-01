@@ -5,6 +5,7 @@ from dataclasses import dataclass, field, replace
 
 USER_CURATED_SOURCES = {"user_declared", "human_curated"}
 VALID_MEMORY_SOURCES = {*USER_CURATED_SOURCES, "agent_inferred", "system_generated", "imported"}
+TEMPORARY_LIFECYCLE_STATES = {"temporary", "scratch", "evaluation"}
 
 
 @dataclass(slots=True)

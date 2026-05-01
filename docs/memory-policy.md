@@ -31,6 +31,12 @@ LLM capability may help callers plan queries, extract candidates, and judge soft
 
 Canonical data lives under `memory/objects/`. Markdown, wiki pages, debug mirrors, Doxygen output, graph tables, and search indexes are derived projections or indexes.
 
+External wiki folders, including Obsidian vault projections, are projection targets only. Rendering to an external wiki must be manifest-bound so user notes are not overwritten as managed output. Reconciliation from an external wiki is report-only by default; canonical writes still go through reviewed `memory_ingest`, `memory_remember`, or explicit maintenance modes.
+
+Direct user or human declarations remembered without existing evidence refs must still have a source layer. The server may create a `source` object with `kind: "declaration"` and attach its segment to the knowledge item. Agent-inferred conclusions should come from ingested evidence or remain `candidate`.
+
+Temporary, scratch, and evaluation memory must be explicit through `status` or `lifecycle_state`. It is excluded from default query/context results and should be promoted after review or archived when no longer useful.
+
 Durable writes should go through `memory_remember` or controlled `memory_maintain` modes. Direct file edits are only for recovery and must be followed by structure validation, repair when needed, and reindexing.
 
 ## Tool Boundaries
@@ -50,7 +56,7 @@ Ingest concept candidates should be compact triage records by default. Full `sug
 
 Concept candidates may include a `suggested_memory.input_data` skeleton. This skeleton is a review aid, not an instruction to write automatically. Callers must read evidence, query for existing related memory, rewrite the summary, and choose the correct outcome: remember as concept, procedure, decision, merge with existing memory, or skip.
 
-Candidate ranking is advisory. `candidate_type` and `ranking_signals` should help agents prioritize stable concepts, procedures, and decisions above tool names or implementation details, but they must not replace evidence review. `candidate_diagnostics` may expose skipped terms for tuning; skipped terms are not remembered automatically.
+Candidate ranking is advisory. `candidate_type`, `ranking_signals`, and `recommendation.priority` should help agents prioritize stable concepts, procedures, and decisions above tool names or implementation details, but they must not replace evidence review. `candidate_diagnostics` may expose skipped terms and noise classes for tuning; skipped terms are not remembered automatically. Common skipped classes include document artifacts, path fragments, temporary task vocabulary, format markers, action phrases, shortcut fragments, generic terms, long terms, and weak terms.
 
 ## Governance Fields
 
@@ -165,10 +171,18 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 - `query_sanitizer`
 - `context_tiers`
 - `context_budget`
+- `expanded_context_many`
+- `missing_ids`
+- `evidence_contract`
+- `temporary_memory_ids`
 - `applied_filters`
 - `code_index`
 - `code_modules`
+- `api_inventory`
 - `code_intelligence`
+- `source_slice`
+- `content_hash`
+- `source_fingerprint`
 - `module_dependencies`
 - `inheritance_graph`
 - `call_index`

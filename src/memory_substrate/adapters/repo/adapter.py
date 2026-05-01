@@ -75,6 +75,7 @@ class RepoScanSummary:
     inheritance_graph: list[dict]
     call_index: list[dict]
     framework_entries: list[dict]
+    api_inventory: dict
 
 
 class RepoAdapter:
@@ -137,6 +138,7 @@ class RepoAdapter:
                 "inheritance_graph": summary.inheritance_graph,
                 "call_index": summary.call_index,
                 "framework_entries": summary.framework_entries,
+                "api_inventory": summary.api_inventory,
                 "parser_backend": parser.backend,
             },
             segments=self._segments(root, summary),
@@ -300,6 +302,7 @@ class RepoAdapter:
                     )
         parsed_modules.sort(key=lambda module: self._module_priority(str(module["path"])))
         code_intelligence = self._code_intelligence(parser.backend, parsed_modules)
+        api_inventory = self._api_inventory(parser.backend, parsed_modules)
 
         return RepoScanSummary(
             file_count=file_count,
@@ -318,6 +321,7 @@ class RepoAdapter:
             inheritance_graph=code_intelligence["inheritance_graph"],
             call_index=code_intelligence["call_index"],
             framework_entries=code_intelligence["framework_entries"],
+            api_inventory=api_inventory,
         )
 
     def _code_index_entry(self, root: Path, path: Path, language: str) -> dict:
@@ -707,6 +711,104 @@ class RepoAdapter:
                 entries.append({"path": path, **entry})
         entries.sort(key=lambda item: (item["path"], str(item.get("framework")), int(item.get("line_start") or 0)))
         return entries
+
+    def _api_inventory(self, parser_backend: str, modules: list[dict]) -> dict:
+        classes: list[dict] = []
+        functions: list[dict] = []
+        methods: list[dict] = []
+        framework_surfaces: list[dict] = []
+
+        for module in modules:
+            path = str(module["path"])
+            symbols_by_name = {
+                str(symbol.get("name")): symbol
+                for symbol in module.get("symbols", [])
+                if isinstance(symbol, dict) and symbol.get("name")
+            }
+            for symbol in module.get("symbols", []):
+                if not isinstance(symbol, dict) or symbol.get("kind") != "class":
+                    continue
+                classes.append(
+                    self._api_class_entry(
+                        path=path,
+                        class_name=str(symbol.get("name") or ""),
+                        symbol=symbol,
+                    )
+                )
+            for interface in module.get("interfaces", []):
+                if not isinstance(interface, dict):
+                    continue
+                name = str(interface.get("name") or "")
+                if not name:
+                    continue
+                symbol = symbols_by_name.get(name, {})
+                entry = self._api_callable_entry(path=path, interface=interface, symbol=symbol)
+                if entry["kind"] == "method":
+                    methods.append(entry)
+                else:
+                    functions.append(entry)
+            for surface in module.get("framework_entries", []):
+                if isinstance(surface, dict):
+                    framework_surfaces.append({"path": path, **surface})
+
+        classes.sort(key=lambda item: (item["path"], int(item.get("line_start") or 0), item["name"]))
+        functions.sort(key=lambda item: (item["path"], int(item.get("line_start") or 0), item["name"]))
+        methods.sort(key=lambda item: (item["path"], int(item.get("line_start") or 0), item["name"]))
+        framework_surfaces.sort(
+            key=lambda item: (
+                item["path"],
+                str(item.get("framework")),
+                str(item.get("kind")),
+                int(item.get("line_start") or 0),
+                str(item.get("handler") or item.get("route") or ""),
+            )
+        )
+        return {
+            "schema_version": "api_inventory.v1",
+            "parser_backend": parser_backend,
+            "counts": {
+                "classes": len(classes),
+                "functions": len(functions),
+                "methods": len(methods),
+                "framework_surfaces": len(framework_surfaces),
+            },
+            "classes": classes[:500],
+            "functions": functions[:1000],
+            "methods": methods[:1500],
+            "framework_surfaces": framework_surfaces[:500],
+            "limitations": [
+                "static_api_inventory",
+                "runtime_registration_not_evaluated",
+                "non_python_signatures_best_effort",
+            ],
+        }
+
+    def _api_class_entry(self, path: str, class_name: str, symbol: dict) -> dict:
+        return {
+            "path": path,
+            "name": class_name,
+            "kind": "class",
+            "bases": symbol.get("bases", []),
+            "decorators": symbol.get("decorators", []),
+            "doc": symbol.get("doc", ""),
+            "line_start": symbol.get("line_start"),
+            "line_end": symbol.get("line_end"),
+        }
+
+    def _api_callable_entry(self, path: str, interface: dict, symbol: dict) -> dict:
+        return {
+            "path": path,
+            "name": interface.get("name"),
+            "kind": interface.get("kind", "function"),
+            "signature": interface.get("signature", ""),
+            "parameters": interface.get("parameters", []),
+            "returns": interface.get("returns", ""),
+            "return_description": interface.get("return_description", ""),
+            "doc": interface.get("doc", ""),
+            "decorators": symbol.get("decorators", []),
+            "line_start": symbol.get("line_start"),
+            "line_end": symbol.get("line_end"),
+        }
 
     def _module_priority(self, module_path: str) -> tuple[int, str]:
         if "/application/" in module_path:

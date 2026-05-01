@@ -76,6 +76,106 @@ class RememberGovernanceTest(unittest.TestCase):
             self.assertEqual(stored["payload"]["metadata"]["memory_source"], "agent_inferred")
             self.assertTrue(stored["identity_key"].startswith("knowledge|decision|"))
 
+    def test_user_declared_knowledge_without_evidence_gets_declaration_source(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = RememberService(root)
+
+            result = service.create_knowledge(
+                {
+                    "kind": "preference",
+                    "title": "Prefer local memory backends",
+                    "summary": "The user prefers local-first memory backends.",
+                    "reason": "This preference should guide future backend choices.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "status": "active",
+                    "confidence": 1.0,
+                }
+            )
+            stored = FsObjectRepository(root).get("knowledge", result["knowledge_id"])
+            assert stored is not None
+            evidence_ref = stored["evidence_refs"][0]
+            declaration_source = FsObjectRepository(root).get("source", evidence_ref["source_id"])
+
+            self.assertEqual(result["evidence_contract"]["provenance"], "declaration_source_created")
+            self.assertEqual(stored["status"], "active")
+            self.assertEqual(len(stored["evidence_refs"]), 1)
+            self.assertIsNotNone(declaration_source)
+            assert declaration_source is not None
+            self.assertEqual(declaration_source["kind"], "declaration")
+            self.assertIn("Prefer local memory backends", declaration_source["payload"]["text"])
+            self.assertEqual(evidence_ref["segment_id"], declaration_source["segments"][0]["segment_id"])
+            self.assertEqual(evidence_ref["hash"], declaration_source["segments"][0]["hash"])
+
+    def test_long_user_declared_knowledge_preserves_source_text_as_declaration_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_text = (
+                "Temporary review note:\n"
+                "The remember API should preserve the raw user statement before compressing it into knowledge.\n"
+                "The derived knowledge can be short, but the fact layer should remain citeable.\n"
+            )
+
+            result = RememberService(root).create_knowledge(
+                {
+                    "kind": "design_note",
+                    "title": "Remember preserves raw declaration evidence",
+                    "summary": "Remember creates declaration evidence before storing a compressed knowledge item.",
+                    "reason": "This design changes the future remember contract.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "source_text": source_text,
+                    "status": "active",
+                    "confidence": 0.95,
+                }
+            )
+            stored = FsObjectRepository(root).get("knowledge", result["knowledge_id"])
+            assert stored is not None
+            evidence_ref = stored["evidence_refs"][0]
+            declaration_source = FsObjectRepository(root).get("source", evidence_ref["source_id"])
+
+            self.assertEqual(result["evidence_contract"]["provenance"], "declaration_source_created")
+            self.assertIsNotNone(declaration_source)
+            assert declaration_source is not None
+            self.assertEqual(declaration_source["payload"]["text"], source_text)
+            self.assertEqual(declaration_source["segments"][0]["locator"]["line_end"], 3)
+            self.assertEqual(stored["evidence_refs"], [evidence_ref])
+
+    def test_agent_inferred_source_text_is_preserved_but_remains_candidate(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source_text = (
+                "Agent analysis draft:\n"
+                "The memory system should preserve raw long-form analysis before summarizing it.\n"
+            )
+
+            result = RememberService(root).create_knowledge(
+                {
+                    "kind": "design_note",
+                    "title": "Long agent analysis should keep source text",
+                    "summary": "Long agent-inferred remember inputs are preserved as source evidence.",
+                    "reason": "The source layer is needed for later review.",
+                    "memory_source": "agent_inferred",
+                    "scope_refs": ["scope:memory-substrate"],
+                    "source_text": source_text,
+                    "status": "active",
+                    "confidence": 0.74,
+                }
+            )
+            stored = FsObjectRepository(root).get("knowledge", result["knowledge_id"])
+            assert stored is not None
+            evidence_ref = stored["evidence_refs"][0]
+            source = FsObjectRepository(root).get("source", evidence_ref["source_id"])
+
+            self.assertEqual(result["status"], "candidate")
+            self.assertEqual(result["evidence_contract"]["provenance"], "remember_input_source_created")
+            self.assertIsNotNone(source)
+            assert source is not None
+            self.assertEqual(source["payload"]["text"], source_text)
+            self.assertEqual(stored["status"], "candidate")
+            self.assertEqual(stored["evidence_refs"], [evidence_ref])
+
     def test_create_knowledge_rejects_duplicate_fact_by_default(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

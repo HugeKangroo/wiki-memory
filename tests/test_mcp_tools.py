@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -26,6 +27,8 @@ class McpToolsTest(unittest.TestCase):
             service.merge_duplicates.return_value = {"status": "completed", "merged": 1}
             service.resolve_duplicates.return_value = {"status": "completed", "outcome": "supersede", "resolved": 2}
             service.archive_source.return_value = {"status": "completed", "archived_source_id": "src:retired"}
+            service.render_projection.return_value = {"result_type": "projection_render_result"}
+            service.reconcile_projection.return_value = {"result_type": "projection_reconcile_report"}
             service.decay_stale.return_value = {"status": "completed", "decayed": 1}
             service.cycle.return_value = {"status": "completed", "promoted": 1, "merged": 1, "decayed": 1}
 
@@ -66,6 +69,8 @@ class McpToolsTest(unittest.TestCase):
                 )["archived_source_id"],
                 "src:retired",
             )
+            self.assertEqual(memory_maintain(".", "render_projection", {}, {"apply": True})["result_type"], "projection_render_result")
+            self.assertEqual(memory_maintain(".", "reconcile_projection", {})["result_type"], "projection_reconcile_report")
             self.assertEqual(memory_maintain(".", "cycle", {"reference_time": "2026-04-24T00:00:00+00:00"}, {"apply": True})["merged"], 1)
 
             service.promote_candidates.assert_called_once_with(min_confidence=0.8, min_evidence=2)
@@ -85,6 +90,8 @@ class McpToolsTest(unittest.TestCase):
                 source_id="src:retired",
                 reason="Retire invalid import.",
             )
+            service.render_projection.assert_called_once_with()
+            service.reconcile_projection.assert_called_once_with()
             service.cycle.assert_called_once_with(
                 min_confidence=0.75,
                 min_evidence=1,
@@ -95,6 +102,21 @@ class McpToolsTest(unittest.TestCase):
     def test_memory_maintain_rejects_unsupported_modes(self) -> None:
         with self.assertRaisesRegex(ValueError, "Unsupported maintain mode"):
             memory_maintain(".", "unknown", {})
+
+    def test_memory_maintain_configures_wiki_projection_target(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            vault = root / "vault"
+
+            result = memory_maintain(
+                root,
+                "configure",
+                {"wiki_projection": {"path": str(vault), "format": "obsidian"}},
+                {"apply": True},
+            )
+
+            self.assertEqual(result["data"]["config"]["wiki_projection"]["path"], str(vault.resolve()))
+            self.assertEqual(result["data"]["config"]["wiki_projection"]["format"], "obsidian")
 
     def test_memory_maintain_uses_default_root_when_omitted(self) -> None:
         with (
@@ -187,6 +209,9 @@ class McpToolsTest(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "options.apply=true"):
             memory_maintain(".", "archive_source", {"source_id": "src:x", "reason": "test"})
+
+        with self.assertRaisesRegex(ValueError, "options.apply=true"):
+            memory_maintain(".", "render_projection", {})
 
 
 if __name__ == "__main__":

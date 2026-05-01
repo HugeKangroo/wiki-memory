@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import re
 from dataclasses import asdict
 from datetime import datetime, timezone
@@ -8,6 +9,7 @@ from pathlib import Path
 from memory_substrate.domain.services.context_builder import ContextBuilder
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import utc_now_iso
+from memory_substrate.domain.protocols.remember_request import TEMPORARY_LIFECYCLE_STATES
 from memory_substrate.application.semantic.service import SemanticIndexService
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
 
@@ -171,6 +173,119 @@ class QueryService:
             "warnings": [],
         }
 
+    def expand_many(
+        self,
+        object_ids: list[str],
+        max_items: int = 20,
+        per_id_max_items: int = 5,
+        include_segments: bool | None = None,
+        snippet_chars: int | None = None,
+    ) -> dict:
+        """Expand several memory objects in one bounded grouped result.
+
+        Args:
+            object_ids: Source, node, knowledge, activity, or work item identifiers to expand.
+            max_items: Total context item budget across all expanded ids.
+            per_id_max_items: Maximum context items per requested id.
+            include_segments: Whether to include source segment snippets.
+            snippet_chars: Maximum segment excerpt length.
+
+        Returns:
+            Grouped expanded contexts keyed by root id, plus deduplicated source segments and warnings.
+        """
+        unique_ids = self._unique_ids(object_ids)
+        max_items = max(1, int(max_items or 20))
+        per_id_max_items = max(1, int(per_id_max_items or 5))
+        include = True if include_segments is None else include_segments
+        snippets = snippet_chars or 360
+        groups: dict[str, dict] = {}
+        source_segments: list[dict] = []
+        seen_segments: set[tuple[str, str]] = set()
+        warnings: list[str] = []
+        returned_items = 0
+        expanded_ids: list[str] = []
+        missing_ids: list[str] = []
+
+        for object_id in unique_ids:
+            remaining_items = max_items - returned_items
+            if remaining_items <= 0:
+                warning = "Global expand item budget exhausted before all ids were expanded."
+                if warning not in warnings:
+                    warnings.append(warning)
+                groups[object_id] = {
+                    "root_id": object_id,
+                    "status": "budget_exhausted",
+                    "items": [],
+                    "source_segments": [],
+                    "warnings": ["Global expand item budget exhausted before this id was expanded."],
+                }
+                continue
+
+            object_type, obj = self._find_object(object_id)
+            if obj is None or object_type is None:
+                missing_ids.append(object_id)
+                warning = f"Object not found: {object_id}"
+                warnings.append(warning)
+                groups[object_id] = {
+                    "root_id": object_id,
+                    "status": "not_found",
+                    "items": [],
+                    "source_segments": [],
+                    "warnings": [warning],
+                }
+                continue
+
+            group_budget = min(per_id_max_items, remaining_items)
+            items, segments = self.builder.expand(
+                object_id=object_id,
+                max_items=group_budget,
+                include_segments=include,
+                snippet_chars=snippets,
+            )
+            item_payloads = [asdict(item) for item in items]
+            segment_payloads = list(segments)
+            returned_items += len(item_payloads)
+            expanded_ids.append(object_id)
+            for segment in segment_payloads:
+                key = (str(segment.get("source_id", "")), str(segment.get("segment_id", "")))
+                if key in seen_segments:
+                    continue
+                seen_segments.add(key)
+                source_segments.append(segment)
+            groups[object_id] = {
+                "root_id": object_id,
+                "object_type": object_type,
+                "status": "ok",
+                "items": item_payloads,
+                "source_segments": segment_payloads,
+                "context_budget": {
+                    "max_items": group_budget,
+                    "returned_items": len(item_payloads),
+                    "include_segments": include,
+                    "snippet_chars": snippets,
+                },
+                "warnings": [],
+            }
+
+        return {
+            "result_type": "expanded_context_many",
+            "data": {
+                "root_ids": unique_ids,
+                "expanded_ids": expanded_ids,
+                "missing_ids": missing_ids,
+                "groups": groups,
+                "source_segments": source_segments,
+                "context_budget": {
+                    "max_items": max_items,
+                    "per_id_max_items": per_id_max_items,
+                    "returned_items": returned_items,
+                    "include_segments": include,
+                    "snippet_chars": snippets,
+                },
+            },
+            "warnings": warnings,
+        }
+
     def page(
         self,
         object_id: str,
@@ -254,6 +369,57 @@ class QueryService:
             "data": None,
             "warnings": [f"Object not found: {object_id}"],
         }
+
+    def source_slice(
+        self,
+        source_id: str,
+        path: str | None = None,
+        line_start: int | None = None,
+        line_end: int | None = None,
+        segment_id: str | None = None,
+        max_lines: int = 120,
+        snippet_chars: int = 8000,
+    ) -> dict:
+        """Hydrate a bounded source text slice by source id and optional path/line locator.
+
+        Args:
+            source_id: Source object id to read from.
+            path: Repo-relative path for repo sources. Optional for text document sources.
+            line_start: 1-based start line. Defaults to 1 or the segment start when segment_id is supplied.
+            line_end: 1-based inclusive end line. Defaults to a bounded window.
+            segment_id: Optional source segment id whose locator provides default line bounds.
+            max_lines: Maximum number of lines to return.
+            snippet_chars: Maximum number of characters to return.
+
+        Returns:
+            Bounded source slice or an unavailable result with warnings.
+        """
+        source = self.repository.get("source", source_id)
+        if source is None:
+            return self._source_slice_unavailable(
+                status="not_found",
+                source_id=source_id,
+                path=path,
+                warnings=[f"Source not found: {source_id}"],
+            )
+        if source.get("kind") == "repo":
+            return self._repo_source_slice(
+                source=source,
+                path=path,
+                line_start=line_start,
+                line_end=line_end,
+                max_lines=max_lines,
+                snippet_chars=snippet_chars,
+            )
+        return self._text_source_slice(
+            source=source,
+            path=path,
+            line_start=line_start,
+            line_end=line_end,
+            segment_id=segment_id,
+            max_lines=max_lines,
+            snippet_chars=snippet_chars,
+        )
 
     def graph(self, object_id: str, max_items: int = 20) -> dict:
         """Build a lightweight one-hop relationship graph around an object.
@@ -406,6 +572,271 @@ class QueryService:
                 "query_sanitizer": sanitized["diagnostics"],
             },
             "warnings": self._query_sanitizer_warnings(sanitized["diagnostics"]),
+        }
+
+    def _unique_ids(self, object_ids: list[str]) -> list[str]:
+        unique: list[str] = []
+        for object_id in object_ids:
+            value = str(object_id or "").strip()
+            if value and value not in unique:
+                unique.append(value)
+        return unique
+
+    def _repo_source_slice(
+        self,
+        source: dict,
+        path: str | None,
+        line_start: int | None,
+        line_end: int | None,
+        max_lines: int,
+        snippet_chars: int,
+    ) -> dict:
+        repo_root = Path(str(source.get("origin", {}).get("path") or ""))
+        if not path:
+            return self._source_slice_unavailable(
+                status="missing_path",
+                source_id=source["id"],
+                path=path,
+                warnings=["Repo source slices require input_data.path."],
+            )
+        requested = Path(path)
+        if requested.is_absolute():
+            return self._source_slice_unavailable(
+                status="invalid_path",
+                source_id=source["id"],
+                path=path,
+                warnings=["Repo source slice path must be relative and must stay within repo origin."],
+            )
+        target = (repo_root / requested).resolve()
+        repo_root = repo_root.resolve()
+        if not target.is_relative_to(repo_root):
+            return self._source_slice_unavailable(
+                status="invalid_path",
+                source_id=source["id"],
+                path=path,
+                warnings=["Repo source slice path must stay within repo origin."],
+            )
+        normalized_path = target.relative_to(repo_root).as_posix()
+        indexed_sha256 = self._repo_indexed_sha256(source, normalized_path)
+        if indexed_sha256 is None:
+            return self._source_slice_unavailable(
+                status="path_not_indexed",
+                source_id=source["id"],
+                path=path,
+                warnings=[f"Repo source path was not part of the ingested repo source index: {path}"],
+            )
+        if not target.exists() or not target.is_file():
+            return self._source_slice_unavailable(
+                status="path_not_found",
+                source_id=source["id"],
+                path=path,
+                warnings=[f"Repo source path not found: {path}"],
+            )
+        try:
+            raw = target.read_bytes()
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError):
+            return self._source_slice_unavailable(
+                status="unreadable",
+                source_id=source["id"],
+                path=path,
+                warnings=[f"Repo source path is not readable as utf-8 text: {path}"],
+            )
+        current_sha256 = hashlib.sha256(raw).hexdigest()
+        content_hash = {
+            "algorithm": "sha256",
+            "current": current_sha256,
+            "indexed": indexed_sha256,
+            "matches_index": current_sha256 == indexed_sha256,
+        }
+        warnings = []
+        if not content_hash["matches_index"]:
+            warnings.append(
+                "Repo source slice current file hash differs from the ingested index. Re-ingest before treating it as current evidence."
+            )
+        return self._source_slice_from_text(
+            source=source,
+            path=normalized_path,
+            text=text,
+            line_start=line_start,
+            line_end=line_end,
+            max_lines=max_lines,
+            snippet_chars=snippet_chars,
+            locator_kind="repo_file_slice",
+            content_hash=content_hash,
+            warnings=warnings,
+        )
+
+    def _text_source_slice(
+        self,
+        source: dict,
+        path: str | None,
+        line_start: int | None,
+        line_end: int | None,
+        segment_id: str | None,
+        max_lines: int,
+        snippet_chars: int,
+    ) -> dict:
+        payload = source.get("payload", {})
+        text = payload.get("text") if isinstance(payload, dict) else None
+        if not isinstance(text, str):
+            return self._source_slice_unavailable(
+                status="unsupported_source",
+                source_id=source["id"],
+                path=path,
+                warnings=["Source does not expose text payload slices."],
+            )
+        segment = self._source_segment(source, segment_id) if segment_id else None
+        if segment_id and segment is None:
+            return self._source_slice_unavailable(
+                status="segment_not_found",
+                source_id=source["id"],
+                path=path,
+                warnings=[f"Source segment not found: {segment_id}"],
+            )
+        locator = segment.get("locator", {}) if isinstance(segment, dict) else {}
+        if isinstance(locator, dict):
+            line_start = line_start or locator.get("line_start")
+            line_end = line_end or locator.get("line_end")
+        display_path = path or str(source.get("origin", {}).get("path") or source.get("title") or source["id"])
+        return self._source_slice_from_text(
+            source=source,
+            path=display_path,
+            text=text,
+            line_start=line_start,
+            line_end=line_end,
+            max_lines=max_lines,
+            snippet_chars=snippet_chars,
+            locator_kind="text_source_slice",
+            segment_id=segment_id,
+            content_hash=self._text_content_hash(text),
+        )
+
+    def _source_segment(self, source: dict, segment_id: str | None) -> dict | None:
+        if not segment_id:
+            return None
+        for segment in source.get("segments", []):
+            if isinstance(segment, dict) and segment.get("segment_id") == segment_id:
+                return segment
+        return None
+
+    def _source_slice_from_text(
+        self,
+        source: dict,
+        path: str,
+        text: str,
+        line_start: int | None,
+        line_end: int | None,
+        max_lines: int,
+        snippet_chars: int,
+        locator_kind: str,
+        segment_id: str | None = None,
+        content_hash: dict | None = None,
+        warnings: list[str] | None = None,
+    ) -> dict:
+        lines = text.splitlines()
+        total_lines = len(lines)
+        max_lines = max(1, int(max_lines or 120))
+        snippet_chars = max(40, int(snippet_chars or 8000))
+        start = max(1, int(line_start or 1))
+        requested_end = int(line_end) if line_end is not None else start + max_lines - 1
+        if requested_end < start:
+            return self._source_slice_unavailable(
+                status="invalid_range",
+                source_id=source["id"],
+                path=path,
+                warnings=["line_end must be greater than or equal to line_start."],
+            )
+        effective_end = min(requested_end, total_lines, start + max_lines - 1)
+        if start > total_lines:
+            selected = []
+            effective_end = start - 1
+        else:
+            selected = lines[start - 1 : effective_end]
+        slice_text = "\n".join(selected)
+        char_truncated = len(slice_text) > snippet_chars
+        if char_truncated:
+            slice_text = self._clip(slice_text, snippet_chars)
+        line_truncated = effective_end < requested_end
+        truncated = bool(line_truncated or char_truncated)
+        next_slice = None
+        if line_truncated and effective_end < total_lines:
+            next_slice = {
+                "source_id": source["id"],
+                "path": path,
+                "line_start": effective_end + 1,
+                "line_end": min(total_lines, effective_end + max_lines),
+            }
+        locator = {
+            "kind": locator_kind,
+            "path": path,
+            "line_start": start,
+            "line_end": effective_end,
+        }
+        if segment_id:
+            locator["segment_id"] = segment_id
+        return {
+            "result_type": "source_slice",
+            "status": "ok",
+            "data": {
+                "source_id": source["id"],
+                "kind": source.get("kind"),
+                "title": source.get("title"),
+                "path": path,
+                "line_start": start,
+                "line_end": effective_end,
+                "requested_line_start": start,
+                "requested_line_end": requested_end,
+                "total_lines": total_lines,
+                "text": slice_text,
+                "truncated": truncated,
+                "truncation": {
+                    "line_truncated": line_truncated,
+                    "char_truncated": char_truncated,
+                    "max_lines": max_lines,
+                    "snippet_chars": snippet_chars,
+                },
+                "next_slice": next_slice,
+                "locator": locator,
+                "content_hash": content_hash or self._text_content_hash(text),
+                "source_fingerprint": source.get("fingerprint"),
+            },
+            "warnings": warnings or [],
+        }
+
+    def _repo_indexed_sha256(self, source: dict, path: str) -> str | None:
+        payload = source.get("payload", {})
+        if not isinstance(payload, dict):
+            return None
+        for collection in ("code_index", "doc_index"):
+            for entry in payload.get(collection, []):
+                if isinstance(entry, dict) and entry.get("path") == path and entry.get("sha256"):
+                    return str(entry["sha256"])
+        return None
+
+    def _text_content_hash(self, text: str) -> dict:
+        return {
+            "algorithm": "sha256",
+            "current": hashlib.sha256(text.encode("utf-8")).hexdigest(),
+            "indexed": None,
+            "matches_index": None,
+        }
+
+    def _source_slice_unavailable(
+        self,
+        status: str,
+        source_id: str,
+        path: str | None,
+        warnings: list[str],
+    ) -> dict:
+        return {
+            "result_type": "source_slice_unavailable",
+            "status": status,
+            "data": {
+                "source_id": source_id,
+                "path": path,
+            },
+            "warnings": warnings,
         }
 
     def _lexical_search_terms(self, terms: list[str], filters: dict) -> list[dict]:
@@ -863,6 +1294,12 @@ class QueryService:
             self._mark_truncated(truncated, f"payload.{key}", len(value), len(result[key]))
         if isinstance(payload.get("code_intelligence"), dict):
             result["code_intelligence"] = payload["code_intelligence"]
+        if isinstance(payload.get("api_inventory"), dict):
+            result["api_inventory"] = self._compact_api_inventory(
+                payload["api_inventory"],
+                max_items=max_items,
+                truncated=truncated,
+            )
         for key in ("module_dependencies", "inheritance_graph", "call_index", "framework_entries"):
             value = payload.get(key, [])
             if not isinstance(value, list):
@@ -911,6 +1348,19 @@ class QueryService:
             "module_doc": self._clip(str(module.get("module_doc", "")), snippet_chars),
             "parser_backend": module.get("parser_backend"),
         }
+
+    def _compact_api_inventory(self, inventory: dict, max_items: int, truncated: dict) -> dict:
+        result: dict = {}
+        for key in ("schema_version", "parser_backend", "counts", "limitations"):
+            if key in inventory:
+                result[key] = inventory[key]
+        for key in ("classes", "functions", "methods", "framework_surfaces"):
+            value = inventory.get(key, [])
+            if not isinstance(value, list):
+                continue
+            result[key] = value[:max_items]
+            self._mark_truncated(truncated, f"payload.api_inventory.{key}", len(value), len(result[key]))
+        return result
 
     def _compact_document_section(self, section: dict, snippet_chars: int) -> dict:
         return {
@@ -1170,6 +1620,9 @@ class QueryService:
         status = str(obj.get("status") or obj.get("lifecycle_state") or "")
         if statuses and status not in statuses:
             return False
+        include_temporary = bool(filters.get("include_temporary")) or bool(statuses.intersection(TEMPORARY_LIFECYCLE_STATES))
+        if not include_temporary and self._is_temporary_memory(obj):
+            return False
 
         node_ids = self._filter_values(filters, "node_id", "node_ids")
         if node_ids and object_type != "node" and not any(self._references_root(obj, node_id) for node_id in node_ids):
@@ -1183,6 +1636,9 @@ class QueryService:
         if source_ids and object_type == "source" and str(obj["id"]) not in source_ids:
             return False
         return True
+
+    def _is_temporary_memory(self, obj: dict) -> bool:
+        return str(obj.get("status") or "") in TEMPORARY_LIFECYCLE_STATES or str(obj.get("lifecycle_state") or "") in TEMPORARY_LIFECYCLE_STATES
 
     def _filter_values(self, filters: dict, singular: str, plural: str) -> set[str]:
         value = filters.get(plural, filters.get(singular))

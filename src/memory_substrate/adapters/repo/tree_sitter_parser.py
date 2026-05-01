@@ -590,6 +590,18 @@ class TreeSitterParser:
                             "line_start": int(node.lineno),
                         }
                     )
+                if method in {"command", "callback"}:
+                    command_name = self._first_string_arg(decorator) or node.name
+                    entries.append(
+                        {
+                            "framework": "cli",
+                            "kind": method,
+                            "command": command_name,
+                            "handler": node.name,
+                            "decorator": self._expr(decorator),
+                            "line_start": int(node.lineno),
+                        }
+                    )
         if node.name.startswith("test_"):
             entries.append(
                 {

@@ -4,6 +4,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from memory_substrate.domain.protocols.context_pack import ContextItem, ContextPack
+from memory_substrate.domain.protocols.remember_request import TEMPORARY_LIFECYCLE_STATES
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import utc_now_iso
 from memory_substrate.infrastructure.repositories.fs_object_repository import FsObjectRepository
@@ -118,6 +119,9 @@ class ContextBuilder:
         statuses = set(scope.get("statuses", []))
         if scope.get("status"):
             statuses.add(str(scope["status"]))
+        include_temporary = bool(scope.get("include_temporary")) or bool(statuses.intersection(TEMPORARY_LIFECYCLE_STATES))
+        if not include_temporary:
+            items = [item for item in items if item.status not in TEMPORARY_LIFECYCLE_STATES]
         if statuses:
             items = [item for item in items if item.status in statuses]
 
@@ -189,6 +193,9 @@ class ContextBuilder:
         title = str(obj.get("title") or obj.get("name") or obj["id"])
         summary = self._clip_summary(self._summary_text(object_type, obj))
         status = str(obj.get("status") or obj.get("lifecycle_state") or "unknown")
+        lifecycle_state = str(obj.get("lifecycle_state") or "")
+        if lifecycle_state in TEMPORARY_LIFECYCLE_STATES:
+            status = lifecycle_state
         return ContextItem(
             object_type=object_type,
             id=str(obj["id"]),

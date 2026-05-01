@@ -347,6 +347,7 @@ class IngestService:
             "object_ref_count": len(candidate.get("object_refs", [])),
             "reasons": candidate.get("reasons", []),
             "ranking_signals": candidate.get("ranking_signals", {}),
+            "recommendation": candidate.get("recommendation", {}),
             "suggested_memory": {
                 "mode": suggested_memory.get("mode"),
                 "kind": suggested_memory.get("kind"),
@@ -374,6 +375,8 @@ class IngestService:
     def _compact_candidate_diagnostics(self, diagnostics: dict) -> dict:
         return {
             "skipped": diagnostics.get("skipped", [])[:5],
+            "skipped_by_reason": diagnostics.get("skipped_by_reason", {}),
+            "noise_classes": diagnostics.get("noise_classes", [])[:5],
             "counts": diagnostics.get("counts", {}),
         }
 

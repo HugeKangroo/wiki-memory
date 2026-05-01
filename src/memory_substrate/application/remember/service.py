@@ -1,11 +1,16 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
 from memory_substrate.application.graph.sync import GraphSyncService
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
-from memory_substrate.domain.protocols.remember_request import RememberRequest
+from memory_substrate.domain.protocols.remember_request import (
+    RememberRequest,
+    TEMPORARY_LIFECYCLE_STATES,
+    USER_CURATED_SOURCES,
+)
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
 from memory_substrate.domain.services.soft_duplicates import KnowledgeSoftDuplicateDetector
@@ -112,7 +117,8 @@ class RememberService:
         }
         return governed_payload
 
-    def _validate_evidence_refs(self, evidence_refs: list[dict]) -> None:
+    def _validate_evidence_refs(self, evidence_refs: list[dict], additional_sources: dict[str, dict] | None = None) -> None:
+        additional_sources = additional_sources or {}
         for evidence in evidence_refs:
             source_id = str(evidence.get("source_id") or "")
             segment_id = str(evidence.get("segment_id") or "")
@@ -120,7 +126,7 @@ class RememberService:
                 raise ValueError("evidence_refs source_id is required")
             if not segment_id:
                 raise ValueError(f"evidence_refs segment_id is required for {source_id}")
-            source = self.object_repository.get("source", source_id)
+            source = additional_sources.get(source_id) or self.object_repository.get("source", source_id)
             if source is None:
                 raise ValueError(f"evidence_refs source not found: {source_id}")
             segments = {str(segment.get("segment_id")): segment for segment in source.get("segments", [])}
@@ -134,6 +140,124 @@ class RememberService:
 
     def _normalize_json(self, value) -> str:
         return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+
+    def _knowledge_evidence_contract(
+        self,
+        data: dict,
+        evidence_refs: list[dict],
+        request: RememberRequest | None,
+        timestamp: str,
+    ) -> dict:
+        if evidence_refs:
+            return {
+                "provenance": "caller_evidence_refs",
+                "evidence_refs": evidence_refs,
+                "generated_source": None,
+                "generated_source_id": None,
+                "evidence_ref_count": len(evidence_refs),
+                "requires_review": False,
+            }
+        has_explicit_source_text = bool(str(data.get("source_text") or "").strip())
+        if request is not None and (request.memory_source in USER_CURATED_SOURCES or has_explicit_source_text):
+            source = self._declaration_source_for_knowledge(data, request, timestamp)
+            segment = source["segments"][0]
+            generated_evidence_refs = [
+                {
+                    "source_id": source["id"],
+                    "segment_id": segment["segment_id"],
+                    "locator": segment["locator"],
+                    "hash": segment["hash"],
+                }
+            ]
+            provenance = (
+                "declaration_source_created"
+                if request.memory_source in USER_CURATED_SOURCES
+                else "remember_input_source_created"
+            )
+            return {
+                "provenance": provenance,
+                "evidence_refs": generated_evidence_refs,
+                "generated_source": source,
+                "generated_source_id": source["id"],
+                "evidence_ref_count": 1,
+                "requires_review": False,
+            }
+        return {
+            "provenance": "evidence_absent",
+            "evidence_refs": [],
+            "generated_source": None,
+            "generated_source_id": None,
+            "evidence_ref_count": 0,
+            "requires_review": request is not None and request.status != "active",
+        }
+
+    def _declaration_source_for_knowledge(self, data: dict, request: RememberRequest, timestamp: str) -> dict:
+        text = str(data.get("source_text") or f"{data['title']}\n\n{data['summary']}")
+        digest = hashlib.sha256(text.encode("utf-8")).hexdigest()
+        line_count = max(1, len(text.splitlines()))
+        source_id = new_id("src")
+        segment_id = "seg:declaration"
+        source_kind = "declaration" if request.memory_source in USER_CURATED_SOURCES else "remember_input"
+        segment = {
+            "segment_id": segment_id,
+            "locator": {
+                "kind": "declaration",
+                "line_start": 1,
+                "line_end": line_count,
+            },
+            "excerpt": self._clip_text(text, 720),
+            "hash": digest,
+        }
+        return {
+            "id": source_id,
+            "kind": source_kind,
+            "origin": {
+                "kind": "memory_remember",
+                "memory_source": request.memory_source,
+                "scope_refs": request.scope_refs,
+            },
+            "title": str(data.get("source_title") or f"Remember input for {data['title']}"),
+            "identity_key": f"source|{source_kind}|{digest}",
+            "fingerprint": digest,
+            "content_type": "text",
+            "payload": {
+                "schema_version": "declaration_source.v1",
+                "text": text,
+                "knowledge_title": data["title"],
+            },
+            "segments": [segment],
+            "metadata": {
+                "adapter": {
+                    "name": "memory_remember",
+                    "version": "declaration_source.v1",
+                    "mode": "knowledge_declaration" if source_kind == "declaration" else "knowledge_remember_input",
+                    "declared_transformations": ["preserve_remember_input_as_source"],
+                    "default_privacy_class": "local",
+                    "origin_classification": source_kind,
+                },
+                "freshness": {
+                    "checked_at": timestamp,
+                    "is_current": True,
+                    "fingerprint": digest,
+                },
+            },
+            "status": "active",
+            "created_at": timestamp,
+            "updated_at": timestamp,
+        }
+
+    def _clip_text(self, text: str, max_chars: int) -> str:
+        if len(text) <= max_chars:
+            return text
+        return text[: max_chars - 3].rstrip() + "..."
+
+    def _temporary_lifecycle_state(self, data: dict, status: str) -> str | None:
+        lifecycle_state = str(data.get("lifecycle_state") or "").strip()
+        if lifecycle_state in TEMPORARY_LIFECYCLE_STATES:
+            return lifecycle_state
+        if status in TEMPORARY_LIFECYCLE_STATES:
+            return status
+        return None
 
     def _knowledge_scope_refs(self, item: dict) -> list[str]:
         scope_refs = item.get("scope_refs", [])
@@ -309,15 +433,26 @@ class RememberService:
             confidence=data.get("confidence", 0.0),
             evidence_refs=evidence_refs,
         )
+        evidence_contract = self._knowledge_evidence_contract(data, evidence_refs, request, timestamp)
+        evidence_refs = evidence_contract["evidence_refs"]
+        declaration_source = evidence_contract["generated_source"]
         candidate = {
             **data,
             "payload": payload,
             "evidence_refs": evidence_refs,
             "status": request.status if request else data.get("status", "candidate"),
         }
+        temporary_lifecycle_state = self._temporary_lifecycle_state(candidate, str(candidate["status"]))
+        if temporary_lifecycle_state is not None:
+            candidate["status"] = "temporary"
+            if declaration_source is not None:
+                declaration_source["status"] = "temporary"
+                declaration_source["lifecycle_state"] = temporary_lifecycle_state
+                declaration_source["expires_at"] = data.get("expires_at")
         possible_duplicates = self._possible_duplicate_knowledge(candidate)
         if request is not None:
-            self._validate_evidence_refs(evidence_refs)
+            additional_sources = {declaration_source["id"]: declaration_source} if declaration_source else {}
+            self._validate_evidence_refs(evidence_refs, additional_sources=additional_sources)
             duplicate_ids = self._duplicate_knowledge_ids(candidate)
             if duplicate_ids and not data.get("allow_duplicate", False):
                 raise ValueError(f"duplicate knowledge exists: {', '.join(duplicate_ids)}")
@@ -342,6 +477,8 @@ class RememberService:
             "confidence": data.get("confidence", 0.0),
             "valid_from": data.get("valid_from", timestamp),
             "valid_until": data.get("valid_until"),
+            "lifecycle_state": temporary_lifecycle_state or data.get("lifecycle_state"),
+            "expires_at": data.get("expires_at"),
             "last_verified_at": data.get("last_verified_at"),
             "created_at": timestamp,
             "updated_at": timestamp,
@@ -356,20 +493,36 @@ class RememberService:
             )
             if conflict_ids:
                 changes["conflicts_with"] = conflict_ids
+        operations = []
+        if declaration_source is not None:
+            operations.append(
+                PatchOperation(
+                    op="create_object",
+                    object_type="source",
+                    object_id=declaration_source["id"],
+                    changes={key: value for key, value in declaration_source.items() if key != "id"},
+                )
+            )
+        operations.append(
+            PatchOperation(
+                op="create_object",
+                object_type="knowledge",
+                object_id=knowledge_id,
+                changes=changes,
+            )
+        )
         patch = MemoryPatch(
             id=new_id("patch"),
             source=actor or {"type": "system", "id": "memory.remember.knowledge"},
-            operations=[
-                PatchOperation(
-                    op="create_object",
-                    object_type="knowledge",
-                    object_id=knowledge_id,
-                    changes=changes,
-                )
-            ],
+            operations=operations,
             created_at=timestamp,
         )
         result = self._apply_and_project(patch)
+        response_contract = {
+            key: value
+            for key, value in evidence_contract.items()
+            if key not in {"evidence_refs", "generated_source"}
+        }
         output = {
             "result_type": "remember_result",
             "object_type": "knowledge",
@@ -381,6 +534,7 @@ class RememberService:
             "audit_event_ids": result["audit_event_ids"],
             "projection_count": result["projection_count"],
             "possible_duplicates": possible_duplicates,
+            "evidence_contract": response_contract,
         }
         if "graph_sync" in result:
             output["graph_sync"] = result["graph_sync"]
@@ -558,6 +712,8 @@ class RememberService:
                     object_id=knowledge_id,
                     changes={
                         "status": "active",
+                        "lifecycle_state": "active",
+                        "expires_at": None,
                         "last_verified_at": timestamp,
                         "reason": reason or "promoted_to_active",
                     },

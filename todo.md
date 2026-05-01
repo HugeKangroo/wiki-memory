@@ -73,6 +73,24 @@ This file tracks the active execution queue for this repository. Keep it current
 
 ## Active Execution Queue
 
+### Current Priority Order
+
+Use this order for the next execution slices. MS numbers are historical identifiers and do not imply priority.
+
+1. MS-31: Repo API Inventory
+2. MS-32: Path-Paged Source Reads
+3. MS-33: Multi-ID Expand
+4. MS-30: Remember Evidence Layer Contract
+5. MS-29: Temporary Memory Lifecycle
+6. MS-34: Concept Candidate Filtering
+7. MS-25: External Wiki Projection Render And Reconcile
+
+Execution constraints:
+- Do not make `memory_query page detail=full` return full repo payloads.
+- Do not claim `call_index` is a complete runtime call graph.
+- Do not auto-promote concept candidates into canonical memory.
+- Keep repo code intelligence, semantic search, graph backends, and wiki projections as derived layers over canonical objects.
+
 ### MS-01: Retrieval Fusion And Query Matching
 
 Status: `completed`
@@ -525,7 +543,7 @@ Verification:
 
 ### MS-25: External Wiki Projection Render And Reconcile
 
-Status: `pending`
+Status: `completed`
 
 Goal: add a low-frequency maintenance flow for using one configured external wiki, such as an Obsidian vault folder, without making wiki files canonical memory.
 
@@ -540,15 +558,15 @@ Design decisions:
 - Default reconciliation to report-only output with candidates and conflicts; canonical writes still go through reviewed `memory_remember` or explicit apply modes.
 
 Planned modes:
-- [ ] Extend `memory_maintain configure` with `wiki_projection.path` and `wiki_projection.format`.
-- [ ] Add `memory_maintain render_projection` for canonical memory -> configured external wiki.
-- [ ] Add `memory_maintain reconcile_projection` for configured external wiki -> diff report, conflicts, and remember candidates.
+- [x] Extend `memory_maintain configure` with `wiki_projection.path` and `wiki_projection.format`.
+- [x] Add `memory_maintain render_projection` for canonical memory -> configured external wiki.
+- [x] Add `memory_maintain reconcile_projection` for configured external wiki -> diff report, conflicts, and remember candidates.
 
 Verification:
-- [ ] Add config repository tests for wiki projection settings.
-- [ ] Add render tests proving generated files are manifest-bound and canonical objects are unchanged.
-- [ ] Add reconcile tests proving report-only behavior does not mutate canonical memory.
-- [ ] Update MCP API docs and agent usage docs.
+- [x] Add config repository tests for wiki projection settings.
+- [x] Add render tests proving generated files are manifest-bound and canonical objects are unchanged.
+- [x] Add reconcile tests proving report-only behavior does not mutate canonical memory.
+- [x] Update MCP API docs and agent usage docs.
 
 ### MS-26: MCP Tool Discovery Metadata
 
@@ -608,3 +626,157 @@ Verification:
 - [x] Add query page compact exposure tests.
 - [x] Run focused repo/query tests.
 - [x] Run full test suite and build.
+
+### MS-29: Temporary Memory Lifecycle
+
+Status: `completed`
+
+Goal: make temporary, scratch, or evaluation memory explicit so it does not accidentally behave like durable active knowledge.
+
+Boundary: memory lifecycle semantics and MCP guidance only. Do not add a separate storage engine and do not rely on `kind` naming alone to control retrieval behavior.
+
+Design point:
+- A `knowledge` item whose `kind` contains temporary wording but whose `status` is `active` is still active memory and can influence retrieval.
+- Temporary raw context should be captured as `source` evidence first, not only as compressed `knowledge`.
+- Temporary memory should have explicit lifecycle/status semantics, review/promotion rules, and cleanup behavior.
+
+Deliverables:
+- [x] Define statuses or lifecycle fields for temporary/scratch/evaluation memory.
+- [x] Decide whether temporary memory is excluded, down-ranked, or separately filtered in `memory_query`.
+- [x] Add review flows to promote temporary memory into durable `active` knowledge or archive it.
+- [x] Add cleanup/report support in `memory_maintain`.
+- [x] Update MCP docs so agents do not create active knowledge for temporary notes by accident.
+
+Verification:
+- [x] Add tests proving temporary memory is not treated as normal active knowledge by default.
+- [x] Add tests for promotion/archive lifecycle transitions.
+- [x] Add MCP schema/docs tests for the temporary memory guidance.
+
+### MS-30: Remember Evidence Layer Contract
+
+Status: `completed`
+
+Goal: make `memory_remember` match the user mental model that remembering a non-trivial statement should preserve or reference the underlying fact/evidence layer, not only store a compressed conclusion.
+
+Boundary: remember/ingest contract and governance semantics. Do not make every tiny explicit user preference require a separate manual ingest call, and do not store full repo source bodies as canonical memory.
+
+Design point:
+- `remember knowledge` without `evidence_refs` is acceptable for small explicit declarations, but weak for long evaluations, temporary context, or agent-inferred conclusions.
+- If a user asks to remember raw context, a long assessment, or a temporary note, the system should create or require a `source`/segment evidence record before writing durable `knowledge`.
+- If a user asks to remember a short explicit fact or preference, `remember` can create a minimal declaration source automatically or mark the item as an explicit declaration with enough provenance.
+- Agent-inferred active knowledge should require evidence refs or be normalized to `candidate`.
+
+Deliverables:
+- [x] Define when `memory_remember` may write evidence-less knowledge and when it must require or create a source.
+- [x] Add a declaration-source path for direct user/human remembered statements that need provenance but do not come from a file/repo/web source.
+- [x] Add a combined helper flow or service path for long `remember` inputs: create source segments, then create knowledge with `evidence_refs`.
+- [x] Decide query behavior for evidence-less explicit declarations versus evidence-backed conclusions.
+- [x] Update MCP docs/resources so agents choose `ingest -> analyze -> remember` for raw context and direct `remember` only for bounded durable claims.
+
+Verification:
+- [x] Add tests proving long/contextual remember inputs cannot become active knowledge without source evidence.
+- [x] Add tests proving short user-declared facts can still be remembered with declaration provenance.
+- [x] Add tests proving agent-inferred knowledge without evidence is candidate, not active.
+- [x] Add MCP schema/docs tests for the remember evidence-layer guidance.
+
+### MS-31: Repo API Inventory
+
+Status: `completed`
+
+Goal: expose a stable repo-level API inventory so agents can answer API/surface questions without reading large source files or relying only on text search.
+
+Boundary: deterministic source/index data only. Do not generate architecture conclusions automatically, and do not require an LLM or external API documentation generator for the default path.
+
+Design point:
+- MS-28 added code intelligence primitives, but agents still need a first-class inventory of callable surfaces.
+- API inventory should include file/line locators so agents can verify details by reading local source slices.
+- Framework/API surfaces such as FastAPI routes, MCP tools, CLI commands, pytest tests, classes, methods, and public functions should be grouped for scanability.
+
+Deliverables:
+- [x] Add repo-level `api_inventory` to repo source payloads with schema version and limitations.
+- [x] Include Python functions, classes, methods, signatures, parameters, returns, decorators, doc summaries, and line ranges where available.
+- [x] Include framework surfaces from `framework_entries`, such as FastAPI routes and MCP tool decorators.
+- [x] Add compact `memory_query page` exposure with bounded groups and truncation metadata.
+- [x] Update docs/resources so agents use API inventory as locator evidence, not as complete semantic understanding.
+
+Verification:
+- [x] Add repo ingest tests for Python signatures, decorators, doc summaries, and route/tool surfaces.
+- [x] Add compact query page tests for bounded API inventory output.
+- [x] Add tests proving no full source bodies are embedded in the API inventory.
+- [x] Run focused repo/query/MCP docs tests.
+
+### MS-32: Path-Paged Source Reads
+
+Status: `completed`
+
+Goal: let agents hydrate exact local source/document slices by source id, path, and line range without returning full repo payloads.
+
+Boundary: query hydration only. Do not make repo `page detail=full` return full repository contents and do not bypass compact budget defaults.
+
+Design point:
+- Compact repo pages should remain locators.
+- Agents need a safe follow-up path for exact snippets after choosing a file/module/document section from `code_index`, `code_modules`, `api_inventory`, or `document_sections`.
+- The returned slice should be bounded, citeable, and explicit about truncation.
+
+Deliverables:
+- [x] Add a query mode or page sub-mode for `source_slice` using `source_id`, `path`, and optional `line_start` / `line_end`.
+- [x] Support repo source file slices and document source segment slices with bounded defaults.
+- [x] Return locator, hash/fingerprint context, line range, text, truncation metadata, and next slice hints.
+- [x] Validate requested paths stay within the ingested repo/source origin.
+- [x] Update MCP docs/resources with a codebase question workflow: search/page -> source slice -> remember if durable.
+
+Verification:
+- [x] Add tests for repo source path slicing, line bounds, truncation, and path traversal rejection.
+- [x] Add tests for Markdown/document slice hydration.
+- [x] Add MCP schema tests so agents can discover the mode and required parameters.
+- [x] Run focused query/MCP tests.
+
+### MS-33: Multi-ID Expand
+
+Status: `completed`
+
+Goal: reduce agent round trips and context fragmentation by expanding several selected memory ids in one bounded call.
+
+Boundary: query ergonomics only. Do not change canonical object schemas and do not return unbounded object graphs.
+
+Design point:
+- Agents often receive several relevant ids from search/context and need to hydrate them together.
+- Multi-ID expand should preserve per-root grouping, warnings, and global budget accounting.
+
+Deliverables:
+- [x] Add a multi-id expand mode or extend `expand` input to accept `ids`.
+- [x] Return grouped expanded contexts keyed by root id with shared citations/source segments.
+- [x] Add per-id and total `max_items` / snippet controls.
+- [x] Return warnings for missing ids without failing the whole call.
+- [x] Update docs/resources and query retry guidance.
+
+Verification:
+- [x] Add tests for mixed valid/missing ids.
+- [x] Add tests for global and per-id budget limits.
+- [x] Add MCP schema tests for agent-facing discoverability.
+- [x] Run focused query/MCP tests.
+
+### MS-34: Concept Candidate Filtering
+
+Status: `completed`
+
+Goal: reduce noisy concept candidates so agents spend review time on reusable concepts, procedures, decisions, and stable project abstractions rather than temporary phrases, paths, tool names, or generic headings.
+
+Boundary: candidate discovery/ranking only. Do not auto-write candidates to memory and do not remove diagnostics needed for tuning.
+
+Design point:
+- Concept candidates should be useful triage, not another source of context noise.
+- Skipped and recommended candidates should carry explainable ranking signals so agents can trust or tune the behavior.
+
+Deliverables:
+- [x] Add stronger skip rules for temporary task vocabulary, path fragments, generic headings, low-signal tool/library names, and one-off implementation details.
+- [x] Improve ranking signals for concepts, procedures, decisions, repeated source-backed abstractions, and cross-source support.
+- [x] Return compact explanations for why candidates were recommended or skipped.
+- [x] Add maintain report support for reviewing noisy candidate classes.
+- [x] Update docs/resources with candidate triage guidance.
+
+Verification:
+- [x] Add tests proving noisy terms are skipped or down-ranked.
+- [x] Add tests proving durable concepts/procedures/decisions remain discoverable.
+- [x] Add tests for candidate diagnostics and explanations.
+- [x] Run focused concept candidate and maintain report tests.

@@ -56,6 +56,8 @@ Governed `memory_remember` create operations require:
 
 Governed knowledge writes normalize `agent_inferred` active claims to `candidate`, reject exact duplicate structured claims with the same `kind`, overlapping `scope_refs`, subject, predicate, and value/object, store same-kind/same-scope subject/predicate conflicts as `contested`, and reject `evidence_refs` that do not point to an existing source segment or whose optional `locator`/`hash` does not match that segment.
 
+Evidence-layer rule: use `memory_ingest -> analyze -> memory_remember` for files, repos, web pages, conversations, long notes, and agent-inferred conclusions. Direct `memory_remember knowledge` is appropriate for bounded user-declared or human-curated statements. When such a direct declaration has no `evidence_refs`, the server creates a `source` with `kind: "declaration"`, attaches its segment as evidence, and returns `evidence_contract.provenance: "declaration_source_created"`. For longer direct declarations or explicit long remember inputs, pass `source_text` so the raw statement is preserved as the source layer instead of only storing the compressed summary. Agent-inferred active claims still normalize to `candidate`.
+
 Recommended near-term data upgrades:
 
 - Add deterministic query normalization for domain terms such as `待办项`, `todo`, `task`, and `work_item`.
@@ -66,16 +68,16 @@ Recommended near-term data upgrades:
 
 Use the four MCP tools with strict boundaries:
 
-- `memory_query`: load existing context, search related memory, expand objects, and check duplicates or conflicts.
+- `memory_query`: load existing context, search related memory, expand objects, hydrate bounded source slices, and check duplicates or conflicts.
 - `memory_ingest`: capture source material as evidence. It should not decide what deserves durable memory.
 - `memory_remember`: commit durable memory after the user or agent can justify it.
 - `memory_maintain`: validate, report, repair, reindex, and run lifecycle consolidation.
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
-Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, import details, symbols, interfaces, inheritance edges, call sites, framework entries, and line locators when available; `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` for repo-level deterministic code intelligence; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Markdown/document source segments follow `document_chunker.v1`: frontmatter, heading sections, fenced code, tables, line ranges, and heading breadcrumbs are preserved in bounded chunks. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code or full documents.
+Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, import details, symbols, interfaces, inheritance edges, call sites, framework entries, and line locators when available; `payload.api_inventory` with callable classes, functions, methods, framework surfaces, signatures, doc summaries, and line locators; `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` for repo-level deterministic code intelligence; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Markdown/document source segments follow `document_chunker.v1`: frontmatter, heading sections, fenced code, tables, line ranges, and heading breadcrumbs are preserved in bounded chunks. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges with `memory_query` `mode: "source_slice"` when they need exact bounded code or document text.
 
-Code intelligence indexes are derived evidence, not architecture truth. Treat `module_dependencies` and `inheritance_graph` as deterministic static facts when their `resolution` is internal or local. Treat `call_index` as partial static analysis: it helps locate likely call sites but does not prove complete runtime behavior. Use `framework_entries` for stable surfaces such as FastAPI routes, MCP tools, and pytest tests, then inspect the cited file and line before remembering a durable conclusion.
+Code intelligence and API inventory indexes are derived evidence, not architecture truth. Treat `module_dependencies` and `inheritance_graph` as deterministic static facts when their `resolution` is internal or local. Treat `call_index` as partial static analysis: it helps locate likely call sites but does not prove complete runtime behavior. Use `api_inventory` and `framework_entries` for stable surfaces such as public functions, classes, methods, FastAPI routes, MCP tools, CLI commands, and pytest tests, then inspect the cited file and line with `source_slice` before remembering a durable conclusion.
 
 Source objects include `metadata.adapter` and `metadata.freshness`. Use these fields to understand how evidence was captured: adapter version, mode, declared transformations, privacy class, origin classification, currentness, and fingerprint. Do not treat adapter metadata as extracted durable knowledge; use `memory_remember` for durable conclusions.
 
@@ -106,6 +108,8 @@ When new material appears:
 
 When recording completed work that satisfies an existing `work_item`, update the work item in the same review window. Create the activity with `related_work_item_refs`, then call `memory_remember` with `mode: "work_item_status"` to set the work item to `resolved`, `closed`, `blocked`, or another explicit status. Do not leave a todo `open` after recording a completion activity for that same item.
 
+When remembering a direct user or human declaration, include `source_text` if the original wording is longer than the knowledge summary or may matter later. Do not use direct remember as a substitute for source ingest when the material came from a repo, file, web page, PDF, or conversation transcript.
+
 Before ending substantial work:
 
 1. Perform a memory review.
@@ -121,9 +125,10 @@ Current search behavior includes deterministic query normalization, lexical matc
 - pass the actual user task or question, not the full system prompt, scratchpad, or transcript
 - search for both natural-language terms and canonical memory terms
 - prefer `context` when answering a task and `search` when checking existence
-- for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `code_intelligence`, `module_dependencies`, `inheritance_graph`, `call_index`, `framework_entries`, `doc_index`, and `document_sections`; read local files by locator when needed
-- repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"`; use compact locators plus local file reads for full code or documents
-- query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`
+- for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `api_inventory`, `code_intelligence`, `module_dependencies`, `inheritance_graph`, `call_index`, `framework_entries`, `doc_index`, and `document_sections`; use `source_slice` with the returned source id, path, and line range when exact source text is needed
+- repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"`; use compact locators plus `source_slice` for bounded code or document excerpts
+- temporary, scratch, and evaluation memory is excluded from default query/context results; pass `include_temporary: true` or an explicit temporary status only when reviewing temporary memory
+- query options are mode-specific: `detail` is only for `page`; `include_segments` is only for `page` and `expand`; `snippet_chars` is for `page`, `expand`, and `source_slice`
 
 Examples:
 
@@ -137,9 +142,9 @@ Do not answer "there is no memory" from a single failed keyword query when a rea
 
 `memory_query search` and `memory_query context` sanitize unusually long query text before retrieval and return `query_sanitizer` diagnostics. Treat `was_sanitized: true` as a hint to tighten future calls; the effective `query` or `task` in the response is what retrieval used.
 
-`memory_query context` also returns `context_tiers` and `context_budget`. To keep context small, `items` carries compact item details while `decisions`, `procedures`, and `open_work` are id directories back into `items`. Use tier directories for planning, then use `deep_search_hints`, `expand`, or `page` only when the compact context is insufficient.
+`memory_query context` also returns `context_tiers` and `context_budget`. To keep context small, `items` carries compact item details while `decisions`, `procedures`, and `open_work` are id directories back into `items`. Use tier directories for planning, then use `deep_search_hints`, `expand`, or `page` only when the compact context is insufficient. When several returned ids need hydration together, call `memory_query` `mode: "expand"` with `input_data.ids` and bounded `options.max_items` / `options.per_id_max_items` instead of making many separate expand calls.
 
-When semantic retrieval is configured, `memory_query search` fuses lexical or graph hits with semantic hits using Reciprocal Rank Fusion. Prefer items found by multiple streams, but inspect `retrieval_sources`, `retrieval_ranks`, `matched_chunks`, and source locators before treating a hit as evidence. Semantic source hits can point to the matched chunk; use `page`, `expand`, or local file reads to inspect the surrounding context when the answer depends on exact wording.
+When semantic retrieval is configured, `memory_query search` fuses lexical or graph hits with semantic hits using Reciprocal Rank Fusion. Prefer items found by multiple streams, but inspect `retrieval_sources`, `retrieval_ranks`, `matched_chunks`, and source locators before treating a hit as evidence. Semantic source hits can point to the matched chunk; use `page`, `expand`, or `source_slice` to inspect the surrounding context when the answer depends on exact wording.
 
 ## Duplicate Handling
 
@@ -161,7 +166,7 @@ For a curated replacement, first create the replacement with `memory_remember kn
 
 `memory_ingest` returns compact advisory `concept_candidates` for the current source. `memory_maintain report` returns fuller cross-source candidates, including `suggested_memory.input_data` skeletons. These are not canonical memory. If a candidate is useful, review the cited evidence, choose a scope, then call `memory_remember` with `kind: "concept"`, `status: "candidate"`, a bounded summary, and evidence refs. Skip candidates that are merely project names, generic headings, or temporary task vocabulary.
 
-Use `candidate_type` and `ranking_signals` for triage. Prefer high-ranking `concept`, `procedure`, and `decision` candidates over `tool_library` or `implementation_detail` candidates unless the current task specifically concerns that tool or implementation detail. Use `candidate_diagnostics.skipped` to understand why headings or phrases were suppressed, including document artifacts, action phrases, shortcut fragments, and format markers; diagnostics are for tuning and review, not durable memory.
+Use `candidate_type`, `ranking_signals`, and `recommendation.priority` for triage. Prefer candidates with `recommendation.recommended=true` and high or medium priority. Treat `tool_library` and `implementation_detail` candidates as low priority unless the current task specifically concerns that tool or implementation detail. Use `candidate_diagnostics.skipped`, `skipped_by_reason`, and `noise_classes` to understand why headings or phrases were suppressed, including document artifacts, path fragments, temporary task vocabulary, action phrases, shortcut fragments, and format markers; diagnostics are for tuning and review, not durable memory.
 
 Candidate review outcomes should be explicit:
 
@@ -241,6 +246,7 @@ Do not remember:
 Use status deliberately:
 
 - `candidate`: plausible but not fully confirmed, agent-inferred, weakly evidenced, or pending review.
+- `temporary`: scratch, evaluation, or short-lived context that should not appear in default query/context results. Promote it after review or archive it when no longer useful.
 - `active`: confirmed, durable, and evidence-backed. Active knowledge should have evidence refs unless it is explicit user-declared memory.
 - `contested`: conflicting evidence exists or the claim is disputed.
 - `superseded`: replaced by newer knowledge.
@@ -430,6 +436,8 @@ Run mutating maintenance only with explicit apply:
   }
 }
 ```
+
+Use external wiki projection as a low-frequency maintenance flow, not normal memory storage. Configure it with `memory_maintain configure` and `wiki_projection.path` / `wiki_projection.format`, then call `render_projection` with `options.apply=true` to write the generated Obsidian view. The render writes a `.memory-substrate-projection.json` manifest and does not overwrite unmanaged user notes. Call `reconcile_projection` to inspect local wiki edits; it returns conflicts and `remember_candidates` but does not write canonical memory. Review candidates and call `memory_ingest` or `memory_remember` explicitly if a note should become durable memory.
 
 ## Failure Handling
 

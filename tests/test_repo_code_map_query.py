@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import sys
 import tempfile
@@ -433,6 +434,295 @@ class RepoCodeMapQueryTest(unittest.TestCase):
             self.assertEqual(len(payload["call_index"]), 1)
             self.assertIn("payload.module_dependencies", page["data"]["truncated"])
             self.assertIn("payload.call_index", page["data"]["truncated"])
+
+    def test_repo_ingest_builds_api_inventory_without_source_bodies(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "api-inventory-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            (src / "__init__.py").write_text("", encoding="utf-8")
+            (src / "services.py").write_text(
+                "class BaseService:\n"
+                "    pass\n"
+                "\n"
+                "class ToolService(BaseService):\n"
+                "    \"\"\"Coordinates tool operations.\"\"\"\n"
+                "\n"
+                "    def run(self, value: int = 1) -> str:\n"
+                "        \"\"\"Run the tool operation.\"\"\"\n"
+                "        return str(value)\n"
+                "\n"
+                "def public_helper(name: str, enabled: bool = True) -> str:\n"
+                "    \"\"\"Build a public helper label.\"\"\"\n"
+                "    return name if enabled else ''\n",
+                encoding="utf-8",
+            )
+            (src / "api.py").write_text(
+                "from fastapi import FastAPI\n"
+                "from mcp.server.fastmcp import FastMCP\n"
+                "import typer\n"
+                "\n"
+                "app = FastAPI()\n"
+                "mcp = FastMCP('demo')\n"
+                "cli = typer.Typer()\n"
+                "\n"
+                "@app.get('/items/{item_id}')\n"
+                "def get_item(item_id: str) -> dict:\n"
+                "    \"\"\"Fetch one item.\"\"\"\n"
+                "    return {'id': item_id}\n"
+                "\n"
+                "@mcp.tool()\n"
+                "def memory_lookup(query: str) -> dict:\n"
+                "    \"\"\"Lookup memory context.\"\"\"\n"
+                "    return {'query': query}\n"
+                "\n"
+                "@cli.command('serve')\n"
+                "def serve(port: int = 8000) -> None:\n"
+                "    \"\"\"Run the service.\"\"\"\n"
+                "    return None\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+
+            self.assertIsNotNone(source)
+            assert source is not None
+            inventory = source["payload"]["api_inventory"]
+            classes = {item["name"]: item for item in inventory["classes"]}
+            methods = {item["name"]: item for item in inventory["methods"]}
+            functions = {item["name"]: item for item in inventory["functions"]}
+            surfaces = {
+                (item["framework"], item["kind"], item.get("route") or item.get("handler")): item
+                for item in inventory["framework_surfaces"]
+            }
+
+            self.assertEqual(inventory["schema_version"], "api_inventory.v1")
+            self.assertIn("static_api_inventory", inventory["limitations"])
+            self.assertEqual(classes["ToolService"]["path"], "src/services.py")
+            self.assertEqual(classes["ToolService"]["bases"], ["BaseService"])
+            self.assertEqual(classes["ToolService"]["doc"], "Coordinates tool operations.")
+            self.assertEqual(methods["ToolService.run"]["signature"], "ToolService.run(value: int = 1) -> str")
+            self.assertEqual(methods["ToolService.run"]["parameters"][0]["name"], "value")
+            self.assertEqual(methods["ToolService.run"]["doc"], "Run the tool operation.")
+            self.assertEqual(functions["public_helper"]["signature"], "public_helper(name: str, enabled: bool = True) -> str")
+            self.assertEqual(functions["get_item"]["doc"], "Fetch one item.")
+            self.assertEqual(surfaces[("fastapi", "route", "/items/{item_id}")]["method"], "GET")
+            self.assertEqual(surfaces[("mcp", "tool", "memory_lookup")]["handler"], "memory_lookup")
+            self.assertEqual(surfaces[("cli", "command", "serve")]["handler"], "serve")
+
+            inventory_json = json.dumps(inventory, ensure_ascii=False)
+            self.assertNotIn("return {'id': item_id}", inventory_json)
+            self.assertNotIn("return str(value)", inventory_json)
+
+    def test_query_page_exposes_compact_api_inventory_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "compact-api-inventory-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            (src / "api.py").write_text(
+                "def alpha() -> str:\n"
+                "    return 'a'\n"
+                "\n"
+                "def beta() -> str:\n"
+                "    return 'b'\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).page(result["source_id"], max_items=1)
+
+            inventory = page["data"]["object"]["payload"]["api_inventory"]
+            self.assertEqual(inventory["schema_version"], "api_inventory.v1")
+            self.assertEqual(len(inventory["functions"]), 1)
+            self.assertEqual(inventory["functions"][0]["name"], "alpha")
+            self.assertIn("payload.api_inventory.functions", page["data"]["truncated"])
+
+    def test_query_source_slice_reads_bounded_repo_file_lines(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "slice-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            file_text = (
+                "line_1 = 'ignore'\n"
+                "def alpha() -> str:\n"
+                "    return 'a'\n"
+                "def beta() -> str:\n"
+                "    return 'b'\n"
+            )
+            (src / "app.py").write_text(
+                file_text,
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).source_slice(
+                source_id=result["source_id"],
+                path="src/app.py",
+                line_start=2,
+                line_end=4,
+                max_lines=10,
+            )
+
+            self.assertEqual(page["result_type"], "source_slice")
+            self.assertEqual(page["status"], "ok")
+            self.assertEqual(page["data"]["source_id"], result["source_id"])
+            self.assertEqual(page["data"]["path"], "src/app.py")
+            self.assertEqual(page["data"]["line_start"], 2)
+            self.assertEqual(page["data"]["line_end"], 4)
+            self.assertEqual(page["data"]["text"], "def alpha() -> str:\n    return 'a'\ndef beta() -> str:")
+            self.assertEqual(
+                page["data"]["content_hash"],
+                {
+                    "algorithm": "sha256",
+                    "current": hashlib.sha256(file_text.encode("utf-8")).hexdigest(),
+                    "indexed": hashlib.sha256(file_text.encode("utf-8")).hexdigest(),
+                    "matches_index": True,
+                },
+            )
+            self.assertFalse(page["data"]["truncated"])
+            self.assertEqual(page["warnings"], [])
+
+    def test_query_source_slice_rejects_repo_path_traversal(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "slice-repo"
+            repo.mkdir()
+            (repo / "app.py").write_text("print('safe')\n", encoding="utf-8")
+            (root / "secret.py").write_text("print('secret')\n", encoding="utf-8")
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).source_slice(
+                source_id=result["source_id"],
+                path="../secret.py",
+                line_start=1,
+                line_end=1,
+            )
+
+            self.assertEqual(page["result_type"], "source_slice_unavailable")
+            self.assertEqual(page["status"], "invalid_path")
+            self.assertIn("path must stay within repo origin", " ".join(page["warnings"]))
+
+    def test_query_source_slice_rejects_repo_paths_not_in_ingested_index(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "slice-repo"
+            repo.mkdir()
+            local_state = repo / ".codex"
+            local_state.mkdir()
+            (repo / "app.py").write_text("print('safe')\n", encoding="utf-8")
+            (local_state / "session.json").write_text('{"secret": true}\n', encoding="utf-8")
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).source_slice(
+                source_id=result["source_id"],
+                path=".codex/session.json",
+                line_start=1,
+                line_end=1,
+            )
+
+            self.assertEqual(page["result_type"], "source_slice_unavailable")
+            self.assertEqual(page["status"], "path_not_indexed")
+            self.assertIn("path was not part of the ingested repo source index", " ".join(page["warnings"]))
+
+    def test_query_source_slice_reads_document_source_segments(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "notes.md"
+            document.write_text(
+                "# Notes\n"
+                "alpha\n"
+                "beta\n"
+                "gamma\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_markdown(document)
+            page = QueryService(root).source_slice(
+                source_id=result["source_id"],
+                line_start=2,
+                line_end=3,
+                max_lines=10,
+            )
+
+            self.assertEqual(page["result_type"], "source_slice")
+            self.assertEqual(page["status"], "ok")
+            self.assertEqual(page["data"]["source_id"], result["source_id"])
+            self.assertEqual(page["data"]["line_start"], 2)
+            self.assertEqual(page["data"]["line_end"], 3)
+            self.assertEqual(page["data"]["text"], "alpha\nbeta")
+
+    def test_query_source_slice_uses_segment_locator_and_rejects_missing_segment(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            document = root / "notes.md"
+            document.write_text(
+                "# Notes\n"
+                "alpha\n"
+                "beta\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_markdown(document)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+            assert source is not None
+            segment_id = source["segments"][0]["segment_id"]
+
+            page = QueryService(root).source_slice(source_id=result["source_id"], segment_id=segment_id, max_lines=10)
+
+            self.assertEqual(page["result_type"], "source_slice")
+            self.assertEqual(page["status"], "ok")
+            self.assertEqual(page["data"]["line_start"], source["segments"][0]["locator"]["line_start"])
+            self.assertEqual(page["data"]["line_end"], source["segments"][0]["locator"]["line_end"])
+            self.assertEqual(page["data"]["locator"]["segment_id"], segment_id)
+
+            missing = QueryService(root).source_slice(source_id=result["source_id"], segment_id="seg:missing")
+
+            self.assertEqual(missing["result_type"], "source_slice_unavailable")
+            self.assertEqual(missing["status"], "segment_not_found")
+            self.assertIn("Source segment not found", " ".join(missing["warnings"]))
+
+    def test_query_source_slice_returns_next_slice_when_line_range_is_truncated(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "slice-repo"
+            repo.mkdir()
+            (repo / "app.py").write_text(
+                "line1\n"
+                "line2\n"
+                "line3\n"
+                "line4\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).source_slice(
+                source_id=result["source_id"],
+                path="app.py",
+                line_start=1,
+                line_end=4,
+                max_lines=2,
+            )
+
+            self.assertEqual(page["result_type"], "source_slice")
+            self.assertTrue(page["data"]["truncated"])
+            self.assertTrue(page["data"]["truncation"]["line_truncated"])
+            self.assertEqual(page["data"]["text"], "line1\nline2")
+            self.assertEqual(
+                page["data"]["next_slice"],
+                {
+                    "source_id": result["source_id"],
+                    "path": "app.py",
+                    "line_start": 3,
+                    "line_end": 4,
+                },
+            )
 
     def test_repo_ingest_rewrites_when_symbol_changes_in_existing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

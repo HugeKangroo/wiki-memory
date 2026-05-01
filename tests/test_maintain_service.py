@@ -690,6 +690,10 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertIn("remember_as_procedure", {outcome["action"] for outcome in candidate["review_guidance"]["outcomes"]})
             self.assertEqual(candidate["source_count"], 1)
             self.assertGreaterEqual(candidate["occurrences"], 2)
+            self.assertEqual(candidate["recommendation"]["priority"], "high")
+            self.assertTrue(candidate["recommendation"]["recommended"])
+            self.assertIn("review_for_durable_memory", candidate["recommendation"]["recommended_action"])
+            self.assertIn("durable_memory_candidate", candidate["recommendation"]["why"])
             self.assertEqual(
                 {evidence["segment_id"] for evidence in candidate["evidence_refs"]},
                 {"seg-1", "seg-2"},
@@ -874,6 +878,91 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertEqual(skipped_by_title["Evaluates MemPal"], "action_phrase")
             self.assertEqual(skipped_by_title["Graceful Ctrl"], "shortcut_marker")
             self.assertEqual(skipped_by_title["pt-br"], "format_marker")
+            self.assertGreaterEqual(report["data"]["candidate_diagnostics"]["skipped_by_reason"]["document_artifact"], 1)
+
+    def test_report_filters_paths_and_temporary_task_vocab_from_concept_candidates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repository = FsObjectRepository(root)
+            repository.save(
+                "source",
+                {
+                    "id": "src:path-noise",
+                    "kind": "markdown",
+                    "origin": {"path": "/tmp/path-noise.md"},
+                    "title": "Path Noise",
+                    "identity_key": "source|test|path-noise",
+                    "fingerprint": "path-noise",
+                    "content_type": "markdown",
+                    "payload": {"title": "Path Noise"},
+                    "segments": [
+                        {
+                            "segment_id": "seg-path",
+                            "locator": {
+                                "kind": "source",
+                                "line_start": 4,
+                                "heading_path": ["src/memory_substrate/domain/services/concept_candidates.py"],
+                            },
+                            "excerpt": "`src/memory_substrate/domain/services/concept_candidates.py` is an implementation file path.",
+                            "hash": "seg-path",
+                        },
+                        {
+                            "segment_id": "seg-path-2",
+                            "locator": {"kind": "source", "line_start": 8},
+                            "excerpt": "The path `src/memory_substrate/domain/services/concept_candidates.py` should not become memory.",
+                            "hash": "seg-path-2",
+                        },
+                        {
+                            "segment_id": "seg-focus",
+                            "locator": {"kind": "source", "line_start": 12, "heading_path": ["Current Focus"]},
+                            "excerpt": "Current Focus tracks the temporary execution state of this session.",
+                            "hash": "seg-focus",
+                        },
+                        {
+                            "segment_id": "seg-focus-2",
+                            "locator": {"kind": "source", "line_start": 16},
+                            "excerpt": "Current Focus should be treated as temporary task vocabulary, not durable memory.",
+                            "hash": "seg-focus-2",
+                        },
+                        {
+                            "segment_id": "seg-concept",
+                            "locator": {"kind": "source", "line_start": 20, "heading_path": ["Evidence Layer"]},
+                            "excerpt": "Evidence Layer records citeable source segments before durable memory writes.",
+                            "hash": "seg-concept",
+                        },
+                        {
+                            "segment_id": "seg-concept-2",
+                            "locator": {"kind": "source", "line_start": 24},
+                            "excerpt": "Evidence Layer keeps raw support separate from remembered conclusions.",
+                            "hash": "seg-concept-2",
+                        },
+                    ],
+                    "metadata": {},
+                    "status": "active",
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+
+            report = MaintenanceLifecycle(root).report()
+
+            titles = {candidate["title"] for candidate in report["data"]["concept_candidates"]}
+            self.assertIn("Evidence Layer", titles)
+            self.assertNotIn("src/memory_substrate/domain/services/concept_candidates.py", titles)
+            self.assertNotIn("Current Focus", titles)
+            diagnostics = report["data"]["candidate_diagnostics"]
+            skipped_by_title = {item["title"]: item["reason"] for item in diagnostics["skipped"]}
+            self.assertEqual(
+                skipped_by_title["src/memory_substrate/domain/services/concept_candidates.py"],
+                "path_fragment",
+            )
+            self.assertEqual(skipped_by_title["Current Focus"], "temporary_task_vocabulary")
+            self.assertGreaterEqual(diagnostics["skipped_by_reason"]["path_fragment"], 1)
+            self.assertGreaterEqual(diagnostics["skipped_by_reason"]["temporary_task_vocabulary"], 1)
+            noise_classes = {item["reason"]: item for item in diagnostics["noise_classes"]}
+            self.assertIn("path_fragment", noise_classes)
+            self.assertIn("temporary_task_vocabulary", noise_classes)
+            self.assertIn("Current Focus", noise_classes["temporary_task_vocabulary"]["examples"])
 
     def test_report_classifies_and_ranks_core_candidates_before_tool_details(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -1018,8 +1107,15 @@ class MaintenanceLifecycleTest(unittest.TestCase):
             self.assertEqual(by_title["BAAI/bge-m3"]["candidate_type"], "tool_library")
             self.assertEqual(by_title["BAAI/bge-m3"]["suggested_memory"]["kind"], "concept")
             self.assertIn("tool_or_library_name", by_title["BAAI/bge-m3"]["ranking_signals"]["penalties"])
+            self.assertEqual(by_title["BAAI/bge-m3"]["recommendation"]["priority"], "low")
+            self.assertFalse(by_title["BAAI/bge-m3"]["recommendation"]["recommended"])
+            self.assertEqual(
+                by_title["BAAI/bge-m3"]["recommendation"]["recommended_action"],
+                "review_only_if_current_task_needs_it",
+            )
             self.assertEqual(by_title["Candidate Review Workflow"]["candidate_type"], "procedure")
             self.assertEqual(by_title["Candidate Review Workflow"]["suggested_memory"]["kind"], "procedure")
+            self.assertEqual(by_title["Candidate Review Workflow"]["recommendation"]["priority"], "high")
             self.assertEqual(by_title["memory_query search"]["candidate_type"], "implementation_detail")
             self.assertLess(titles.index("Design Principles"), titles.index("memory_query search"))
             self.assertEqual(by_title["mempalace init"]["candidate_type"], "implementation_detail")

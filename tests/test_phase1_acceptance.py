@@ -133,6 +133,8 @@ class Phase1AcceptanceTest(unittest.TestCase):
             candidate = next(item for item in candidates if item["title"] == "Context Pack")
             self.assertEqual(candidate["candidate_type"], "concept")
             self.assertIn("ranking_signals", candidate)
+            self.assertIn(candidate["recommendation"]["priority"], {"high", "medium"})
+            self.assertTrue(candidate["recommendation"]["recommended"])
             self.assertEqual(candidate["detail"], "compact")
             self.assertEqual(candidate["suggested_memory"]["kind"], "concept")
             self.assertIn("review_guidance", candidate)

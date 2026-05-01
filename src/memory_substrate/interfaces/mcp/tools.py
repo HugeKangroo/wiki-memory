@@ -17,10 +17,12 @@ from memory_substrate.interfaces.mcp.models import QueryToolArgs
 
 MUTATING_MAINTAIN_MODES = {
     "configure",
+    "render_projection",
     "repair",
     "promote_candidates",
     "merge_duplicates",
     "resolve_duplicates",
+    "archive_knowledge",
     "archive_source",
     "decay_stale",
     "cycle",
@@ -118,11 +120,11 @@ def memory_ingest(root: str | Path | None, mode: str, input_data: dict, options:
 
 
 def memory_query(root: str | Path | None, mode: str, input_data: dict, options: dict | None = None) -> dict:
-    """Dispatch memory_query MCP calls to context, expansion, page, graph, recent, or search queries.
+    """Dispatch memory_query MCP calls to context, expansion, page, source slices, graph, recent, or search queries.
 
     Args:
         root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
-        mode: Query mode such as context, expand, page, recent, search, or graph.
+        mode: Query mode such as context, expand, page, source_slice, recent, search, or graph.
         input_data: Mode-specific query payload validated by the MCP argument model.
         options: Optional query controls such as max_items and filters.
 
@@ -147,6 +149,20 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
                 max_items=options.get("max_items", 12),
             )
         if mode == "expand":
+            expand_ids = []
+            if input_data.get("id"):
+                expand_ids.append(input_data["id"])
+            expand_ids.extend(input_data.get("ids", []))
+            if input_data.get("ids"):
+                return service.expand_many(
+                    object_ids=expand_ids,
+                    max_items=options.get("max_items", 20),
+                    per_id_max_items=options.get("per_id_max_items", 5),
+                    include_segments=options.get("include_segments"),
+                    snippet_chars=options.get("snippet_chars"),
+                )
+            if not input_data.get("id"):
+                raise ValueError("memory_query expand requires input_data.id or input_data.ids.")
             return service.expand(
                 object_id=input_data["id"],
                 max_items=options.get("max_items", 10),
@@ -160,6 +176,16 @@ def memory_query(root: str | Path | None, mode: str, input_data: dict, options: 
                 max_items=options.get("max_items"),
                 include_segments=options.get("include_segments"),
                 snippet_chars=options.get("snippet_chars"),
+            )
+        if mode == "source_slice":
+            return service.source_slice(
+                source_id=input_data["source_id"],
+                path=input_data.get("path"),
+                line_start=input_data.get("line_start"),
+                line_end=input_data.get("line_end"),
+                segment_id=input_data.get("segment_id"),
+                max_lines=options.get("max_lines", 120),
+                snippet_chars=options.get("snippet_chars", 8000),
             )
         if mode == "recent":
             return service.recent(max_items=options.get("max_items", 10), filters=options.get("filters"))
@@ -254,6 +280,12 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
             config = repository.set_graph_backend(input_data["graph_backend"])
         if input_data.get("semantic_backend"):
             config = repository.set_semantic_backend(input_data["semantic_backend"])
+        if input_data.get("wiki_projection"):
+            wiki_projection = input_data["wiki_projection"]
+            config = repository.set_wiki_projection(
+                path=wiki_projection["path"],
+                format=wiki_projection.get("format", "obsidian"),
+            )
         return {
             "result_type": "maintain_configure_result",
             "data": {"config": config},
@@ -274,6 +306,10 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
             return service.audit(max_items=options.get("max_items", 100))
         if mode == "reindex":
             return service.reindex()
+        if mode == "render_projection":
+            return service.render_projection()
+        if mode == "reconcile_projection":
+            return service.reconcile_projection()
         if mode == "repair":
             return service.repair()
         if mode == "promote_candidates":
@@ -294,6 +330,11 @@ def memory_maintain(root: str | Path | None, mode: str, input_data: dict | None 
         if mode == "archive_source":
             return service.archive_source(
                 source_id=input_data.get("source_id", ""),
+                reason=input_data.get("reason", ""),
+            )
+        if mode == "archive_knowledge":
+            return service.archive_knowledge(
+                knowledge_id=input_data.get("knowledge_id", ""),
                 reason=input_data.get("reason", ""),
             )
         if mode == "decay_stale":

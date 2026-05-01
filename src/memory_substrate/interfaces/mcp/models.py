@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 GraphBackendName = Literal["file", "kuzu"]
 SemanticBackendName = Literal["lancedb"]
+WikiProjectionFormatName = Literal["obsidian"]
 MemorySourceName = Literal["user_declared", "human_curated", "agent_inferred", "system_generated", "imported"]
 QueryDetailName = Literal["compact", "full"]
 
@@ -80,6 +81,7 @@ class QueryFilters(StrictModel):
     node_ids: list[str] = Field(default_factory=list)
     source_id: str | None = None
     source_ids: list[str] = Field(default_factory=list)
+    include_temporary: bool = Field(default=False, description="Include temporary/scratch/evaluation knowledge in query results.")
 
 
 class QueryContextOptions(StrictModel):
@@ -101,9 +103,21 @@ class QuerySearchOptions(StrictModel):
 class QueryExpandOptions(StrictModel):
     """Options for memory_query expand mode."""
 
-    max_items: int | None = Field(default=None, ge=1, description="Maximum related items and source segment snippets. Default: 10.")
+    max_items: int | None = Field(
+        default=None,
+        ge=1,
+        description="Maximum related items and source segment snippets for one id; total item budget for ids. Default: 10 for id, 20 for ids.",
+    )
+    per_id_max_items: int | None = Field(default=None, ge=1, description="Maximum related items per id when input_data.ids is used. Default: 5.")
     include_segments: bool | None = Field(default=None, description="Include source segment snippets. Default: true.")
     snippet_chars: int | None = Field(default=None, ge=40, le=4000, description="Maximum segment excerpt length. Default: 360.")
+
+
+class QuerySourceSliceOptions(StrictModel):
+    """Options for memory_query source_slice mode."""
+
+    max_lines: int | None = Field(default=None, ge=1, le=500, description="Maximum source lines to return. Default: 120.")
+    snippet_chars: int | None = Field(default=None, ge=40, le=20000, description="Maximum source characters to return. Default: 8000.")
 
 
 class QueryPageOptions(StrictModel):
@@ -174,15 +188,26 @@ class QueryContextInput(StrictModel):
 
 
 class QueryExpandInput(StrictModel):
-    """Input payload for expanding one memory object."""
+    """Input payload for expanding one or more memory objects."""
 
-    id: str
+    id: str | None = Field(default=None, description="Single source, node, knowledge, activity, or work item id to expand.")
+    ids: list[str] = Field(default_factory=list, description="Multiple ids to expand in one bounded grouped result.")
 
 
 class QueryPageInput(StrictModel):
     """Input payload for fetching one memory object page."""
 
     id: str
+
+
+class QuerySourceSliceInput(StrictModel):
+    """Input payload for hydrating a bounded source slice."""
+
+    source_id: str = Field(description="Source object id, normally prefixed with src:.")
+    path: str | None = Field(default=None, description="Repo-relative source path. Required for repo sources.")
+    line_start: int | None = Field(default=None, ge=1, description="1-based inclusive start line.")
+    line_end: int | None = Field(default=None, ge=1, description="1-based inclusive end line.")
+    segment_id: str | None = Field(default=None, description="Optional source segment id whose locator supplies default line bounds.")
 
 
 class QueryRecentInput(StrictModel):
@@ -233,6 +258,14 @@ class QueryPageArgs(QueryBaseArgs):
     options: QueryPageOptions | None = None
 
 
+class QuerySourceSliceArgs(QueryBaseArgs):
+    """MCP arguments for memory_query source_slice mode."""
+
+    mode: Literal["source_slice"]
+    input_data: QuerySourceSliceInput
+    options: QuerySourceSliceOptions | None = None
+
+
 class QueryRecentArgs(QueryBaseArgs):
     """MCP arguments for memory_query recent mode."""
 
@@ -258,7 +291,13 @@ class QueryGraphArgs(QueryBaseArgs):
 
 
 QueryToolArgs = Annotated[
-    QueryContextArgs | QueryExpandArgs | QueryPageArgs | QueryRecentArgs | QuerySearchArgs | QueryGraphArgs,
+    QueryContextArgs
+    | QueryExpandArgs
+    | QueryPageArgs
+    | QuerySourceSliceArgs
+    | QueryRecentArgs
+    | QuerySearchArgs
+    | QueryGraphArgs,
     Field(discriminator="mode"),
 ]
 
@@ -295,11 +334,21 @@ class RememberKnowledgeInput(StrictModel):
     actor: ActorRef | None = None
     subject_refs: list[str] = Field(default_factory=list)
     evidence_refs: list[EvidenceRef] = Field(default_factory=list)
+    source_text: str | None = Field(
+        default=None,
+        description="Optional raw declaration text to preserve as a source when no evidence_refs are supplied.",
+    )
+    source_title: str | None = Field(
+        default=None,
+        description="Optional title for the generated declaration source.",
+    )
     payload: KnowledgePayload = Field(
         default_factory=KnowledgePayload,
         description="Optional structured payload. Omit for unstructured title/summary-only knowledge; include subject, predicate, value, or object for structured claims.",
     )
     status: str | None = None
+    lifecycle_state: str | None = Field(default=None, description="Optional lifecycle state, such as temporary, scratch, evaluation, or active.")
+    expires_at: str | None = Field(default=None, description="Optional expiry/review time for temporary memory.")
     confidence: float | None = None
     valid_from: str | None = None
     valid_until: str | None = None
@@ -531,6 +580,13 @@ class MaintainLifecycleArchiveSourceInput(StrictModel):
     reason: str = Field(min_length=1, description="Durable audit reason explaining why this source is retired.")
 
 
+class MaintainLifecycleArchiveKnowledgeInput(StrictModel):
+    """Input payload for archiving one knowledge item after review."""
+
+    knowledge_id: str = Field(description="Knowledge object id to archive, normally prefixed with know:.")
+    reason: str = Field(min_length=1, description="Durable audit reason explaining why this knowledge is archived.")
+
+
 class MaintainLifecycleCycleInput(StrictModel):
     """Input payload for running the full memory maintenance cycle."""
 
@@ -549,11 +605,19 @@ class MaintainLifecycleReportInput(StrictModel):
     stale_after_days: int | None = None
 
 
+class WikiProjectionConfig(StrictModel):
+    """External wiki projection target stored under memory/config.json."""
+
+    path: str = Field(description="External wiki/vault directory path for generated projection files.")
+    format: WikiProjectionFormatName = Field(default="obsidian", description="External wiki projection format. Currently obsidian.")
+
+
 class MaintainConfigureInput(StrictModel):
     """Input payload for setting root-level memory defaults."""
 
     graph_backend: GraphBackendName | None = Field(default=None, description="Default graph backend used when tool options omit graph_backend.")
     semantic_backend: SemanticBackendName | None = Field(default=None, description="Default semantic backend used when tool options omit semantic_backend.")
+    wiki_projection: WikiProjectionConfig | None = Field(default=None, description="External wiki projection target configuration.")
 
 
 class MaintainApplyArgs(BaseToolArgs):
@@ -604,6 +668,13 @@ class MaintainLifecycleArchiveSourceArgs(MaintainApplyArgs):
     input_data: MaintainLifecycleArchiveSourceInput
 
 
+class MaintainLifecycleArchiveKnowledgeArgs(MaintainApplyArgs):
+    """MCP arguments for memory_maintain archive_knowledge mode."""
+
+    mode: Literal["archive_knowledge"]
+    input_data: MaintainLifecycleArchiveKnowledgeInput
+
+
 class MaintainLifecycleCycleArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain cycle mode."""
 
@@ -632,6 +703,18 @@ class MaintainStructureAuditInput(StrictModel):
 
 class MaintainStructureReindexInput(StrictModel):
     """Input payload for rebuilding projections."""
+
+    pass
+
+
+class MaintainRenderProjectionInput(StrictModel):
+    """Input payload for rendering the configured external wiki projection."""
+
+    pass
+
+
+class MaintainReconcileProjectionInput(StrictModel):
+    """Input payload for reporting configured external wiki projection changes."""
 
     pass
 
@@ -665,6 +748,20 @@ class MaintainStructureReindexArgs(BaseToolArgs):
     options: ReindexOptions | None = None
 
 
+class MaintainRenderProjectionArgs(MaintainApplyArgs):
+    """MCP arguments for memory_maintain render_projection mode."""
+
+    mode: Literal["render_projection"]
+    input_data: MaintainRenderProjectionInput
+
+
+class MaintainReconcileProjectionArgs(BaseToolArgs):
+    """MCP arguments for memory_maintain reconcile_projection mode."""
+
+    mode: Literal["reconcile_projection"]
+    input_data: MaintainReconcileProjectionInput
+
+
 class MaintainStructureRepairArgs(MaintainApplyArgs):
     """MCP arguments for memory_maintain repair mode."""
 
@@ -677,10 +774,13 @@ MaintainToolArgs = Annotated[
     | MaintainStructureArgs
     | MaintainStructureAuditArgs
     | MaintainStructureReindexArgs
+    | MaintainRenderProjectionArgs
+    | MaintainReconcileProjectionArgs
     | MaintainStructureRepairArgs
     | MaintainLifecyclePromoteCandidatesArgs
     | MaintainLifecycleMergeDuplicatesArgs
     | MaintainLifecycleResolveDuplicatesArgs
+    | MaintainLifecycleArchiveKnowledgeArgs
     | MaintainLifecycleArchiveSourceArgs
     | MaintainLifecycleDecayStaleArgs
     | MaintainLifecycleCycleArgs

@@ -10,6 +10,7 @@ from memory_substrate.domain.services.repair_engine import RepairEngine
 from memory_substrate.domain.services.structure_validator import StructureValidator
 from memory_substrate.infrastructure.repositories.fs_audit_repository import FsAuditRepository
 from memory_substrate.projections.markdown.projector import MarkdownProjector
+from memory_substrate.projections.markdown.external_wiki import ExternalWikiProjectionService
 
 
 class MaintainService:
@@ -27,6 +28,7 @@ class MaintainService:
         self.repair_engine = RepairEngine(self.root)
         self.audit_repository = FsAuditRepository(self.root)
         self.projector = MarkdownProjector(self.root)
+        self.external_wiki = ExternalWikiProjectionService(self.root)
         self.lifecycle = MaintenanceLifecycle(self.root)
         self.graph_sync = GraphSyncService(self.root, graph_backend) if graph_backend is not None else None
         self.graph_health = GraphHealthReporter(self.root, graph_backend) if graph_backend is not None else None
@@ -74,6 +76,32 @@ class MaintainService:
             result = {**result, "semantic_index": self.semantic_index.rebuild()}
         return {
             "result_type": "reindex_result",
+            "data": result,
+            "warnings": [],
+        }
+
+    def render_projection(self) -> dict:
+        """Render canonical memory into the configured external wiki projection.
+
+        Returns:
+            Projection render result with manifest path, written files, removed files, and conflicts.
+        """
+        result = self.external_wiki.render()
+        return {
+            "result_type": "projection_render_result",
+            "data": result,
+            "warnings": result.get("warnings", []),
+        }
+
+    def reconcile_projection(self) -> dict:
+        """Report configured external wiki changes without mutating canonical memory.
+
+        Returns:
+            Projection reconcile report with conflicts and reviewed remember candidates.
+        """
+        result = self.external_wiki.reconcile()
+        return {
+            "result_type": "projection_reconcile_report",
             "data": result,
             "warnings": [],
         }
@@ -160,6 +188,18 @@ class MaintainService:
             Maintenance mutation result with archived source and affected knowledge ids.
         """
         return self.lifecycle.archive_source(source_id=source_id, reason=reason)
+
+    def archive_knowledge(self, *, knowledge_id: str, reason: str) -> dict:
+        """Archive one knowledge item after explicit review.
+
+        Args:
+            knowledge_id: Knowledge object id to archive.
+            reason: Durable audit reason explaining why this knowledge is archived.
+
+        Returns:
+            Maintenance mutation result with archived knowledge id, patch, audit, and projection metadata.
+        """
+        return self.lifecycle.archive_knowledge(knowledge_id=knowledge_id, reason=reason)
 
     def decay_stale(self, reference_time: str | None = None, stale_after_days: int = 30) -> dict:
         """Mark old active or candidate knowledge as stale.

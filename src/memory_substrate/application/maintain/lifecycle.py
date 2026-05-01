@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from memory_substrate.domain.protocols.memory_patch import PatchOperation, MemoryPatch
+from memory_substrate.domain.protocols.remember_request import TEMPORARY_LIFECYCLE_STATES
 from memory_substrate.domain.services.concept_candidates import ConceptCandidateDiscovery
 from memory_substrate.domain.services.ids import new_id
 from memory_substrate.domain.services.patch_applier import PatchApplier, utc_now_iso
@@ -123,6 +124,36 @@ class MaintenanceLifecycle:
         return {
             **result,
             "merged": merged,
+        }
+
+    def archive_knowledge(self, *, knowledge_id: str, reason: str) -> dict:
+        """Archive one knowledge item after explicit review."""
+        if not knowledge_id:
+            raise ValueError("archive_knowledge requires knowledge_id")
+        if not reason.strip():
+            raise ValueError("archive_knowledge requires a non-empty reason")
+        existing = self.object_repository.get("knowledge", knowledge_id)
+        if existing is None:
+            raise ValueError(f"Knowledge not found: {knowledge_id}")
+        timestamp = utc_now_iso()
+        operations = [
+            PatchOperation(
+                op="update_object",
+                object_type="knowledge",
+                object_id=knowledge_id,
+                changes={
+                    "status": "archived",
+                    "lifecycle_state": "archived",
+                    "valid_until": timestamp,
+                    "reason": f"maintain_archive_knowledge:{reason}",
+                },
+            )
+        ]
+        result = self._apply_operations(operations)
+        return {
+            "result_type": "archive_knowledge_result",
+            "archived_knowledge_id": knowledge_id,
+            **result,
         }
 
     def resolve_duplicates(
@@ -327,6 +358,7 @@ class MaintenanceLifecycle:
         promote_candidate_ids: list[str] = []
         low_evidence_candidate_ids: list[str] = []
         stale_candidate_ids: list[str] = []
+        temporary_memory_ids: list[str] = []
         governance_violations: list[dict] = []
         fact_check_issues = self._fact_check_issues(reference_time=now)
 
@@ -335,6 +367,8 @@ class MaintenanceLifecycle:
             evidence_count = len(item.get("evidence_refs", []))
             confidence = float(item.get("confidence", 0.0))
             governance_violations.extend(self._governance_violations(item, evidence_count))
+            if self._is_temporary_memory(item):
+                temporary_memory_ids.append(item["id"])
             if status == "candidate" and confidence >= min_confidence and item.get("subject_refs"):
                 if evidence_count >= min_evidence:
                     promote_candidate_ids.append(item["id"])
@@ -365,6 +399,7 @@ class MaintenanceLifecycle:
                 "promote_candidate_ids": sorted(promote_candidate_ids),
                 "low_evidence_candidate_ids": sorted(low_evidence_candidate_ids),
                 "stale_candidate_ids": sorted(stale_candidate_ids),
+                "temporary_memory_ids": sorted(temporary_memory_ids),
                 "duplicate_groups": duplicate_groups,
                 "soft_duplicate_candidates": soft_duplicate_candidates,
                 "concept_candidates": concept_candidates,
@@ -375,6 +410,7 @@ class MaintenanceLifecycle:
                     "promote_candidates": len(promote_candidate_ids),
                     "low_evidence_candidates": len(low_evidence_candidate_ids),
                     "stale_candidates": len(stale_candidate_ids),
+                    "temporary_memories": len(temporary_memory_ids),
                     "duplicate_groups": len(duplicate_groups),
                     "soft_duplicate_candidates": len(soft_duplicate_candidates),
                     "concept_candidates": len(concept_candidates),
@@ -384,6 +420,9 @@ class MaintenanceLifecycle:
             },
             "warnings": [],
         }
+
+    def _is_temporary_memory(self, item: dict) -> bool:
+        return str(item.get("status") or "") in TEMPORARY_LIFECYCLE_STATES or str(item.get("lifecycle_state") or "") in TEMPORARY_LIFECYCLE_STATES
 
     def _governance_violations(self, item: dict, evidence_count: int) -> list[dict]:
         if item.get("status") != "active" or evidence_count > 0:

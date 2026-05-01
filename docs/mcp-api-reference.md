@@ -74,7 +74,7 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
-The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, import details, classes, functions, symbols, interfaces, inheritance edges, call sites, framework entries, and line ranges when the parser can extract them. `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` expose repo-level deterministic code intelligence indexes. `payload.code_intelligence` summarizes counts, parser backend, schema version, and limitations such as `partial_static_analysis`. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, heading breadcrumbs, short excerpts, chunk kinds, and line locators. It intentionally does not make full source bodies, full documents, runtime call graphs, or architecture conclusions canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code or full documents.
+The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, import details, classes, functions, symbols, interfaces, inheritance edges, call sites, framework entries, and line ranges when the parser can extract them. `payload.api_inventory` records callable classes, functions, methods, framework surfaces, signatures, doc summaries, and line locators as a bounded derived index. `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` expose repo-level deterministic code intelligence indexes. `payload.code_intelligence` summarizes counts, parser backend, schema version, and limitations such as `partial_static_analysis`. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, heading breadcrumbs, short excerpts, chunk kinds, and line locators. It intentionally does not make full source bodies, full documents, runtime call graphs, API semantics beyond static parser output, or architecture conclusions canonical data; use `memory_query page` or `expand` to find locators, then `memory_query source_slice` for exact bounded code or document text.
 
 Markdown and text source ingest use the shared `document_chunker.v1` contract. Markdown chunks preserve frontmatter as a separate boundary, split on headings outside code fences, keep tables and fenced code inside the surrounding chunk, record `line_start` / `line_end`, and include `heading_path` breadcrumbs in segment locators when present. Oversized sections are split with small line overlap so semantic chunks and evidence segments can remain bounded while still carrying local context.
 
@@ -205,6 +205,12 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
           "penalties": [],
           "score_adjustment": 0.08
         },
+        "recommendation": {
+          "priority": "high",
+          "recommended": true,
+          "recommended_action": "review_for_durable_memory",
+          "why": ["durable_memory_candidate"]
+        },
         "evidence_refs": [{"source_id": "src:...", "segment_id": "..."}],
         "evidence_ref_count": 1,
         "object_ref_count": 2,
@@ -247,6 +253,10 @@ Ingest responses include advisory `memory_suggestions`. These suggestions are de
       "skipped": [
         {"title": "Current Todo", "reason": "document_artifact", "occurrences": 1}
       ],
+      "skipped_by_reason": {"document_artifact": 1},
+      "noise_classes": [
+        {"reason": "document_artifact", "count": 1, "examples": ["Current Todo"]}
+      ],
       "counts": {"skipped": 1, "eligible": 1, "returned": 1}
     },
     "counts": {"concept_candidates": 1, "concept_candidates_available": 1},
@@ -271,6 +281,7 @@ Allowed modes:
 - `recent`
 - `search`
 - `graph`
+- `source_slice`
 
 `context`:
 
@@ -317,6 +328,9 @@ Supported query filters:
 - `status` or `statuses`
 - `node_id` or `node_ids`
 - `source_id` or `source_ids`
+- `include_temporary`
+
+Temporary, scratch, and evaluation memories are excluded from normal `search`, `recent`, and `context` results by default. Use `include_temporary: true` or an explicit temporary status filter when reviewing temporary memory.
 
 `expand`:
 
@@ -333,6 +347,27 @@ Supported query filters:
   }
 }
 ```
+
+`expand` also accepts `input_data.ids` for several selected objects:
+
+```json
+{
+  "args": {
+    "mode": "expand",
+    "input_data": {
+      "ids": ["know:...", "src:...", "work:..."]
+    },
+    "options": {
+      "max_items": 20,
+      "per_id_max_items": 5,
+      "include_segments": true,
+      "snippet_chars": 360
+    }
+  }
+}
+```
+
+Single-id `expand` returns `result_type: "expanded_context"` for compatibility. Multi-id `expand` returns `result_type: "expanded_context_many"` with `groups` keyed by root id, a deduplicated top-level `source_segments` list, `missing_ids`, per-group warnings, and a global `context_budget`. Missing ids are reported in the relevant group and in top-level `warnings` instead of failing the whole call.
 
 `page`:
 
@@ -364,7 +399,29 @@ Supported query filters:
 }
 ```
 
-`detail: "full"` still works for bounded non-repo objects. Repo source pages with full detail return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read from local files by locator. Use compact locators and local file reads for full repo code or documents.
+`detail: "full"` still works for bounded non-repo objects. Repo source pages with full detail return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read through bounded locators. Use compact locators and `source_slice` for exact repo code or documents.
+
+`source_slice`:
+
+```json
+{
+  "args": {
+    "mode": "source_slice",
+    "input_data": {
+      "source_id": "src:...",
+      "path": "src/memory_substrate/interfaces/mcp/tools.py",
+      "line_start": 120,
+      "line_end": 170
+    },
+    "options": {
+      "max_lines": 80,
+      "snippet_chars": 8000
+    }
+  }
+}
+```
+
+`source_slice` hydrates exact bounded text after a caller has selected a locator from `page`, `expand`, search hits, semantic `matched_chunks`, `api_inventory`, or source segments. Repo source paths must be relative, stay inside the ingested repo origin, and appear in the ingested repo source index. The response includes `locator`, `content_hash` with current and indexed sha256 values when available, `source_fingerprint`, `truncation`, and `next_slice` when the requested range is larger than the budget.
 
 Compact query options:
 
@@ -373,8 +430,11 @@ Compact query options:
 - `page.snippet_chars`: maximum compact excerpt length.
 - `expand.include_segments`: include bounded source segment snippets; default is `true`.
 - `expand.snippet_chars`: maximum expanded segment excerpt length.
+- `expand.per_id_max_items`: maximum related items per id when `input_data.ids` is used.
+- `source_slice.max_lines`: maximum lines returned in one source slice.
+- `source_slice.snippet_chars`: maximum returned text characters in one source slice.
 
-Query options are mode-specific. For example, `detail` is accepted only by `page`, and `snippet_chars` is accepted only by `page` and `expand`.
+Query options are mode-specific. For example, `detail` is accepted only by `page`, `include_segments` is accepted only by `page` and `expand`, and `max_lines` is accepted only by `source_slice`.
 
 `context` returns work-ready sections and tier diagnostics:
 
@@ -478,6 +538,7 @@ Allowed `memory_source` values:
 Governed `knowledge` writes:
 
 - normalize `agent_inferred` active claims to `candidate`
+- create a declaration source for `user_declared` or `human_curated` knowledge when no `evidence_refs` are supplied
 - reject exact duplicate structured claims with the same `kind`, overlapping scopes, subject, predicate, and value/object
 - mark same-kind, same-scope subject/predicate conflicts as `contested`
 - return `possible_duplicates` for similar unstructured title/summary-only knowledge without rejecting the write
@@ -485,6 +546,8 @@ Governed `knowledge` writes:
 - reject optional evidence `locator` or `hash` mismatches
 
 For unstructured title/summary-only knowledge, omit `payload` or pass `{}`. For structured fact-like knowledge, include `payload.subject`, `payload.predicate`, and `payload.value` or `payload.object` when applicable.
+
+Use `memory_ingest` before `memory_remember` for files, repos, web pages, PDFs, conversations, and agent-inferred analysis. Direct `knowledge` remember is for bounded user-declared or human-curated statements. If that direct write has no `evidence_refs`, the server creates a `source` with `kind: "declaration"` and attaches its segment as evidence. When `source_text` is supplied for a long remember input, the raw input is preserved as citeable source evidence; agent-inferred active claims still normalize to `candidate`.
 
 `knowledge`:
 
@@ -499,6 +562,9 @@ For unstructured title/summary-only knowledge, omit `payload` or pass `{}`. For 
       "reason": "The detected language changes future repository work.",
       "memory_source": "agent_inferred",
       "scope_refs": ["scope:project"],
+      "source_text": "Optional raw declaration text when this is a direct user or human statement without existing evidence refs.",
+      "lifecycle_state": "temporary",
+      "expires_at": "2026-05-08T00:00:00+00:00",
       "subject_refs": ["node:..."],
       "evidence_refs": [
         {
@@ -563,6 +629,21 @@ Evidence refs may include optional details:
 - `status`
 
 Soft duplicate detection is advisory. It is intended for agent or maintenance review and does not supersede structured duplicate/conflict rules.
+
+`knowledge` responses also include `evidence_contract`:
+
+```json
+{
+  "evidence_contract": {
+    "provenance": "declaration_source_created",
+    "generated_source_id": "src:...",
+    "evidence_ref_count": 1,
+    "requires_review": false
+  }
+}
+```
+
+`provenance` is `caller_evidence_refs` when the caller supplied evidence, `declaration_source_created` when direct user/human declaration evidence was generated, `remember_input_source_created` when explicit `source_text` was preserved for a non-user-curated write, and `evidence_absent` when the write remains unevidenced, such as an agent-inferred candidate without `source_text`.
 
 `work_item`:
 
@@ -681,6 +762,8 @@ Allowed structural modes:
 - `structure`
 - `audit`
 - `reindex`
+- `render_projection`
+- `reconcile_projection`
 - `repair`
 
 Allowed lifecycle modes:
@@ -688,6 +771,7 @@ Allowed lifecycle modes:
 - `promote_candidates`
 - `merge_duplicates`
 - `resolve_duplicates`
+- `archive_knowledge`
 - `archive_source`
 - `decay_stale`
 - `cycle`
@@ -703,7 +787,11 @@ Mutating modes require `options.apply=true`. `report` is read-only.
     "mode": "configure",
     "input_data": {
       "graph_backend": "file",
-      "semantic_backend": "lancedb"
+      "semantic_backend": "lancedb",
+      "wiki_projection": {
+        "path": "/home/user/Obsidian/Memory",
+        "format": "obsidian"
+      }
     },
     "options": {
       "apply": true
@@ -714,7 +802,8 @@ Mutating modes require `options.apply=true`. `report` is read-only.
 
 Supported `graph_backend` values are `file` and `kuzu`.
 Supported `semantic_backend` values are `lancedb`.
-Both fields are optional, but at least one should be supplied for a meaningful configure call.
+Supported `wiki_projection.format` values currently include `obsidian`.
+All fields are optional, but at least one should be supplied for a meaningful configure call.
 
 `structure`:
 
@@ -759,6 +848,35 @@ Both fields are optional, but at least one should be supplied for a meaningful c
 `reindex` rebuilds derived projections. When configured or requested, it also rebuilds graph and semantic indexes from canonical memory objects.
 When both graph and semantic backends are enabled, `memory_query search` merges graph/lexical results with semantic hits before ranking the final list.
 Semantic model loading is lazy and process-local. MCP startup does not load BGE-M3; the first semantic `reindex` or `search` tries cached model files before downloading, then warms the provider cache for the running server process. Hosts may set `HF_HUB_OFFLINE=1` only for hard offline mode.
+
+`render_projection`:
+
+```json
+{
+  "args": {
+    "mode": "render_projection",
+    "input_data": {},
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+`render_projection` writes canonical memory into the configured external wiki path. It writes `.memory-substrate-projection.json` in the target and only manages files listed in that manifest. Existing user notes at unmanaged paths are not overwritten; path conflicts are returned in `data.conflicts`.
+
+`reconcile_projection`:
+
+```json
+{
+  "args": {
+    "mode": "reconcile_projection",
+    "input_data": {}
+  }
+}
+```
+
+`reconcile_projection` is report-only. It compares the external wiki target with the projection manifest, reports missing or locally modified generated files, and surfaces unmanaged Markdown files as `remember_candidates`. It does not mutate canonical memory; reviewed imports still go through `memory_ingest` or `memory_remember`.
 
 `report`:
 
@@ -838,6 +956,25 @@ Use `outcome: "keep_both"` when the items are distinct but need clarified summar
 
 Use `outcome: "contest"` when the relationship is unclear or conflicting and the items should not be treated as clean active memories.
 
+`archive_knowledge`:
+
+```json
+{
+  "args": {
+    "mode": "archive_knowledge",
+    "input_data": {
+      "knowledge_id": "know:temporary",
+      "reason": "Temporary note is no longer useful."
+    },
+    "options": {
+      "apply": true
+    }
+  }
+}
+```
+
+Use `archive_knowledge` after reviewing temporary, stale, or incorrect knowledge that should be retained for history but excluded from normal retrieval.
+
 `archive_source`:
 
 ```json
@@ -859,7 +996,7 @@ Use `outcome: "contest"` when the relationship is unclear or conflicting and the
 
 `repair` returns safe missing-reference repair results. When semantic or graph backends are configured, it also returns `derived_indexes` diagnostics so callers can detect stale indexes before choosing a mutating `reindex`.
 
-`report` returns promotable candidates, low-evidence candidates, stale candidates, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, candidate diagnostics, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` write after review; they are not persisted automatically. Each candidate includes `candidate_type`, `ranking_signals`, `review_guidance`, and a `suggested_memory.input_data` skeleton with inferred `scope_refs`, evidence refs, `reason`, `memory_source`, `status`, and confidence. Agents must review evidence and rewrite the summary before using it. Candidate diagnostics list skipped terms with reasons such as `document_artifact`, `format_marker`, `action_phrase`, `shortcut_marker`, `generic_term`, `too_long`, or `weak_term`. Fact-check issues are advisory and currently include:
+`report` returns promotable candidates, low-evidence candidates, stale candidates, temporary memory ids, deterministic duplicate groups, unstructured soft duplicate candidates, concept candidates, candidate diagnostics, fact-check issues, counts, and graph health when a graph backend is configured. Concept candidates are advisory repeated terms or headings that may deserve a `memory_remember` write after review; they are not persisted automatically. Each candidate includes `candidate_type`, `ranking_signals`, `recommendation`, `review_guidance`, and a `suggested_memory.input_data` skeleton with inferred `scope_refs`, evidence refs, `reason`, `memory_source`, `status`, and confidence. Agents must review evidence and rewrite the summary before using it. Candidate diagnostics list skipped terms and `noise_classes` with reasons such as `document_artifact`, `path_fragment`, `temporary_task_vocabulary`, `format_marker`, `action_phrase`, `shortcut_marker`, `generic_term`, `too_long`, or `weak_term`. Fact-check issues are advisory and currently include:
 
 - `similar_entity_name`: multiple nodes normalize to the same name key.
 - `stale_fact`: active facts past their validity window.

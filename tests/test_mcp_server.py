@@ -33,7 +33,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(args_schema["discriminator"]["mapping"].keys()),
-            {"context", "expand", "page", "recent", "search", "graph"},
+            {"context", "expand", "page", "recent", "search", "graph", "source_slice"},
         )
 
         remember_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_remember")
@@ -55,9 +55,12 @@ class McpServerTest(unittest.TestCase):
                 "audit",
                 "reindex",
                 "repair",
+                "render_projection",
+                "reconcile_projection",
                 "promote_candidates",
                 "merge_duplicates",
                 "resolve_duplicates",
+                "archive_knowledge",
                 "archive_source",
                 "decay_stale",
                 "cycle",
@@ -120,6 +123,14 @@ class McpServerTest(unittest.TestCase):
             self.assertIn("Tool Discovery", playbook[0].content)
             self.assertIn("tool search", playbook[0].content)
             self.assertIn("memory-substrate", playbook[0].content)
+            self.assertIn("api_inventory", playbook[0].content)
+            self.assertIn("source_slice", playbook[0].content)
+            self.assertIn("input_data.ids", playbook[0].content)
+            self.assertIn("declaration_source_created", playbook[0].content)
+            self.assertIn("archive_knowledge", playbook[0].content)
+            self.assertIn("include_temporary", playbook[0].content)
+            self.assertIn("render_projection", playbook[0].content)
+            self.assertIn("reconcile_projection", playbook[0].content)
             self.assertIn("query expansion", playbook[0].content)
             self.assertIn("possible_duplicates", playbook[0].content)
             self.assertIn('status: "completed_with_pending_decisions"', playbook[0].content)
@@ -129,6 +140,13 @@ class McpServerTest(unittest.TestCase):
             self.assertIn("Repo ingest statuses", api_summary[0].content)
             self.assertIn("completed_with_pending_decisions", api_summary[0].content)
             self.assertIn("noop", api_summary[0].content)
+            self.assertIn("source_slice", api_summary[0].content)
+            self.assertIn("API inventory", api_summary[0].content)
+            self.assertIn("expanded_context_many", api_summary[0].content)
+            self.assertIn("evidence_contract", api_summary[0].content)
+            self.assertIn("Temporary memory", api_summary[0].content)
+            self.assertIn("wiki_projection.path", api_summary[0].content)
+            self.assertIn("render_projection", api_summary[0].content)
 
         asyncio.run(run_smoke())
 
@@ -166,6 +184,8 @@ class McpServerTest(unittest.TestCase):
             remember_defs["RememberKnowledgeInput"]["properties"]["payload"]["$ref"],
             "#/$defs/KnowledgePayload",
         )
+        self.assertIn("source_text", remember_defs["RememberKnowledgeInput"]["properties"])
+        self.assertIn("source_title", remember_defs["RememberKnowledgeInput"]["properties"])
         self.assertEqual(
             set(remember_defs["RememberKnowledgeInput"]["required"]),
             {
@@ -195,7 +215,14 @@ class McpServerTest(unittest.TestCase):
         self.assertIn("QuerySearchOptions", query_defs)
         self.assertIn("QueryPageOptions", query_defs)
         self.assertIn("QueryExpandOptions", query_defs)
+        self.assertIn("QuerySourceSliceInput", query_defs)
+        self.assertIn("QuerySourceSliceOptions", query_defs)
         self.assertIn("QueryFilters", query_defs)
+        expand_input = query_defs["QueryExpandInput"]["properties"]
+        self.assertIn("id", expand_input)
+        self.assertIn("ids", expand_input)
+        expand_options = query_defs["QueryExpandOptions"]["properties"]
+        self.assertIn("per_id_max_items", expand_options)
         recent_args = query_defs["QueryRecentArgs"]
         self.assertEqual(
             recent_args["properties"]["options"]["anyOf"][0]["$ref"],
@@ -206,6 +233,12 @@ class McpServerTest(unittest.TestCase):
         page_options = query_defs["QueryPageOptions"]["properties"]
         self.assertIn("detail", page_options)
         self.assertIn("include_segments", page_options)
+
+        maintain_defs = tools["memory_maintain"].parameters["$defs"]
+        configure_input = maintain_defs["MaintainConfigureInput"]["properties"]
+        self.assertIn("wiki_projection", configure_input)
+        self.assertIn("MaintainRenderProjectionArgs", maintain_defs)
+        self.assertIn("MaintainReconcileProjectionArgs", maintain_defs)
 
         ingest_defs = tools["memory_ingest"].parameters["$defs"]
         self.assertIn("ConversationMessage", ingest_defs)

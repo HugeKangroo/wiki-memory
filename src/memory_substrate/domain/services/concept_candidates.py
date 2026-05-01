@@ -18,6 +18,10 @@ class ConceptCandidateDiscovery:
         r"(?:\s+--?[a-z][a-z0-9_-]*(?:=[^\s`.,;:)]+)?){0,3}\b"
     )
     _FORMAT_MARKER_RE = re.compile(r"\b[a-z]{2}-[a-z]{2}\b")
+    _FILE_EXTENSION_RE = re.compile(
+        r"\.(?:c|cc|cpp|css|go|h|hpp|html|java|js|json|jsx|lock|md|py|rs|toml|ts|tsx|txt|yaml|yml)\b",
+        re.IGNORECASE,
+    )
     _CJK_RE = re.compile(
         r"[\u4e00-\u9fff]{0,8}(?:知识图谱|记忆系统|向量数据库|图数据库|概念候选|策略检索|知识沉淀|证据链|生命周期|上下文包)[\u4e00-\u9fff]{0,4}"
     )
@@ -83,6 +87,37 @@ class ConceptCandidateDiscovery:
     }
     _SHORTCUT_MARKERS = {"alt", "cmd", "ctrl", "esc", "shift"}
     _DOC_ARTIFACT_SUFFIXES = {"examples", "features", "reference", "references", "tasks", "todo", "usage"}
+    _PATH_PREFIXES = {
+        ".codex",
+        ".github",
+        ".worktrees",
+        "build",
+        "dist",
+        "docs",
+        "memory",
+        "node_modules",
+        "src",
+        "tests",
+    }
+    _TEMPORARY_TASK_KEYS = {
+        "activeexecutionqueue",
+        "currentfocus",
+        "currentpriority",
+        "currentpriorityorder",
+        "executionconstraints",
+        "inprogress",
+        "nextaction",
+        "nextactions",
+        "nextstep",
+        "nextsteps",
+        "openquestion",
+        "openquestions",
+        "scratchnote",
+        "scratchnotes",
+        "temporaryexecutionstate",
+        "temporarytaskvocabulary",
+        "workinprogress",
+    }
 
     def discover(
         self,
@@ -339,6 +374,13 @@ class ConceptCandidateDiscovery:
         score = max(0.0, min(1.0, raw_score + ranking_signals["score_adjustment"]))
         confidence = min(0.85, 0.45 + 0.05 * bucket["occurrences"] + 0.08 * support_count)
         scope_refs = sorted(bucket["scope_refs"]) or [item["source_id"] for item in evidence_refs[:1]]
+        recommendation = self._candidate_recommendation(
+            classification=classification,
+            ranking_signals=ranking_signals,
+            score=score,
+            source_count=source_count,
+            support_count=support_count,
+        )
         suggested_input = {
             "kind": classification["suggested_kind"],
             "title": bucket["title"],
@@ -375,6 +417,7 @@ class ConceptCandidateDiscovery:
             "object_refs": object_refs,
             "reasons": sorted(bucket["reasons"]),
             "ranking_signals": ranking_signals,
+            "recommendation": recommendation,
             "suggested_memory": {
                 "mode": "knowledge",
                 "kind": classification["suggested_kind"],
@@ -426,6 +469,9 @@ class ConceptCandidateDiscovery:
         if classification["candidate_type"] == "tool_library":
             penalties.append("tool_or_library_name")
             adjustment -= 0.22
+            if len(bucket["scope_refs"]) <= 1:
+                penalties.append("single_scope_tool_or_library")
+                adjustment -= 0.04
         if classification["candidate_type"] == "implementation_detail":
             penalties.append("implementation_detail")
             adjustment -= 0.2
@@ -433,6 +479,43 @@ class ConceptCandidateDiscovery:
             penalties.append("version_or_package_marker")
             adjustment -= 0.04
         return {"bonuses": bonuses, "penalties": penalties, "score_adjustment": round(adjustment, 3)}
+
+    def _candidate_recommendation(
+        self,
+        *,
+        classification: dict[str, str],
+        ranking_signals: dict[str, Any],
+        score: float,
+        source_count: int,
+        support_count: int,
+    ) -> dict[str, Any]:
+        candidate_type = classification["candidate_type"]
+        why = list(ranking_signals.get("bonuses", []))
+        why.extend(ranking_signals.get("penalties", []))
+        if source_count >= 2:
+            why.append("cross_source_support")
+        if support_count >= 3:
+            why.append("repeated_evidence_support")
+
+        if candidate_type in {"concept", "procedure", "decision"} and score >= 0.65:
+            priority = "high"
+            action = "review_for_durable_memory"
+            recommended = True
+        elif candidate_type in {"concept", "procedure", "decision"}:
+            priority = "medium"
+            action = "review_for_durable_memory"
+            recommended = True
+        else:
+            priority = "low"
+            action = "review_only_if_current_task_needs_it"
+            recommended = False
+
+        return {
+            "priority": priority,
+            "recommended": recommended,
+            "recommended_action": action,
+            "why": why[:6],
+        }
 
     def _knowledge_refs_sources(self, item: dict[str, Any], source_ids: set[str]) -> bool:
         for evidence_ref in item.get("evidence_refs", []) or []:
@@ -584,6 +667,48 @@ class ConceptCandidateDiscovery:
         words = {word.lower() for word in re.split(r"[\s/+:-]+", term.strip()) if word}
         return bool(words & self._SHORTCUT_MARKERS)
 
+    def _looks_like_path_fragment(self, term: str) -> bool:
+        stripped = term.strip()
+        if not stripped:
+            return False
+        lower = stripped.lower()
+        if lower.startswith(("./", "../", "/", "~/")) or "\\" in stripped:
+            return True
+        path_parts = [part for part in re.split(r"[/\\]+", stripped) if part]
+        if len(path_parts) >= 3:
+            return True
+        if len(path_parts) >= 2 and path_parts[0].lower() in self._PATH_PREFIXES:
+            return True
+        if self._FILE_EXTENSION_RE.search(stripped):
+            return True
+        return False
+
+    def _looks_like_temporary_task_vocabulary(self, term: str) -> bool:
+        normalized_key = self._normalize_key(term)
+        if normalized_key in self._TEMPORARY_TASK_KEYS:
+            return True
+        words = [word.lower() for word in re.split(r"[\s/-]+", term.strip()) if word]
+        if len(words) < 2 or len(words) > 4:
+            return False
+        if words[0] in {"active", "current", "next", "open", "pending", "temporary"} and words[-1] in {
+            "action",
+            "actions",
+            "focus",
+            "item",
+            "items",
+            "order",
+            "priority",
+            "question",
+            "questions",
+            "state",
+            "step",
+            "steps",
+            "task",
+            "tasks",
+        }:
+            return True
+        return False
+
     def _skip_reason(self, term: str) -> str | None:
         if not term:
             return "empty"
@@ -594,6 +719,10 @@ class ConceptCandidateDiscovery:
             return "document_artifact"
         if self._looks_like_document_artifact_title(term):
             return "document_artifact"
+        if self._looks_like_path_fragment(term):
+            return "path_fragment"
+        if self._looks_like_temporary_task_vocabulary(term):
+            return "temporary_task_vocabulary"
         if self._looks_like_format_marker(term):
             return "format_marker"
         if self._looks_like_action_phrase(term):
@@ -610,8 +739,22 @@ class ConceptCandidateDiscovery:
 
     def _candidate_diagnostics(self, skipped: dict[str, dict[str, Any]]) -> dict[str, Any]:
         entries = sorted(skipped.values(), key=lambda item: (-item["occurrences"], item["title"]))[:20]
+        skipped_by_reason: dict[str, int] = {}
+        examples_by_reason: dict[str, list[str]] = {}
+        for item in skipped.values():
+            reason = str(item["reason"])
+            skipped_by_reason[reason] = skipped_by_reason.get(reason, 0) + 1
+            examples = examples_by_reason.setdefault(reason, [])
+            if len(examples) < 5:
+                examples.append(str(item["title"]))
+        noise_classes = [
+            {"reason": reason, "count": skipped_by_reason[reason], "examples": examples_by_reason.get(reason, [])}
+            for reason in sorted(skipped_by_reason, key=lambda key: (-skipped_by_reason[key], key))
+        ]
         return {
             "skipped": entries,
+            "skipped_by_reason": skipped_by_reason,
+            "noise_classes": noise_classes,
             "counts": {
                 "skipped": len(skipped),
                 "returned": 0,
