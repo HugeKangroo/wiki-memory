@@ -502,3 +502,23 @@ Deliverables:
 
 Verification:
 - [x] Add coverage that the helper can run twice in the same parent root.
+
+### MS-24: Real MCP Host Smoke And Release Readiness
+
+Status: `completed`
+
+Goal: verify the package works from a real MCP stdio host shape and keep the release path testable without adopting Neo4j, Graphiti, or UI work.
+
+Boundary: host smoke, release docs, and local verification only. Do not add new production backends, UI surfaces, hosted LLM providers, or mandatory optional dependencies.
+
+Deliverables:
+- [x] Add a packaged MCP host smoke helper that starts the server over stdio, initializes an MCP client session, lists tools/resources, and calls representative tools without passing a root in tool args.
+- [x] Verify the smoke helper binds `MEMORY_SUBSTRATE_ROOT` at process startup and mutates only the supplied temporary/local root.
+- [x] Document when to run the host smoke and release checks.
+- [x] Keep README navigational and avoid duplicating the full MCP API reference.
+
+Verification:
+- [x] Add automated coverage for the host smoke helper.
+- [x] Run focused MCP host smoke tests.
+- [x] Run the full test suite.
+- [x] Run `uv build`.

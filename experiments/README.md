@@ -97,3 +97,21 @@ result = run_end_to_end_dogfood_acceptance("/tmp/memory-e2e-dogfood")
 Use it as a deterministic local acceptance signal when changing MCP schemas, compact response policies, ingest suggestions, durable write governance, maintenance reports, or context assembly. The helper mutates only the supplied temporary/local root and does not require network access or optional semantic models.
 
 Each call creates an isolated `dogfood-runs/run-NNNN` directory under the supplied root, so the helper can be run repeatedly against the same local parent directory. The result includes `run_root`, per-step `checks`, `failed_checks`, `next_actions`, `payload_sizes`, and `payload_budgets` so failures are diagnosable without replaying the whole run.
+
+## MCP Host Smoke
+
+The host smoke helper starts the MCP server as a real stdio subprocess, initializes an MCP client session, lists tools/resources, reads `memory://policy`, and calls representative tools without passing a root in tool arguments. Use it when changing server startup, host configuration docs, MCP resources, tool schemas, or release packaging.
+
+```python
+from memory_substrate.experiments.mcp_host_smoke import run_mcp_host_smoke
+
+result = run_mcp_host_smoke("/tmp/memory-host-smoke")
+```
+
+By default, the helper launches the current Python environment with `-m memory_substrate.interfaces.mcp.server` and sets `MEMORY_SUBSTRATE_ROOT` to the supplied root. The result is compact: tool names, resource URIs, observed result types, root-binding checks, `failed_checks`, and `next_actions`. It does not return full MCP tool schemas.
+
+Run the automated smoke coverage:
+
+```bash
+uv run --group dev pytest tests/test_mcp_host_smoke.py -q
+```

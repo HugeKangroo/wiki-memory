@@ -199,9 +199,11 @@ claude mcp add --transport stdio --scope project memory-substrate -- \
 
 ## Release
 
-Build locally:
+Before tagging, run the host-facing smoke, full tests, and build:
 
 ```bash
+uv run --group dev pytest tests/test_mcp_host_smoke.py -q
+uv run --group dev pytest -q
 uv build
 ```
 
