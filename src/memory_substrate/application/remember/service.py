@@ -15,6 +15,9 @@ from memory_substrate.infrastructure.repositories.fs_patch_repository import FsP
 from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
+WORK_ITEM_STATUSES = {"open", "in_progress", "blocked", "resolved", "closed", "cancelled"}
+
+
 class RememberService:
     def __init__(self, root: str | Path, graph_backend=None) -> None:
         """Create a remember service bound to one memory-substrate root.
@@ -450,6 +453,75 @@ class RememberService:
             "object_type": "work_item",
             "object_id": work_item_id,
             "status": changes["status"],
+            "patch_id": result["patch_id"],
+            "work_item_id": work_item_id,
+            "applied_operations": result["applied_operations"],
+            "audit_event_ids": result["audit_event_ids"],
+            "projection_count": result["projection_count"],
+        }
+        if "graph_sync" in result:
+            output["graph_sync"] = result["graph_sync"]
+        return output
+
+    def update_work_item_status(self, data: dict, actor: dict | None = None) -> dict:
+        """Update the status of an existing work item through an audited patch.
+
+        Args:
+            data: Status update fields including work_item_id, status, reason, and optional resolution.
+            actor: Optional actor metadata recorded as the patch source.
+
+        Returns:
+            Mutation result with patch, audit, and projection metadata.
+        """
+        work_item_id = data["work_item_id"]
+        status = data["status"]
+        if status not in WORK_ITEM_STATUSES:
+            raise ValueError(f"Unsupported work_item status: {status}")
+        before = self.object_repository.get("work_item", work_item_id)
+        if before is None:
+            raise ValueError(f"Missing work_item: {work_item_id}")
+        reason = str(data.get("reason") or "")
+        if not reason:
+            raise ValueError("reason is required for work_item_status")
+        memory_source = str(data.get("memory_source") or "")
+        if not memory_source:
+            raise ValueError("memory_source is required for work_item_status")
+
+        operations = [
+            PatchOperation(
+                op="change_status",
+                object_type="work_item",
+                object_id=work_item_id,
+                changes={"status": status, "reason": reason},
+            )
+        ]
+        if "resolution" in data:
+            operations.append(
+                PatchOperation(
+                    op="update_object",
+                    object_type="work_item",
+                    object_id=work_item_id,
+                    changes={"resolution": data.get("resolution")},
+                )
+            )
+        patch = MemoryPatch(
+            id=new_id("patch"),
+            source=actor
+            or {
+                "type": "system",
+                "id": "memory.remember.work_item_status",
+                "memory_source": memory_source,
+            },
+            operations=operations,
+            created_at=utc_now_iso(),
+        )
+        result = self._apply_and_project(patch)
+        output = {
+            "result_type": "remember_result",
+            "object_type": "work_item",
+            "object_id": work_item_id,
+            "old_status": before.get("status"),
+            "status": status,
             "patch_id": result["patch_id"],
             "work_item_id": work_item_id,
             "applied_operations": result["applied_operations"],

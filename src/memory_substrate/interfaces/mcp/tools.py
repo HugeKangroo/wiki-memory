@@ -177,7 +177,7 @@ def memory_remember(root: str | Path | None, mode: str, input_data: dict, option
 
     Args:
         root: Optional memory-substrate root directory from server configuration; defaults to ~/memory-substrate when omitted.
-        mode: Remember mode such as activity, knowledge, work_item, promote, supersede, contest, or batch.
+        mode: Remember mode such as activity, knowledge, work_item, work_item_status, promote, supersede, contest, or batch.
         input_data: Mode-specific mutation payload validated by the MCP argument model.
         options: Optional execution flags reserved for future remember behavior.
 
@@ -200,6 +200,8 @@ def memory_remember(root: str | Path | None, mode: str, input_data: dict, option
             return service.create_knowledge(input_data, actor=actor)
         if mode == "work_item":
             return service.create_work_item(input_data, actor=actor)
+        if mode == "work_item_status":
+            return service.update_work_item_status(input_data, actor=actor)
         if mode == "promote":
             return service.promote_knowledge(
                 knowledge_id=input_data["knowledge_id"],

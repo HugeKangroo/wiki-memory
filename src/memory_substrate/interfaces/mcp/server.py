@@ -75,8 +75,8 @@ def create_server(root: str | Path | None = None) -> FastMCP:
     @mcp.tool(
         name="memory_remember",
         description=(
-            "persistent agent memory remember/write path: govern durable activities, claims, and work items "
-            "after evidence has been captured or verified."
+            "persistent agent memory remember/write path: govern durable activities, claims, work items, "
+            "and work item status updates after evidence has been captured or verified."
         ),
     )
     def memory_remember(args: RememberToolArgs) -> dict:

@@ -73,7 +73,9 @@ Use the four MCP tools with strict boundaries:
 
 For repository ingest, pass `exclude_patterns` for project-local or agent-local state such as `.codex` and `.worktrees`. Common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target` are skipped by default.
 
-Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, symbols, and line locators when available; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Markdown/document source segments follow `document_chunker.v1`: frontmatter, heading sections, fenced code, tables, line ranges, and heading breadcrumbs are preserved in bounded chunks. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code or full documents.
+Repository ingest stores a lightweight repo map, not full source as canonical memory. Repo sources include `payload.code_index` with path, language, line count, and content hash; `payload.code_modules` with parsed module paths, classes, functions, imports, import details, symbols, interfaces, inheritance edges, call sites, framework entries, and line locators when available; `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` for repo-level deterministic code intelligence; and `payload.doc_index` / `payload.document_sections` for Markdown design docs, READMEs, and other repository documentation. Markdown/document source segments follow `document_chunker.v1`: frontmatter, heading sections, fenced code, tables, line ranges, and heading breadcrumbs are preserved in bounded chunks. Source segments may include short excerpts for evidence, but agents should use the returned paths and line ranges to read local source files directly when they need full code or full documents.
+
+Code intelligence indexes are derived evidence, not architecture truth. Treat `module_dependencies` and `inheritance_graph` as deterministic static facts when their `resolution` is internal or local. Treat `call_index` as partial static analysis: it helps locate likely call sites but does not prove complete runtime behavior. Use `framework_entries` for stable surfaces such as FastAPI routes, MCP tools, and pytest tests, then inspect the cited file and line before remembering a durable conclusion.
 
 Source objects include `metadata.adapter` and `metadata.freshness`. Use these fields to understand how evidence was captured: adapter version, mode, declared transformations, privacy class, origin classification, currentness, and fingerprint. Do not treat adapter metadata as extracted durable knowledge; use `memory_remember` for durable conclusions.
 
@@ -102,6 +104,8 @@ When new material appears:
 9. Call `memory_remember` only for information that should survive future sessions.
 10. Inspect `possible_duplicates` on knowledge write responses before treating a new unstructured item as distinct.
 
+When recording completed work that satisfies an existing `work_item`, update the work item in the same review window. Create the activity with `related_work_item_refs`, then call `memory_remember` with `mode: "work_item_status"` to set the work item to `resolved`, `closed`, `blocked`, or another explicit status. Do not leave a todo `open` after recording a completion activity for that same item.
+
 Before ending substantial work:
 
 1. Perform a memory review.
@@ -117,7 +121,7 @@ Current search behavior includes deterministic query normalization, lexical matc
 - pass the actual user task or question, not the full system prompt, scratchpad, or transcript
 - search for both natural-language terms and canonical memory terms
 - prefer `context` when answering a task and `search` when checking existence
-- for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `doc_index`, and `document_sections`; read local files by locator when needed
+- for codebase questions, query repo/module/path/symbol terms first, then use compact `page` on the repo source to inspect bounded `code_index`, `code_modules`, `code_intelligence`, `module_dependencies`, `inheritance_graph`, `call_index`, `framework_entries`, `doc_index`, and `document_sections`; read local files by locator when needed
 - repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"`; use compact locators plus local file reads for full code or documents
 - query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`
 
@@ -242,6 +246,8 @@ Use status deliberately:
 - `superseded`: replaced by newer knowledge.
 - `stale`: likely outdated due to age or changed context.
 - `archived`: retained for history but not used as current context.
+
+For work items, use `open`, `in_progress`, `blocked`, `resolved`, `closed`, or `cancelled`. For activities, `finalized` and `completed` both represent finished work; use `completed` when that is clearer for the caller, and still update the related work item separately.
 
 ## Call Examples
 

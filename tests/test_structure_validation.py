@@ -17,6 +17,35 @@ from memory_substrate.projections.markdown.projector import MarkdownProjector
 
 
 class StructureValidationTest(unittest.TestCase):
+    def test_completed_activity_status_is_valid(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            objects = FsObjectRepository(root)
+            objects.save(
+                "activity",
+                {
+                    "id": "act:completed",
+                    "kind": "repo_clone",
+                    "title": "Clone completed",
+                    "summary": "The clone finished.",
+                    "status": "completed",
+                    "related_node_refs": [],
+                    "related_work_item_refs": [],
+                    "source_refs": [],
+                    "produced_object_refs": [],
+                    "artifact_refs": [],
+                    "created_at": "2026-01-01T00:00:00+00:00",
+                    "updated_at": "2026-01-01T00:00:00+00:00",
+                },
+            )
+
+            report = MaintainService(root).structure()["data"]
+
+            self.assertNotIn(
+                "invalid_status",
+                {issue["kind"] for issue in report["issues"]},
+            )
+
     def test_structure_reports_duplicate_identity_active_without_evidence_orphans_and_projection_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

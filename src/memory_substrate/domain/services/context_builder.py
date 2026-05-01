@@ -142,6 +142,7 @@ class ContextBuilder:
         status_rank = {
             "active": 0,
             "finalized": 1,
+            "completed": 1,
             "candidate": 2,
             "open": 3,
             "in_progress": 4,

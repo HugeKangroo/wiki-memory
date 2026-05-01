@@ -41,7 +41,7 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(remember_args_schema["discriminator"]["propertyName"], "mode")
         self.assertEqual(
             set(remember_args_schema["discriminator"]["mapping"].keys()),
-            {"activity", "knowledge", "work_item", "promote", "supersede", "contest", "batch"},
+            {"activity", "knowledge", "work_item", "work_item_status", "promote", "supersede", "contest", "batch"},
         )
 
         maintain_tool = next(tool for tool in server._tool_manager.list_tools() if tool.name == "memory_maintain")
@@ -185,6 +185,10 @@ class McpServerTest(unittest.TestCase):
         self.assertEqual(
             set(remember_defs["RememberWorkItemInput"]["required"]),
             {"kind", "title", "summary", "reason", "memory_source", "scope_refs"},
+        )
+        self.assertEqual(
+            set(remember_defs["RememberWorkItemStatusInput"]["required"]),
+            {"work_item_id", "status", "reason", "memory_source"},
         )
 
         query_defs = tools["memory_query"].parameters["$defs"]
@@ -588,6 +592,63 @@ class McpServerTest(unittest.TestCase):
                 second_payload = json.loads(second_result[0].text)
 
                 self.assertEqual(second_payload["possible_duplicates"][0]["object_id"], first_payload["knowledge_id"])
+
+        asyncio.run(run_smoke())
+
+    def test_server_updates_work_item_status(self) -> None:
+        async def run_smoke() -> None:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                server = create_server(root=tmpdir)
+                created = await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "mode": "work_item",
+                            "input_data": {
+                                "kind": "task",
+                                "title": "Clone Isaac Sim",
+                                "summary": "Clone the official Isaac Sim repository.",
+                                "reason": "The task should persist until resolved.",
+                                "memory_source": "user_declared",
+                                "scope_refs": ["project:digital-twin"],
+                            },
+                        }
+                    },
+                )
+                created_payload = json.loads(created[0].text)
+
+                updated = await server.call_tool(
+                    "memory_remember",
+                    {
+                        "args": {
+                            "mode": "work_item_status",
+                            "input_data": {
+                                "work_item_id": created_payload["work_item_id"],
+                                "status": "resolved",
+                                "resolution": "The repository was cloned and verified.",
+                                "reason": "The completed activity satisfies this task.",
+                                "memory_source": "agent_inferred",
+                            },
+                        }
+                    },
+                )
+                updated_payload = json.loads(updated[0].text)
+
+                page = await server.call_tool(
+                    "memory_query",
+                    {
+                        "args": {
+                            "mode": "page",
+                            "input_data": {"id": created_payload["work_item_id"]},
+                            "options": {"detail": "full"},
+                        }
+                    },
+                )
+                page_payload = json.loads(page[0].text)
+
+                self.assertEqual(updated_payload["status"], "resolved")
+                self.assertEqual(page_payload["data"]["object"]["status"], "resolved")
+                self.assertEqual(page_payload["data"]["object"]["resolution"], "The repository was cloned and verified.")
 
         asyncio.run(run_smoke())
 

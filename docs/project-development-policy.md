@@ -35,9 +35,10 @@ Use a single-primary parser strategy per source category for repo ingest.
 
 Current parser stance:
 
-- require `tree-sitter-language-pack==1.6.0` as the primary parser library for code symbols
+- require `tree-sitter-language-pack==1.6.0` as the primary parser library for code symbols and deterministic code intelligence
 - use `document_chunker.v1` as the primary Markdown/document chunking contract for source segments, repo documentation sections, and semantic chunks
 - use stdlib AST to enrich Python signatures and docstrings because it is stronger than tree-sitter for that specific semantic layer
+- expose import details, module dependencies, inheritance edges, call sites, and framework surfaces as derived indexes, not canonical architecture conclusions
 - keep regex parsing only as a defensive fallback if parser loading fails
 - add another external parser library only after the primary parser cannot reliably provide a required structure
 

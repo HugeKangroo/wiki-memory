@@ -117,6 +117,160 @@ class RepoCodeMapQueryTest(unittest.TestCase):
         self.assertIn("MemoryServer.run", parsed.functions)
         self.assertIn("memory_query", parsed.functions)
 
+    def test_tree_sitter_js_parse_keeps_static_enrichments_when_available(self) -> None:
+        source = (
+            "import { BaseController } from './base'\n"
+            "class UserController extends BaseController {}\n"
+            "app.get('/users', listUsers)\n"
+        )
+
+        class FakeNode:
+            def __init__(
+                self,
+                node_type: str,
+                start_byte: int,
+                end_byte: int,
+                start_line: int,
+                end_line: int,
+                children: list | None = None,
+                fields: dict | None = None,
+            ) -> None:
+                self.type = node_type
+                self.start_byte = start_byte
+                self.end_byte = end_byte
+                self.start_point = (start_line - 1, 0)
+                self.end_point = (end_line - 1, 0)
+                self.children = children or []
+                self._fields = fields or {}
+
+            def child_by_field_name(self, name: str):
+                return self._fields.get(name)
+
+        def name_node(name: str, line: int) -> FakeNode:
+            start = source.index(name)
+            return FakeNode("identifier", start, start + len(name), line, line)
+
+        import_node = FakeNode("import_declaration", 0, source.index("\n"), 1, 1)
+        class_node = FakeNode(
+            "class_declaration",
+            source.index("class UserController"),
+            source.index("app.get"),
+            2,
+            2,
+            fields={"name": name_node("UserController", 2)},
+        )
+        root_node = FakeNode("program", 0, len(source), 1, 3, children=[import_node, class_node])
+
+        class FakeTree:
+            def __init__(self) -> None:
+                self.root_node = root_node
+
+        class FakeParser:
+            def parse(self, _raw: bytes) -> FakeTree:
+                return FakeTree()
+
+        fake_module = types.ModuleType("tree_sitter_language_pack")
+        fake_module.get_parser = lambda _language: FakeParser()
+        previous_module = sys.modules.get("tree_sitter_language_pack")
+        sys.modules["tree_sitter_language_pack"] = fake_module
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                path = root / "server.js"
+                path.write_text(source, encoding="utf-8")
+
+                parser = TreeSitterParser()
+                parsed = parser.parse(root, path, "javascript")
+        finally:
+            if previous_module is None:
+                sys.modules.pop("tree_sitter_language_pack", None)
+            else:
+                sys.modules["tree_sitter_language_pack"] = previous_module
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed.parser_backend, "tree_sitter_language_pack")
+        self.assertIn("UserController", parsed.classes)
+        self.assertTrue(
+            any(
+                edge["class"] == "UserController" and edge["base"] == "BaseController"
+                for edge in parsed.inheritance
+            )
+        )
+        self.assertTrue(
+            any(
+                entry["framework"] == "express"
+                and entry["method"] == "GET"
+                and entry["route"] == "/users"
+                for entry in parsed.framework_entries
+            )
+        )
+
+    def test_tree_sitter_js_parse_keeps_framework_only_modules(self) -> None:
+        source = "app.get('/health', healthCheck)\n"
+
+        class FakeNode:
+            def __init__(self) -> None:
+                self.type = "program"
+                self.start_byte = 0
+                self.end_byte = len(source)
+                self.start_point = (0, 0)
+                self.end_point = (0, 0)
+                self.children = []
+
+            def child_by_field_name(self, _name: str):
+                return None
+
+        class FakeTree:
+            def __init__(self) -> None:
+                self.root_node = FakeNode()
+
+        class FakeParser:
+            def parse(self, _raw: bytes) -> FakeTree:
+                return FakeTree()
+
+        fake_module = types.ModuleType("tree_sitter_language_pack")
+        fake_module.get_parser = lambda _language: FakeParser()
+        previous_module = sys.modules.get("tree_sitter_language_pack")
+        sys.modules["tree_sitter_language_pack"] = fake_module
+        try:
+            with tempfile.TemporaryDirectory() as tmpdir:
+                root = Path(tmpdir)
+                path = root / "routes.js"
+                path.write_text(source, encoding="utf-8")
+
+                parser = TreeSitterParser()
+                parsed = parser.parse(root, path, "javascript")
+        finally:
+            if previous_module is None:
+                sys.modules.pop("tree_sitter_language_pack", None)
+            else:
+                sys.modules["tree_sitter_language_pack"] = previous_module
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        self.assertEqual(parsed.framework_entries[0]["route"], "/health")
+        self.assertEqual(parsed.framework_entries[0]["method"], "GET")
+
+    def test_python_call_site_index_does_not_attribute_nested_function_calls_to_outer_scope(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            path = root / "service.py"
+            path.write_text(
+                "def outer() -> None:\n"
+                "    def inner() -> None:\n"
+                "        hidden_call()\n"
+                "    visible_call()\n",
+                encoding="utf-8",
+            )
+
+            parsed = TreeSitterParser()._parse_python_ast(root, path)
+
+        self.assertIsNotNone(parsed)
+        assert parsed is not None
+        outer_calls = [call["callee"] for call in parsed.call_sites if call["caller"] == "outer"]
+        self.assertEqual(outer_calls, ["visible_call"])
+
     def test_repo_ingest_builds_symbol_code_map_without_full_source_payload(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -164,6 +318,121 @@ class RepoCodeMapQueryTest(unittest.TestCase):
             )
             self.assertEqual(segment["locator"]["line_start"], 1)
             self.assertGreaterEqual(segment["locator"]["line_end"], 5)
+
+    def test_repo_ingest_builds_code_intelligence_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "code-intelligence-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            (src / "__init__.py").write_text("", encoding="utf-8")
+            (src / "repository.py").write_text(
+                "class BaseRepository:\n"
+                "    pass\n"
+                "\n"
+                "class UserRepository(BaseRepository):\n"
+                "    def get_user(self, user_id: str) -> dict:\n"
+                "        return {\"id\": user_id}\n",
+                encoding="utf-8",
+            )
+            (src / "service.py").write_text(
+                "from src.repository import UserRepository\n"
+                "\n"
+                "class UserService:\n"
+                "    def __init__(self) -> None:\n"
+                "        self.repo = UserRepository()\n"
+                "\n"
+                "    def load(self, user_id: str) -> dict:\n"
+                "        return self.repo.get_user(user_id)\n",
+                encoding="utf-8",
+            )
+            (src / "api.py").write_text(
+                "from fastapi import FastAPI\n"
+                "from src.service import UserService\n"
+                "\n"
+                "app = FastAPI()\n"
+                "\n"
+                "@app.get('/users/{user_id}')\n"
+                "def get_user(user_id: str) -> dict:\n"
+                "    return UserService().load(user_id)\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            source = FsObjectRepository(root).get("source", result["source_id"])
+
+            self.assertIsNotNone(source)
+            assert source is not None
+            payload = source["payload"]
+            dependency = next(
+                edge
+                for edge in payload["module_dependencies"]
+                if edge["from_path"] == "src/service.py" and edge["imported_module"] == "src.repository"
+            )
+            inheritance = next(
+                edge
+                for edge in payload["inheritance_graph"]
+                if edge["class"] == "UserRepository" and edge["base"] == "BaseRepository"
+            )
+            call_site = next(
+                call
+                for call in payload["call_index"]
+                if call["caller"] == "UserService.load" and call["callee"] == "self.repo.get_user"
+            )
+            route = next(
+                item
+                for item in payload["framework_entries"]
+                if item["framework"] == "fastapi" and item["kind"] == "route"
+            )
+
+            self.assertEqual(payload["code_intelligence"]["schema_version"], "code_intelligence.v1")
+            self.assertIn("partial_static_analysis", payload["code_intelligence"]["limitations"])
+            self.assertEqual(dependency["to_path"], "src/repository.py")
+            self.assertEqual(dependency["resolution"], "internal")
+            self.assertEqual(dependency["imported_name"], "UserRepository")
+            self.assertEqual(inheritance["path"], "src/repository.py")
+            self.assertEqual(inheritance["resolution"], "local_symbol")
+            self.assertEqual(call_site["line_start"], 8)
+            self.assertEqual(route["method"], "GET")
+            self.assertEqual(route["route"], "/users/{user_id}")
+            self.assertEqual(route["handler"], "get_user")
+
+    def test_query_page_exposes_compact_code_intelligence_indexes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            repo = root / "compact-code-intel-repo"
+            repo.mkdir()
+            src = repo / "src"
+            src.mkdir()
+            (src / "__init__.py").write_text("", encoding="utf-8")
+            (src / "a.py").write_text(
+                "from src.b import B\n"
+                "from src import b\n"
+                "\n"
+                "class A(B):\n"
+                "    def run(self) -> None:\n"
+                "        B().run()\n",
+                encoding="utf-8",
+            )
+            (src / "b.py").write_text(
+                "class B:\n"
+                "    def run(self) -> None:\n"
+                "        return None\n",
+                encoding="utf-8",
+            )
+
+            result = IngestService(root).ingest_repo(repo)
+            page = QueryService(root).page(result["source_id"], max_items=1)
+
+            payload = page["data"]["object"]["payload"]
+            self.assertEqual(page["data"]["detail"], "compact")
+            self.assertEqual(payload["code_intelligence"]["schema_version"], "code_intelligence.v1")
+            self.assertEqual(len(payload["module_dependencies"]), 1)
+            self.assertEqual(len(payload["inheritance_graph"]), 1)
+            self.assertEqual(len(payload["call_index"]), 1)
+            self.assertIn("payload.module_dependencies", page["data"]["truncated"])
+            self.assertIn("payload.call_index", page["data"]["truncated"])
 
     def test_repo_ingest_rewrites_when_symbol_changes_in_existing_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:

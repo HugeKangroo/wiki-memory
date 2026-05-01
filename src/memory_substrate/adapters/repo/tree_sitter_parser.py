@@ -17,7 +17,11 @@ class ParsedModule:
     classes: list[str] = field(default_factory=list)
     functions: list[str] = field(default_factory=list)
     imports: list[str] = field(default_factory=list)
+    import_details: list[dict] = field(default_factory=list)
     symbols: list[dict] = field(default_factory=list)
+    inheritance: list[dict] = field(default_factory=list)
+    call_sites: list[dict] = field(default_factory=list)
+    framework_entries: list[dict] = field(default_factory=list)
     module_doc: str = ""
     class_docs: dict[str, str] = field(default_factory=dict)
     interfaces: list[dict] = field(default_factory=list)
@@ -154,13 +158,23 @@ class TreeSitterParser:
             for child in node.children:
                 walk(child, class_stack)
 
-        walk(tree.root_node)
-        if not classes and not functions and not imports:
-            return None
         rich_python = self._parse_python_ast(root, path) if language == "python" else None
-        if rich_python is not None:
+        rich_js = self._parse_js_like(root, path, language) if language in {"typescript", "javascript"} else None
+        rich_module = rich_python or rich_js
+        if rich_module is not None:
+            if not classes:
+                classes = rich_module.classes
+            if not functions:
+                functions = rich_module.functions
             if not imports:
-                imports = rich_python.imports
+                imports = rich_module.imports
+            if not symbols:
+                symbols = rich_module.symbols
+        has_rich_structure = rich_module is not None and (
+            rich_module.inheritance or rich_module.call_sites or rich_module.framework_entries
+        )
+        if not classes and not functions and not imports and not has_rich_structure:
+            return None
         return ParsedModule(
             path=str(path.relative_to(root)),
             language=language,
@@ -169,7 +183,15 @@ class TreeSitterParser:
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            import_details=(
+                rich_module.import_details[:40]
+                if rich_module is not None
+                else self._import_details_from_js_lines(imports)[:40]
+            ),
             symbols=symbols[:40],
+            inheritance=rich_module.inheritance[:40] if rich_module is not None else [],
+            call_sites=rich_module.call_sites[:80] if rich_module is not None else [],
+            framework_entries=rich_module.framework_entries[:40] if rich_module is not None else [],
             module_doc=rich_python.module_doc if rich_python is not None else "",
             class_docs=rich_python.class_docs if rich_python is not None else {},
             interfaces=rich_python.interfaces[:30] if rich_python is not None else [],
@@ -327,32 +349,98 @@ class TreeSitterParser:
         classes: list[str] = []
         functions: list[str] = []
         imports: list[str] = []
+        import_details: list[dict] = []
         class_docs: dict[str, str] = {}
         interfaces: list[dict] = []
         symbols: list[dict] = []
+        inheritance: list[dict] = []
+        call_sites: list[dict] = []
+        framework_entries: list[dict] = []
         module_doc = ast.get_docstring(tree) or ""
         for node in tree.body:
             if isinstance(node, ast.ClassDef):
                 classes.append(node.name)
                 class_docs[node.name] = ast.get_docstring(node) or ""
-                symbols.append(self._python_symbol(node.name, "class", node))
+                bases = [rendered for base in node.bases if (rendered := self._expr(base))]
+                class_symbol = self._python_symbol(node.name, "class", node)
+                class_symbol["bases"] = bases
+                class_symbol["decorators"] = self._decorators(node.decorator_list)
+                class_symbol["doc"] = (ast.get_docstring(node) or "").splitlines()[0] if ast.get_docstring(node) else ""
+                symbols.append(class_symbol)
+                for base in bases:
+                    inheritance.append({"class": node.name, "base": base, "line_start": int(node.lineno)})
+                if node.name.startswith("Test"):
+                    framework_entries.append(
+                        {
+                            "framework": "pytest",
+                            "kind": "test_class",
+                            "handler": node.name,
+                            "line_start": int(node.lineno),
+                        }
+                    )
                 for child in node.body:
                     if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
                         method_name = f"{node.name}.{child.name}"
                         functions.append(method_name)
-                        symbols.append(self._python_symbol(method_name, "method", child))
-                        interfaces.append(self._python_interface(child, class_name=node.name))
+                        method_interface = self._python_interface(child, class_name=node.name)
+                        method_symbol = self._python_symbol(method_name, "method", child)
+                        method_symbol.update(
+                            {
+                                "signature": method_interface["signature"],
+                                "decorators": self._decorators(child.decorator_list),
+                                "async": isinstance(child, ast.AsyncFunctionDef),
+                                "doc": method_interface["doc"],
+                            }
+                        )
+                        symbols.append(method_symbol)
+                        interfaces.append(method_interface)
+                        call_sites.extend(self._python_call_sites(child.body, method_name))
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
                 functions.append(node.name)
-                symbols.append(self._python_symbol(node.name, "function", node))
-                interfaces.append(self._python_interface(node))
+                function_interface = self._python_interface(node)
+                function_symbol = self._python_symbol(node.name, "function", node)
+                decorators = self._decorators(node.decorator_list)
+                function_symbol.update(
+                    {
+                        "signature": function_interface["signature"],
+                        "decorators": decorators,
+                        "async": isinstance(node, ast.AsyncFunctionDef),
+                        "doc": function_interface["doc"],
+                    }
+                )
+                symbols.append(function_symbol)
+                interfaces.append(function_interface)
+                call_sites.extend(self._python_call_sites(node.body, node.name))
+                framework_entries.extend(self._framework_entries_from_function(node))
             elif isinstance(node, ast.Import):
-                imports.extend(alias.name for alias in node.names)
+                for alias in node.names:
+                    imports.append(alias.name)
+                    import_details.append(
+                        {
+                            "kind": "import",
+                            "module": alias.name,
+                            "imported_name": None,
+                            "alias": alias.asname,
+                            "level": 0,
+                            "line_start": int(node.lineno),
+                        }
+                    )
             elif isinstance(node, ast.ImportFrom):
                 module = node.module or ""
                 imports.append(module)
+                for alias in node.names:
+                    import_details.append(
+                        {
+                            "kind": "import_from",
+                            "module": module,
+                            "imported_name": alias.name,
+                            "alias": alias.asname,
+                            "level": int(node.level),
+                            "line_start": int(node.lineno),
+                        }
+                    )
 
-        if not classes and not functions and not imports:
+        if not classes and not functions and not imports and not framework_entries:
             return None
 
         return ParsedModule(
@@ -363,7 +451,11 @@ class TreeSitterParser:
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            import_details=import_details[:40],
             symbols=symbols[:40],
+            inheritance=inheritance[:40],
+            call_sites=call_sites[:80],
+            framework_entries=framework_entries[:40],
             module_doc=module_doc.splitlines()[0] if module_doc else "",
             class_docs={key: value.splitlines()[0] for key, value in class_docs.items() if value},
             interfaces=interfaces[:30],
@@ -416,6 +508,106 @@ class TreeSitterParser:
             "return_description": doc_info["returns"],
             "doc": doc_info["summary"],
         }
+
+    def _decorators(self, decorators: list[ast.expr]) -> list[str]:
+        return [rendered for decorator in decorators if (rendered := self._expr(decorator))]
+
+    def _python_call_sites(self, body: list[ast.stmt], caller: str) -> list[dict]:
+        parser = self
+
+        class CallSiteVisitor(ast.NodeVisitor):
+            def __init__(self) -> None:
+                self.calls: list[dict] = []
+
+            def visit_Call(self, node: ast.Call) -> None:
+                if not isinstance(node, ast.Call):
+                    return
+                callee = parser._call_name(node.func)
+                if not callee:
+                    self.generic_visit(node)
+                    return
+                self.calls.append(
+                    {
+                        "caller": caller,
+                        "callee": callee,
+                        "line_start": int(getattr(node, "lineno", 1)),
+                        "kind": "call",
+                        "analysis": "partial_static_analysis",
+                    }
+                )
+                self.generic_visit(node)
+
+            def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+                return
+
+            def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+                return
+
+            def visit_ClassDef(self, node: ast.ClassDef) -> None:
+                return
+
+        visitor = CallSiteVisitor()
+        for statement in body:
+            visitor.visit(statement)
+        return visitor.calls
+
+    def _call_name(self, node: ast.AST) -> str:
+        if isinstance(node, ast.Name):
+            return node.id
+        if isinstance(node, ast.Attribute):
+            parent = self._call_name(node.value)
+            return f"{parent}.{node.attr}" if parent else node.attr
+        if isinstance(node, ast.Call):
+            callee = self._call_name(node.func)
+            return f"{callee}()" if callee else ""
+        return ""
+
+    def _framework_entries_from_function(self, node: ast.FunctionDef | ast.AsyncFunctionDef) -> list[dict]:
+        entries: list[dict] = []
+        for decorator in node.decorator_list:
+            if isinstance(decorator, ast.Call) and isinstance(decorator.func, ast.Attribute):
+                method = decorator.func.attr.lower()
+                if method in {"get", "post", "put", "patch", "delete", "options", "head"}:
+                    route = self._first_string_arg(decorator)
+                    if route:
+                        entries.append(
+                            {
+                                "framework": "fastapi",
+                                "kind": "route",
+                                "method": method.upper(),
+                                "route": route,
+                                "handler": node.name,
+                                "line_start": int(node.lineno),
+                            }
+                        )
+                if method in {"tool", "resource", "prompt"}:
+                    entries.append(
+                        {
+                            "framework": "mcp",
+                            "kind": method,
+                            "handler": node.name,
+                            "decorator": self._expr(decorator),
+                            "line_start": int(node.lineno),
+                        }
+                    )
+        if node.name.startswith("test_"):
+            entries.append(
+                {
+                    "framework": "pytest",
+                    "kind": "test",
+                    "handler": node.name,
+                    "line_start": int(node.lineno),
+                }
+            )
+        return entries
+
+    def _first_string_arg(self, call: ast.Call) -> str:
+        if not call.args:
+            return ""
+        first = call.args[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            return first.value
+        return ""
 
     def _parse_docstring(self, doc: str) -> dict:
         if not doc:
@@ -484,6 +676,9 @@ class TreeSitterParser:
         ]
         interface_matches = list(re.finditer(r"\binterface\s+([A-Za-z_$][\w$]*)", source))
         type_matches = list(re.finditer(r"\btype\s+([A-Za-z_$][\w$]*)\s*=", source))
+        inheritance_matches = list(
+            re.finditer(r"\bclass\s+([A-Za-z_$][\w$]*)\s+extends\s+([A-Za-z_$][\w$.]*)", source)
+        )
         classes = [match.group(1) for match in class_matches]
         functions = [match.group(1) for match in function_matches]
         symbols = [
@@ -497,8 +692,17 @@ class TreeSitterParser:
             for line in source.splitlines()
             if line.strip().startswith("import ") or line.strip().startswith("export ")
         ]
+        inheritance = [
+            {
+                "class": match.group(1),
+                "base": match.group(2),
+                "line_start": source.count("\n", 0, match.start()) + 1,
+            }
+            for match in inheritance_matches
+        ]
+        framework_entries = self._js_framework_entries(source)
 
-        if not classes and not functions and not imports:
+        if not classes and not functions and not imports and not framework_entries:
             return None
 
         return ParsedModule(
@@ -509,7 +713,10 @@ class TreeSitterParser:
             classes=classes[:12],
             functions=functions[:20],
             imports=imports[:20],
+            import_details=self._import_details_from_js_lines(imports)[:40],
             symbols=symbols[:40],
+            inheritance=inheritance[:40],
+            framework_entries=framework_entries[:40],
             parser_backend="regex",
         )
 
@@ -521,3 +728,46 @@ class TreeSitterParser:
             "line_start": line_number,
             "line_end": line_number,
         }
+
+    def _import_details_from_js_lines(self, imports: list[str]) -> list[dict]:
+        details: list[dict] = []
+        for line in imports:
+            module = ""
+            match = re.search(r"\bfrom\s+['\"]([^'\"]+)['\"]", line)
+            if match:
+                module = match.group(1)
+            else:
+                match = re.search(r"\bimport\s+['\"]([^'\"]+)['\"]", line)
+                if match:
+                    module = match.group(1)
+            if not module:
+                continue
+            details.append(
+                {
+                    "kind": "import",
+                    "module": module,
+                    "imported_name": None,
+                    "alias": None,
+                    "level": 0,
+                    "line_start": 1,
+                    "raw": line,
+                }
+            )
+        return details
+
+    def _js_framework_entries(self, source: str) -> list[dict]:
+        entries: list[dict] = []
+        for match in re.finditer(
+            r"\b(?:app|router)\.(get|post|put|patch|delete|options|head)\(['\"]([^'\"]+)['\"]",
+            source,
+        ):
+            entries.append(
+                {
+                    "framework": "express",
+                    "kind": "route",
+                    "method": match.group(1).upper(),
+                    "route": match.group(2),
+                    "line_start": source.count("\n", 0, match.start()) + 1,
+                }
+            )
+        return entries

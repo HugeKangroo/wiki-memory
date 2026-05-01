@@ -70,6 +70,11 @@ class RepoScanSummary:
     doc_index: list[dict]
     document_sections: list[dict]
     python_modules: list[dict]
+    code_intelligence: dict
+    module_dependencies: list[dict]
+    inheritance_graph: list[dict]
+    call_index: list[dict]
+    framework_entries: list[dict]
 
 
 class RepoAdapter:
@@ -127,6 +132,11 @@ class RepoAdapter:
                 "document_sections": summary.document_sections,
                 "code_modules": summary.python_modules,
                 "python_modules": summary.python_modules,
+                "code_intelligence": summary.code_intelligence,
+                "module_dependencies": summary.module_dependencies,
+                "inheritance_graph": summary.inheritance_graph,
+                "call_index": summary.call_index,
+                "framework_entries": summary.framework_entries,
                 "parser_backend": parser.backend,
             },
             segments=self._segments(root, summary),
@@ -277,7 +287,11 @@ class RepoAdapter:
                             "classes": module_info.classes,
                             "functions": module_info.functions,
                             "imports": module_info.imports,
+                            "import_details": module_info.import_details,
                             "symbols": module_info.symbols,
+                            "inheritance": module_info.inheritance,
+                            "call_sites": module_info.call_sites,
+                            "framework_entries": module_info.framework_entries,
                             "module_doc": module_info.module_doc,
                             "class_docs": module_info.class_docs,
                             "interfaces": module_info.interfaces,
@@ -285,6 +299,7 @@ class RepoAdapter:
                         }
                     )
         parsed_modules.sort(key=lambda module: self._module_priority(str(module["path"])))
+        code_intelligence = self._code_intelligence(parser.backend, parsed_modules)
 
         return RepoScanSummary(
             file_count=file_count,
@@ -298,6 +313,11 @@ class RepoAdapter:
             doc_index=doc_index,
             document_sections=document_sections,
             python_modules=parsed_modules[:200],
+            code_intelligence=code_intelligence["summary"],
+            module_dependencies=code_intelligence["module_dependencies"],
+            inheritance_graph=code_intelligence["inheritance_graph"],
+            call_index=code_intelligence["call_index"],
+            framework_entries=code_intelligence["framework_entries"],
         )
 
     def _code_index_entry(self, root: Path, path: Path, language: str) -> dict:
@@ -541,6 +561,152 @@ class RepoAdapter:
 
     def _module_name(self, module_path: str) -> str:
         return str(Path(module_path).with_suffix("")).replace("/", ".")
+
+    def _code_intelligence(self, parser_backend: str, modules: list[dict]) -> dict:
+        module_by_name = self._module_lookup(modules)
+        class_by_name = self._class_lookup(modules)
+        module_dependencies = self._module_dependencies(modules, module_by_name)
+        inheritance_graph = self._inheritance_graph(modules, class_by_name)
+        call_index = self._call_index(modules)
+        framework_entries = self._framework_entries(modules)
+        return {
+            "summary": {
+                "schema_version": "code_intelligence.v1",
+                "parser_backend": parser_backend,
+                "module_count": len(modules),
+                "symbol_count": sum(len(module.get("symbols", [])) for module in modules),
+                "dependency_count": len(module_dependencies),
+                "inheritance_count": len(inheritance_graph),
+                "call_site_count": len(call_index),
+                "framework_entry_count": len(framework_entries),
+                "limitations": [
+                    "partial_static_analysis",
+                    "dynamic_dispatch_not_resolved",
+                    "runtime_configuration_not_evaluated",
+                ],
+            },
+            "module_dependencies": module_dependencies[:500],
+            "inheritance_graph": inheritance_graph[:300],
+            "call_index": call_index[:500],
+            "framework_entries": framework_entries[:200],
+        }
+
+    def _module_lookup(self, modules: list[dict]) -> dict[str, str]:
+        lookup: dict[str, str] = {}
+        for module in modules:
+            path = str(module["path"])
+            dotted = self._module_name(path)
+            lookup[dotted] = path
+            if dotted.endswith(".__init__"):
+                lookup[dotted.removesuffix(".__init__")] = path
+        return lookup
+
+    def _class_lookup(self, modules: list[dict]) -> dict[str, str]:
+        lookup: dict[str, str] = {}
+        for module in modules:
+            path = str(module["path"])
+            module_name = self._module_name(path)
+            for class_name in module.get("classes", []):
+                lookup.setdefault(str(class_name), path)
+                lookup[f"{module_name}.{class_name}"] = path
+        return lookup
+
+    def _module_dependencies(self, modules: list[dict], module_by_name: dict[str, str]) -> list[dict]:
+        dependencies: list[dict] = []
+        for module in modules:
+            from_path = str(module["path"])
+            from_module = self._module_name(from_path)
+            for detail in module.get("import_details", []):
+                imported_module = self._resolve_relative_import(from_module, detail)
+                imported_name = detail.get("imported_name")
+                to_path = self._resolve_import_path(imported_module, imported_name, module_by_name)
+                dependencies.append(
+                    {
+                        "from_path": from_path,
+                        "imported_module": imported_module,
+                        "imported_name": imported_name,
+                        "alias": detail.get("alias"),
+                        "line_start": detail.get("line_start"),
+                        "to_path": to_path,
+                        "resolution": "internal" if to_path else "external_or_unresolved",
+                    }
+                )
+        dependencies.sort(key=lambda item: (item["from_path"], item["imported_module"], str(item.get("imported_name"))))
+        return dependencies
+
+    def _resolve_relative_import(self, from_module: str, detail: dict) -> str:
+        module = str(detail.get("module") or "")
+        level = int(detail.get("level") or 0)
+        if level <= 0:
+            return module
+        package_parts = from_module.split(".")[:-1]
+        if level > 1:
+            package_parts = package_parts[: -(level - 1)] if level - 1 <= len(package_parts) else []
+        parts = [*package_parts]
+        if module:
+            parts.extend(module.split("."))
+        return ".".join(part for part in parts if part)
+
+    def _resolve_import_path(
+        self,
+        imported_module: str,
+        imported_name: str | None,
+        module_by_name: dict[str, str],
+    ) -> str | None:
+        if imported_module in module_by_name:
+            return module_by_name[imported_module]
+        if imported_name:
+            candidate = f"{imported_module}.{imported_name}" if imported_module else imported_name
+            if candidate in module_by_name:
+                return module_by_name[candidate]
+        return None
+
+    def _inheritance_graph(self, modules: list[dict], class_by_name: dict[str, str]) -> list[dict]:
+        edges: list[dict] = []
+        for module in modules:
+            path = str(module["path"])
+            for edge in module.get("inheritance", []):
+                base = str(edge.get("base") or "")
+                target_path = class_by_name.get(base) or class_by_name.get(base.split(".")[-1])
+                edges.append(
+                    {
+                        "path": path,
+                        "class": edge.get("class"),
+                        "base": base,
+                        "line_start": edge.get("line_start"),
+                        "target_path": target_path,
+                        "resolution": "local_symbol" if target_path else "external_or_unresolved",
+                    }
+                )
+        edges.sort(key=lambda item: (item["path"], str(item.get("class")), str(item.get("base"))))
+        return edges
+
+    def _call_index(self, modules: list[dict]) -> list[dict]:
+        calls: list[dict] = []
+        for module in modules:
+            path = str(module["path"])
+            for call in module.get("call_sites", []):
+                calls.append(
+                    {
+                        "path": path,
+                        "caller": call.get("caller"),
+                        "callee": call.get("callee"),
+                        "line_start": call.get("line_start"),
+                        "kind": call.get("kind", "call"),
+                        "analysis": call.get("analysis", "partial_static_analysis"),
+                    }
+                )
+        calls.sort(key=lambda item: (item["path"], int(item.get("line_start") or 0), str(item.get("caller"))))
+        return calls
+
+    def _framework_entries(self, modules: list[dict]) -> list[dict]:
+        entries: list[dict] = []
+        for module in modules:
+            path = str(module["path"])
+            for entry in module.get("framework_entries", []):
+                entries.append({"path": path, **entry})
+        entries.sort(key=lambda item: (item["path"], str(item.get("framework")), int(item.get("line_start") or 0)))
+        return entries
 
     def _module_priority(self, module_path: str) -> tuple[int, str]:
         if "/application/" in module_path:

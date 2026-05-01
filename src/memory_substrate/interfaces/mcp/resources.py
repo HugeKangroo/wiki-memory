@@ -55,7 +55,7 @@ Some hosts expose MCP tools through deferred tool search to reduce initial conte
 ## New Evidence
 
 1. Use `memory_ingest` to capture files, repos, web pages, PDFs, or conversations as evidence.
-2. For repo ingest, use compact `memory_query page` results (`code_index`, `code_modules`, `doc_index`, `document_sections`, symbols, excerpts, and line locators) to find files, then read local files directly when full code or full documents are needed.
+2. For repo ingest, use compact `memory_query page` results (`code_index`, `code_modules`, `code_intelligence`, `module_dependencies`, `inheritance_graph`, `call_index`, `framework_entries`, `doc_index`, `document_sections`, symbols, excerpts, and line locators) to find files and stable code structure, then read local files directly when full code or full documents are needed.
 3. Inspect `metadata.adapter` and `metadata.freshness` to understand capture mode, transformations, privacy class, currentness, and fingerprint.
 4. For repo ingest, handle `status: "completed_with_pending_decisions"` by using the clean source and deciding separately whether pending entries ever need `options.force: true`.
 5. Treat repo `status: "noop"` as a clean unchanged result and use the existing `source_id`.
@@ -67,6 +67,8 @@ Some hosts expose MCP tools through deferred tool search to reduce initial conte
 ## Durable Writes
 
 Use `memory_remember` only when the item should survive future sessions. Create writes need `reason`, `memory_source`, and `scope_refs`.
+
+When completed work satisfies an existing `work_item`, create or link the activity with `related_work_item_refs`, then call `memory_remember` `mode: "work_item_status"` to set the work item to `resolved`, `closed`, `blocked`, or another explicit status. Do not leave completed activity records with related open todos.
 
 For concept candidates from `memory_maintain report`, edit `suggested_memory.input_data` before writing. At minimum, replace the generated summary with a bounded definition grounded in evidence and verify the suggested `scope_refs`.
 
@@ -90,7 +92,7 @@ The server exposes four tools:
 
 - `memory_ingest`: capture source material as citable evidence.
 - `memory_query`: retrieve context, search memory, expand objects, and inspect graph neighborhoods.
-- `memory_remember`: commit governed durable activities, knowledge, and work items.
+- `memory_remember`: commit governed durable activities, knowledge, work items, and work item status updates.
 - `memory_maintain`: validate, repair, reindex, report, and consolidate memory.
 
 All tool calls use:
@@ -113,7 +115,7 @@ Repo ingest statuses:
 - `noop`: repo fingerprint is unchanged from the active stored source; no patch, audit, or projection data is written.
 - `completed`: source material was written or updated.
 
-Repo sources store a lightweight repo map rather than full source bodies or full documents as canonical memory. `memory_query page` is compact by default; repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read from local files by locator. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
+Repo sources store a lightweight repo map and deterministic code intelligence indexes rather than full source bodies, full documents, runtime call graphs, or architecture conclusions as canonical memory. `memory_query page` is compact by default; repo source pages with `options.detail: "full"` return `result_type: "page_unavailable"` and `status: "unsupported"` because complete repo content should be read from local files by locator. Query options are mode-specific: `detail` is only for `page`; `include_segments` and `snippet_chars` are only for `page` and `expand`.
 
 `memory_query search` and `context` return `query_sanitizer` diagnostics when prompt-like query text is shortened before retrieval.
 

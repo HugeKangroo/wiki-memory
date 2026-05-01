@@ -74,7 +74,7 @@ Allowed modes:
 
 `repo` ingest always skips common generated directories such as `.git`, `node_modules`, `dist`, `build`, and Rust/Tauri `target`. Agents can pass `include_patterns` and `exclude_patterns` for project-specific scope control. Patterns are matched against relative paths and basename values.
 
-The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, classes, functions, symbols, and line ranges when the parser can extract them. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, heading breadcrumbs, short excerpts, chunk kinds, and line locators. It intentionally does not make full source bodies or full documents the canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code or full documents.
+The stored repo source is a lightweight repo map. `payload.code_index` records source paths, languages, line counts, and hashes. `payload.code_modules` records parsed module paths, imports, import details, classes, functions, symbols, interfaces, inheritance edges, call sites, framework entries, and line ranges when the parser can extract them. `payload.module_dependencies`, `payload.inheritance_graph`, `payload.call_index`, and `payload.framework_entries` expose repo-level deterministic code intelligence indexes. `payload.code_intelligence` summarizes counts, parser backend, schema version, and limitations such as `partial_static_analysis`. `payload.doc_index` and `payload.document_sections` record Markdown documentation paths, section headings, heading breadcrumbs, short excerpts, chunk kinds, and line locators. It intentionally does not make full source bodies, full documents, runtime call graphs, or architecture conclusions canonical data; use `memory_query page` or `expand` to find locators, then read the local files directly for full code or full documents.
 
 Markdown and text source ingest use the shared `document_chunker.v1` contract. Markdown chunks preserve frontmatter as a separate boundary, split on headings outside code fences, keep tables and fenced code inside the surrounding chunk, record `line_start` / `line_end`, and include `heading_path` breadcrumbs in segment locators when present. Oversized sections are split with small line overlap so semantic chunks and evidence segments can remain bounded while still carrying local context.
 
@@ -455,6 +455,7 @@ Allowed modes:
 - `activity`
 - `knowledge`
 - `work_item`
+- `work_item_status`
 - `promote`
 - `supersede`
 - `contest`
@@ -581,6 +582,25 @@ Soft duplicate detection is advisory. It is intended for agent or maintenance re
   }
 }
 ```
+
+`work_item_status` updates an existing work item through the governed remember path. Use it when work starts, becomes blocked, is resolved, is closed, or is cancelled. This avoids recording a completion activity while leaving the related todo open.
+
+```json
+{
+  "args": {
+    "mode": "work_item_status",
+    "input_data": {
+      "work_item_id": "work:...",
+      "status": "resolved",
+      "resolution": "The repository was cloned and verified.",
+      "reason": "The completed activity satisfies this task.",
+      "memory_source": "agent_inferred"
+    }
+  }
+}
+```
+
+Allowed work item statuses are `open`, `in_progress`, `blocked`, `resolved`, `closed`, and `cancelled`.
 
 `batch`:
 

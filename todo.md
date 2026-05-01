@@ -567,3 +567,44 @@ Verification:
 - [x] Add MCP server/resource tests for discovery text.
 - [x] Run focused MCP server tests.
 - [x] Run full tests.
+
+### MS-27: Work Item Lifecycle Updates
+
+Status: `completed`
+
+Goal: prevent completed activity records from leaving related work items open.
+
+Boundary: Remember/MCP lifecycle update path only. Do not add a scheduler, automatic task inference, or a new top-level MCP tool.
+
+Deliverables:
+- [x] Add a governed `memory_remember` mode for updating an existing work item status.
+- [x] Allow agent-natural completed activity status without producing structure errors.
+- [x] Document the caller rule for closing or resolving work items when recording completion activities.
+
+Verification:
+- [x] Add service and MCP tests for work item status updates.
+- [x] Add structure validation coverage for completed activities.
+- [x] Run focused remember/MCP tests.
+- [x] Run full test suite.
+
+### MS-28: Tree-sitter Code Intelligence Index
+
+Status: `completed`
+
+Goal: expose as much stable, deterministic code structure as possible from repo ingest so agents rely less on token-heavy source reading.
+
+Boundary: derived repo source/index data only. Do not auto-write architecture conclusions as canonical knowledge and do not claim static analysis is a complete runtime call graph.
+
+Deliverables:
+- [x] Add structured import details and resolved repo-internal module dependencies.
+- [x] Add inheritance edges for class bases when parsers can extract them.
+- [x] Add partial static call-site indexes with explicit limitations.
+- [x] Add lightweight framework detectors for stable route/tool/test surfaces.
+- [x] Expose compact code intelligence data through `memory_query page`.
+- [x] Document the deterministic-vs-agent-understanding boundary.
+
+Verification:
+- [x] Add repo ingest tests for dependency, inheritance, call, and framework index data.
+- [x] Add query page compact exposure tests.
+- [x] Run focused repo/query tests.
+- [x] Run full test suite and build.

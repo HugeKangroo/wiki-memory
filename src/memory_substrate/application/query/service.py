@@ -861,6 +861,14 @@ class QueryService:
             else:
                 result[key] = value[:max_items]
             self._mark_truncated(truncated, f"payload.{key}", len(value), len(result[key]))
+        if isinstance(payload.get("code_intelligence"), dict):
+            result["code_intelligence"] = payload["code_intelligence"]
+        for key in ("module_dependencies", "inheritance_graph", "call_index", "framework_entries"):
+            value = payload.get(key, [])
+            if not isinstance(value, list):
+                continue
+            result[key] = value[:max_items]
+            self._mark_truncated(truncated, f"payload.{key}", len(value), len(result[key]))
         if "parser_backend" in payload:
             result["parser_backend"] = payload["parser_backend"]
         return result
@@ -894,7 +902,12 @@ class QueryService:
             "line_end": module.get("line_end"),
             "classes": module.get("classes", [])[:8],
             "functions": module.get("functions", [])[:12],
+            "import_details": module.get("import_details", [])[:8],
             "symbols": symbols[:12] if isinstance(symbols, list) else [],
+            "interfaces": module.get("interfaces", [])[:8],
+            "inheritance": module.get("inheritance", [])[:8],
+            "call_sites": module.get("call_sites", [])[:8],
+            "framework_entries": module.get("framework_entries", [])[:8],
             "module_doc": self._clip(str(module.get("module_doc", "")), snippet_chars),
             "parser_backend": module.get("parser_backend"),
         }

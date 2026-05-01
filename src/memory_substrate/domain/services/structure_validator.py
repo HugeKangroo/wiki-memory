@@ -210,7 +210,7 @@ class StructureValidator:
             "source": {"active", "invalid", "archived"},
             "node": {"active", "merged", "archived"},
             "knowledge": {"candidate", "active", "contested", "superseded", "stale", "archived"},
-            "activity": {"draft", "finalized", "archived"},
+            "activity": {"draft", "finalized", "completed", "archived"},
             "work_item": {"open", "in_progress", "blocked", "resolved", "closed", "cancelled"},
         }
         lifecycle_rules = {"work_item": {"active", "archived"}}

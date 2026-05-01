@@ -333,6 +333,22 @@ class RememberWorkItemInput(StrictModel):
     opened_at: str | None = None
 
 
+class RememberWorkItemStatusInput(StrictModel):
+    """Input payload for updating an existing work item status."""
+
+    work_item_id: str = Field(description="Existing work item id to update, normally prefixed with work:.")
+    status: Literal["open", "in_progress", "blocked", "resolved", "closed", "cancelled"] = Field(
+        description="New work item lifecycle status."
+    )
+    reason: str = Field(min_length=1, description="Audit reason explaining why the work item status changed.")
+    memory_source: MemorySourceName = Field(description="Where the status update came from.")
+    actor: ActorRef | None = None
+    resolution: str | None = Field(
+        default=None,
+        description="Optional resolution summary, especially for resolved, closed, or cancelled work items.",
+    )
+
+
 class RememberPromoteInput(StrictModel):
     """Input payload for promoting one knowledge object."""
 
@@ -419,6 +435,13 @@ class RememberWorkItemArgs(RememberBaseArgs):
     input_data: RememberWorkItemInput
 
 
+class RememberWorkItemStatusArgs(RememberBaseArgs):
+    """MCP arguments for memory_remember work_item_status mode."""
+
+    mode: Literal["work_item_status"]
+    input_data: RememberWorkItemStatusInput
+
+
 class RememberPromoteArgs(RememberBaseArgs):
     """MCP arguments for memory_remember promote mode."""
 
@@ -451,6 +474,7 @@ RememberToolArgs = Annotated[
     RememberActivityArgs
     | RememberKnowledgeArgs
     | RememberWorkItemArgs
+    | RememberWorkItemStatusArgs
     | RememberPromoteArgs
     | RememberSupersedeArgs
     | RememberContestArgs

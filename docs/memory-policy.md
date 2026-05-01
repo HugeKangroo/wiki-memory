@@ -40,6 +40,8 @@ Durable writes should go through `memory_remember` or controlled `memory_maintai
 - `memory_remember` is the governed durable write path.
 - `memory_maintain` validates, repairs, reindexes, reports, and performs lifecycle consolidation.
 
+Work item lifecycle changes are durable memory writes. Agents should use `memory_remember` to update an existing work item status when work starts, blocks, resolves, closes, or is cancelled. Recording a completion activity is not sufficient by itself; the related work item status must also reflect the current state.
+
 Ingest and maintain may return advisory `concept_candidates`. These candidates help callers notice repeated ideas that may deserve crystallization, but they are not canonical memory until an agent or human reviews evidence and calls `memory_remember`.
 
 Ingest responses should also return a compact `agent_extraction` protocol block. The protocol is a handoff contract, not an embedded LLM pipeline: ingest captures evidence, the caller analyzes it, and `memory_remember` commits reviewed durable memory. Detailed instructions belong in MCP resources or documentation, not repeated in every ingest result.
@@ -166,6 +168,11 @@ Tool responses should guide callers even if they have not read the docs. Prefer 
 - `applied_filters`
 - `code_index`
 - `code_modules`
+- `code_intelligence`
+- `module_dependencies`
+- `inheritance_graph`
+- `call_index`
+- `framework_entries`
 - `adapter`
 - `freshness`
 - `possible_duplicates`

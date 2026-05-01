@@ -41,6 +41,39 @@ class RememberProjectionTest(unittest.TestCase):
             self.assertIn("# Projection sync smoke test", contents)
             self.assertGreater(result["projection_count"], 0)
 
+    def test_update_work_item_status_resolves_existing_item(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            service = RememberService(root)
+
+            created = service.create_work_item(
+                {
+                    "kind": "task",
+                    "title": "Clone Isaac Sim",
+                    "summary": "Clone the official Isaac Sim repository.",
+                    "reason": "The task should survive future sessions.",
+                    "memory_source": "user_declared",
+                    "scope_refs": ["project:digital-twin"],
+                }
+            )
+
+            updated = service.update_work_item_status(
+                {
+                    "work_item_id": created["work_item_id"],
+                    "status": "resolved",
+                    "resolution": "Isaac Sim was cloned and verified locally.",
+                    "reason": "The completed clone activity satisfies this task.",
+                    "memory_source": "agent_inferred",
+                }
+            )
+
+            stored = FsObjectRepository(root).get("work_item", created["work_item_id"])
+            self.assertEqual(updated["object_id"], created["work_item_id"])
+            self.assertEqual(updated["status"], "resolved")
+            self.assertEqual(stored["status"], "resolved")
+            self.assertEqual(stored["resolution"], "Isaac Sim was cloned and verified locally.")
+            self.assertGreater(updated["projection_count"], 0)
+
     def test_rebuild_removes_stale_projection_files_after_delete(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
