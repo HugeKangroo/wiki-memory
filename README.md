@@ -61,6 +61,7 @@ Notes:
 - `input_data` is required at the MCP boundary even when empty.
 - unexpected extra fields inside `args` are rejected.
 - mutating `memory_maintain` modes require `options.apply=true`.
+- if a host defers MCP tool schemas, search for `memory-substrate` or `agent memory` to load `memory_query`, `memory_ingest`, `memory_remember`, and `memory_maintain`.
 
 See [MCP API Reference](docs/mcp-api-reference.md) for supported modes and examples.
 

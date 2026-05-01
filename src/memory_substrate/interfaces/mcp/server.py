@@ -20,7 +20,10 @@ from memory_substrate.interfaces.mcp.tools import (
 SERVER_ROOT_ENV_VAR = "MEMORY_SUBSTRATE_ROOT"
 
 SERVER_INSTRUCTIONS = (
-    "Memory Substrate MCP server. Recommended workflow: Task start: use memory_query. "
+    "Memory Substrate MCP server for persistent agent memory: context retrieval, evidence ingest, "
+    "durable remember writes, and maintenance. If this server is visible only through deferred tool discovery, "
+    "use tool search for memory-substrate, memory_query, agent memory, context, remember, ingest, or maintain "
+    "to load the four tools. Recommended workflow: Task start: use memory_query. "
     "New evidence: use memory_ingest, analyze evidence outside ingest, then use memory_remember only for durable writes "
     "with reason, memory_source, and scope_refs. Use memory_query before memory_remember to check context, "
     "duplicates, and conflicts. Do not pass memory root paths; the host fixes the server root. "
@@ -49,19 +52,43 @@ def create_server(root: str | Path | None = None) -> FastMCP:
     mcp = FastMCP(name="memory-substrate", instructions=SERVER_INSTRUCTIONS)
     register_agent_resources(mcp)
 
-    @mcp.tool(name="memory_ingest", description="Capture files, repos, web pages, PDFs, or conversations as citable evidence before deciding what to remember.")
+    @mcp.tool(
+        name="memory_ingest",
+        description=(
+            "persistent agent memory ingest: capture files, repos, web pages, PDFs, or conversations "
+            "as citable evidence before deciding what to remember."
+        ),
+    )
     def memory_ingest(args: IngestToolArgs) -> dict:
         return dispatch_ingest(server_root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_query", description="Query existing memory. Use at task start and before durable writes when checking context, duplicates, or conflicts.")
+    @mcp.tool(
+        name="memory_query",
+        description=(
+            "persistent agent memory query for context packs, search, recent records, pages, expansion, and graph neighborhoods. "
+            "Use at task start and before durable writes when checking context, duplicates, or conflicts."
+        ),
+    )
     def memory_query(args: QueryToolArgs) -> dict:
         return dispatch_query(server_root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_remember", description="Govern durable memory writes for activities, claims, and work items after evidence has been captured or verified.")
+    @mcp.tool(
+        name="memory_remember",
+        description=(
+            "persistent agent memory remember/write path: govern durable activities, claims, and work items "
+            "after evidence has been captured or verified."
+        ),
+    )
     def memory_remember(args: RememberToolArgs) -> dict:
         return dispatch_remember(server_root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 
-    @mcp.tool(name="memory_maintain", description="Validate, report, repair, reindex, and consolidate memory. Any mutating mode requires options.apply=true.")
+    @mcp.tool(
+        name="memory_maintain",
+        description=(
+            "persistent agent memory maintain path: validate, report, repair, reindex, projection upkeep, "
+            "and lifecycle consolidation. Any mutating mode requires options.apply=true."
+        ),
+    )
     def memory_maintain(args: MaintainToolArgs) -> dict:
         return dispatch_maintain(server_root, args.mode, _model_to_dict(args.input_data), _model_to_dict(args.options))
 

@@ -14,6 +14,8 @@ The server provides two prompts, `memory_task_start` and `memory_review`, for ho
 
 Agents must not pass a memory root in tool calls. The MCP server binds to one root per server instance, defaulting to `~/memory-substrate` unless the host sets `MEMORY_SUBSTRATE_ROOT`.
 
+Some hosts expose MCP servers through deferred tool discovery. If the active tool list does not show `memory_query`, `memory_ingest`, `memory_remember`, or `memory_maintain`, search for `memory-substrate`, `agent memory`, `persistent memory`, `memory_query`, `context`, `remember`, `ingest`, or `maintain` and then use the loaded MCP tools directly. Do not use shell commands or internal Python dispatch as a substitute unless MCP discovery or MCP calls fail.
+
 ## Current Data Model
 
 The canonical data is a structured object store under `memory/objects/`. Markdown files under `memory/projections/` are derived views and are not the source of truth.

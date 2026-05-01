@@ -7,6 +7,8 @@ The MCP server exposes four tools:
 - `memory_remember`
 - `memory_maintain`
 
+Some MCP hosts defer tool schemas behind tool search. If these four tools are not active, search for `memory-substrate`, `agent memory`, `persistent memory`, `memory_query`, `context`, `remember`, `ingest`, or `maintain` before falling back to shell diagnostics.
+
 The server uses strict argument validation. Unexpected fields inside `args` fail instead of being accepted silently.
 
 ## Agent Resources And Prompts

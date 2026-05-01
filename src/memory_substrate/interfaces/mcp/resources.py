@@ -41,6 +41,10 @@ Use `memory_maintain archive_source` with `options.apply=true` to retire a bad s
 
 AGENT_PLAYBOOK = """# Agent Memory Playbook
 
+## Tool Discovery
+
+Some hosts expose MCP tools through deferred tool search to reduce initial context. If `memory_query`, `memory_ingest`, `memory_remember`, or `memory_maintain` are not active tools, search for `memory-substrate`, `agent memory`, `persistent memory`, `memory_query`, `context`, `remember`, `ingest`, or `maintain` and then use the loaded tools directly. Do not fall back to shell or internal Python dispatch unless MCP discovery or MCP calls fail.
+
 ## Task Start
 
 1. Call `memory_query` with `mode: "context"` or `mode: "search"`.

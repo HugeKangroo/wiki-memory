@@ -75,6 +75,10 @@ class McpServerTest(unittest.TestCase):
 
     def test_server_instructions_explain_agent_workflow_and_mutation_guard(self) -> None:
         server = create_server()
+        self.assertIn("persistent agent memory", server.instructions)
+        self.assertIn("deferred", server.instructions)
+        self.assertIn("tool search", server.instructions)
+        self.assertIn("memory-substrate", server.instructions)
         self.assertIn("Recommended workflow", server.instructions)
         self.assertIn("Task start: use memory_query", server.instructions)
         self.assertIn("New evidence: use memory_ingest", server.instructions)
@@ -86,8 +90,13 @@ class McpServerTest(unittest.TestCase):
         self.assertIn("options.apply=true", server.instructions)
 
         descriptions = {tool.name: tool.description for tool in server._tool_manager.list_tools()}
+        self.assertIn("persistent agent memory", descriptions["memory_query"])
+        self.assertIn("context packs", descriptions["memory_query"])
         self.assertIn("Use at task start", descriptions["memory_query"])
         self.assertIn("before durable writes", descriptions["memory_query"])
+        self.assertIn("evidence", descriptions["memory_ingest"])
+        self.assertIn("persistent agent memory", descriptions["memory_remember"])
+        self.assertIn("projection", descriptions["memory_maintain"])
         self.assertIn("requires options.apply=true", descriptions["memory_maintain"])
 
     def test_server_exposes_agent_policy_resources(self) -> None:
@@ -108,6 +117,9 @@ class McpServerTest(unittest.TestCase):
             self.assertIn("Query Policy", policy[0].content)
 
             playbook = await server.read_resource("memory://agent-playbook")
+            self.assertIn("Tool Discovery", playbook[0].content)
+            self.assertIn("tool search", playbook[0].content)
+            self.assertIn("memory-substrate", playbook[0].content)
             self.assertIn("query expansion", playbook[0].content)
             self.assertIn("possible_duplicates", playbook[0].content)
             self.assertIn('status: "completed_with_pending_decisions"', playbook[0].content)

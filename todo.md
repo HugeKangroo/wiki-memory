@@ -549,3 +549,21 @@ Verification:
 - [ ] Add render tests proving generated files are manifest-bound and canonical objects are unchanged.
 - [ ] Add reconcile tests proving report-only behavior does not mutate canonical memory.
 - [ ] Update MCP API docs and agent usage docs.
+
+### MS-26: MCP Tool Discovery Metadata
+
+Status: `completed`
+
+Goal: make deferred MCP hosts more likely to discover Memory Substrate as the persistent agent memory server before agents fall back to shell diagnostics.
+
+Boundary: server/tool descriptions, MCP resources, and docs only. Do not change tool count, mode schemas, storage behavior, or Codex host configuration.
+
+Deliverables:
+- [x] Add discovery keywords to server instructions and tool descriptions.
+- [x] Add a tool-discovery rule to the built-in agent playbook.
+- [x] Document that hosts may defer MCP tools and agents should search for `memory-substrate` before using shell fallbacks.
+
+Verification:
+- [x] Add MCP server/resource tests for discovery text.
+- [x] Run focused MCP server tests.
+- [x] Run full tests.
