@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.4.0 - Unreleased
+## 0.4.0 - 2026-05-06
 
 - Renamed the public product surface to `memory-substrate` and the MCP tools to `memory_ingest`, `memory_query`, `memory_remember`, and `memory_maintain`.
 - Added governed memory write rules for reason, memory source, scope refs, duplicate detection, conflict detection, and evidence validation.

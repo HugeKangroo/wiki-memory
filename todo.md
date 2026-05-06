@@ -75,15 +75,9 @@ This file tracks the active execution queue for this repository. Keep it current
 
 ### Current Priority Order
 
-Use this order for the next execution slices. MS numbers are historical identifiers and do not imply priority.
+There is no active open execution item.
 
-1. MS-31: Repo API Inventory
-2. MS-32: Path-Paged Source Reads
-3. MS-33: Multi-ID Expand
-4. MS-30: Remember Evidence Layer Contract
-5. MS-29: Temporary Memory Lifecycle
-6. MS-34: Concept Candidate Filtering
-7. MS-25: External Wiki Projection Render And Reconcile
+When starting the next slice, add a new MS item here before implementation. MS numbers are historical identifiers and do not imply priority.
 
 Execution constraints:
 - Do not make `memory_query page detail=full` return full repo payloads.
